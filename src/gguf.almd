@@ -72,7 +72,10 @@ fn r_string(data: Bytes, pos: Int) -> (String, Int) = {
 // 0=UINT8, 1=INT8, 2=UINT16, 3=INT16, 4=UINT32, 5=INT32,
 // 6=FLOAT32, 7=BOOL, 8=STRING, 9=ARRAY, 10=UINT64, 11=INT64, 12=FLOAT64
 
-fn read_value(data: Bytes, pos: Int, vtype: Int) -> (GGUFValue, Int) =
+// Non-array scalar value reader. Pure: only reads through stdlib helpers
+// that take `&Bytes`, so Almide codegen can pass `data` by reference
+// (no clone). This is the hot path inside read_array.
+fn read_scalar_value(data: Bytes, pos: Int, vtype: Int) -> (GGUFValue, Int) =
   if vtype == 4 or vtype == 5 or vtype == 0 or vtype == 1 or vtype == 2 or vtype == 3 then
     (ValInt(r_i32(data, pos)), pos + 4)
   else if vtype == 10 or vtype == 11 then
@@ -87,19 +90,43 @@ fn read_value(data: Bytes, pos: Int, vtype: Int) -> (GGUFValue, Int) =
     let (s, next) = r_string(data, pos)
     (ValString(s), next)
   }
-  else if vtype == 9 then {
-    let arr_type = r_u32(data, pos)
-    let arr_count = r_u64(data, pos + 4)
-    read_array(data, pos + 12, arr_type, arr_count, [])
-  }
   else (ValInt(0), pos + 4)
 
-fn read_array(data: Bytes, pos: Int, vtype: Int, remaining: Int, acc: List[GGUFValue]) -> (GGUFValue, Int) =
-  if remaining <= 0 then (ValArray(acc), pos)
-  else {
-    let (val, next) = read_value(data, pos, vtype)
-    read_array(data, next, vtype, remaining - 1, acc + [val])
+fn read_value(data: Bytes, pos: Int, vtype: Int) -> (GGUFValue, Int) =
+  if vtype == 9 then {
+    let arr_type = r_u32(data, pos)
+    let arr_count = r_u64(data, pos + 4)
+    read_array(data, pos + 12, arr_type, arr_count)
   }
+  else read_scalar_value(data, pos, vtype)
+
+// Qwen3-class GGUF tokenizer metadata has 150k+ element arrays, so the
+// original recursive form overflowed the stack on real models. Because
+// this function uses `var`/`list.push`, Almide codegen promotes `data`
+// to an owned Vec<u8> — so EVERY caller must pay a 248 MB clone to
+// invoke us. The callers above (read_value, parse_metadata_entries)
+// ensure this cost is amortised: read_array is only invoked once per
+// array-valued metadata entry (3 times for typical Qwen3 GGUF files),
+// not once per array element. Inside the loop we call `read_scalar_value`
+// which stays pass-by-reference.
+fn read_array(data: Bytes, pos: Int, vtype: Int, count: Int) -> (GGUFValue, Int) = {
+  var items: List[GGUFValue] = []
+  var p = pos
+  for _ in 0..count {
+    if vtype == 9 then {
+      let arr_type = r_u32(data, p)
+      let arr_count = r_u64(data, p + 4)
+      let (val, next) = read_array(data, p + 12, arr_type, arr_count)
+      list.push(items, val)
+      p = next
+    } else {
+      let (val, next) = read_scalar_value(data, p, vtype)
+      list.push(items, val)
+      p = next
+    }
+  }
+  (ValArray(items), p)
+}
 
 // ── Header parsing ──
 
@@ -120,30 +147,53 @@ effect fn parse_header(data: Bytes) -> Result[(GGUFHeader, Int), String] = {
 
 // ── Metadata parsing ──
 
-fn parse_metadata_entries(data: Bytes, pos: Int, count: Int, acc: List[(String, GGUFValue)]) -> (List[(String, GGUFValue)], Int) =
-  if count <= 0 then (acc, pos)
-  else {
-    let (key, after_key) = r_string(data, pos)
+fn parse_metadata_entries(data: Bytes, pos: Int, count: Int) -> (List[(String, GGUFValue)], Int) = {
+  var entries: List[(String, GGUFValue)] = []
+  var p = pos
+  for _ in 0..count {
+    let (key, after_key) = r_string(data, p)
     let vtype = r_u32(data, after_key)
-    let (value, after_value) = read_value(data, after_key + 4, vtype)
-    parse_metadata_entries(data, after_value, count - 1, acc + [(key, value)])
+    let value_pos = after_key + 4
+    // Dispatch inline: array values call read_array directly (one 248 MB
+    // clone per big array — 3 total for Qwen3); scalars go through
+    // read_scalar_value which takes `&Bytes` (no clone).
+    let (value, after_value) = if vtype == 9 then {
+      let arr_type = r_u32(data, value_pos)
+      let arr_count = r_u64(data, value_pos + 4)
+      read_array(data, value_pos + 12, arr_type, arr_count)
+    } else {
+      read_scalar_value(data, value_pos, vtype)
+    }
+    list.push(entries, (key, value))
+    p = after_value
   }
+  (entries, p)
+}
 
 // ── Tensor info parsing ──
 
-fn parse_tensor_infos(data: Bytes, pos: Int, count: Int, acc: List[TensorInfo]) -> (List[TensorInfo], Int) =
-  if count <= 0 then (acc, pos)
-  else {
-    let (name, after_name) = r_string(data, pos)
+fn parse_tensor_infos(data: Bytes, pos: Int, count: Int) -> (List[TensorInfo], Int) = {
+  var tensors: List[TensorInfo] = []
+  var p = pos
+  for _ in 0..count {
+    let (name, after_name) = r_string(data, p)
     let n_dims = r_u32(data, after_name)
-    let dims = list.range(0, n_dims)
-      |> list.map((i) => r_u64(data, after_name + 4 + i * 8))
+    // Explicit for-loop over dims rather than `list.map` with a capturing
+    // closure. The closure would capture `data` by value (owning the
+    // 248 MB Bytes), producing one per-tensor clone — 310 tensors × 248 MB
+    // = 77 GB of redundant copies during a single GGUF parse.
+    var dims: List[Int] = []
+    for i in 0..n_dims {
+      list.push(dims, r_u64(data, after_name + 4 + i * 8))
+    }
     let after_dims = after_name + 4 + n_dims * 8
     let dtype = r_u32(data, after_dims)
     let offset = r_u64(data, after_dims + 4)
-    let info = TensorInfo { name: name, dims: dims, dtype: dtype, offset: offset }
-    parse_tensor_infos(data, after_dims + 12, count - 1, acc + [info])
+    list.push(tensors, TensorInfo { name: name, dims: dims, dtype: dtype, offset: offset })
+    p = after_dims + 12
   }
+  (tensors, p)
+}
 
 // ── Alignment ──
 
@@ -167,8 +217,8 @@ effect fn parse(data: Bytes) -> Result[GGUFFile, String] =
     err(e) => err(e)
     ok(header_result) => {
       let (header, pos) = header_result
-      let (meta_entries, after_meta) = parse_metadata_entries(data, pos, header.metadata_count, [])
-      let (tensor_infos, after_tensors) = parse_tensor_infos(data, after_meta, header.tensor_count, [])
+      let (meta_entries, after_meta) = parse_metadata_entries(data, pos, header.metadata_count)
+      let (tensor_infos, after_tensors) = parse_tensor_infos(data, after_meta, header.tensor_count)
       let alignment = get_alignment(meta_entries)
       let data_start = align_to(after_tensors, alignment)
       ok(GGUFFile {
@@ -214,6 +264,72 @@ fn extract_f32_matrix(file: GGUFFile, info: TensorInfo) -> Matrix = {
     matrix.from_lists(row_lists)
   } else {
     // 1D: single-row matrix
+    matrix.from_lists([values])
+  }
+}
+
+// ── Q1_0 quantization (PrismML Bonsai; dtype = 41) ──
+//
+// Block layout: 18 bytes per 128 weights.
+//   bytes[0..2]   = fp16 scale (little-endian)
+//   bytes[2..18]  = 16 bytes of sign bits; 128 bits total, LSB-first
+//                   within each byte. Bit 0 → -scale, bit 1 → +scale.
+// Effective 1.125 bits/weight (1 sign bit + 16-bit scale amortised
+// over 128 weights).
+
+fn q1_0_block_size() -> Int = 18
+fn q1_0_values_per_block() -> Int = 128
+
+// Decode one Q1_0 block starting at `block_start`. Returns (scale, 128 weights).
+// Pure read on `data` — safe to call once per block.
+fn decode_q1_0_block(data: Bytes, block_start: Int) -> (Float, List[Float]) = {
+  let scale_raw = r_u8(data, block_start) + r_u8(data, block_start + 1) * 256
+  let scale = f16_to_f32(scale_raw)
+  let neg_scale = 0.0 - scale
+  let bits_start = block_start + 2
+  var weights: List[Float] = []
+  for i in 0..128 {
+    let byte_idx = bits_start + i / 8
+    let bit_offset = i - (i / 8) * 8
+    let byte_val = r_u8(data, byte_idx)
+    let bit = int.band(int.bshr(byte_val, bit_offset), 1)
+    list.push(weights, if bit == 1 then scale else neg_scale)
+  }
+  (scale, weights)
+}
+
+fn extract_q1_0_tensor(file: GGUFFile, info: TensorInfo) -> List[Float] = {
+  let start = file.data_offset + info.offset
+  let total = tensor_num_elements(info)
+  let num_blocks = total / 128
+  var out: List[Float] = []
+  for b in 0..num_blocks {
+    let block_start = start + b * 18
+    let scale_raw = r_u8(file.raw, block_start) + r_u8(file.raw, block_start + 1) * 256
+    let scale = f16_to_f32(scale_raw)
+    let neg_scale = 0.0 - scale
+    let bits_start = block_start + 2
+    for i in 0..128 {
+      let byte_idx = bits_start + i / 8
+      let bit_offset = i - (i / 8) * 8
+      let byte_val = r_u8(file.raw, byte_idx)
+      let bit = int.band(int.bshr(byte_val, bit_offset), 1)
+      list.push(out, if bit == 1 then scale else neg_scale)
+    }
+  }
+  out
+}
+
+fn extract_q1_0_matrix(file: GGUFFile, info: TensorInfo) -> Matrix = {
+  let values = extract_q1_0_tensor(file, info)
+  if list.len(info.dims) == 2 then {
+    let rows = list.get(info.dims, 0) |> option.unwrap_or(1)
+    let cols = list.get(info.dims, 1) |> option.unwrap_or(list.len(values))
+    let row_lists = list.range(0, rows) |> list.map((r) =>
+      list.slice(values, r * cols, (r + 1) * cols)
+    )
+    matrix.from_lists(row_lists)
+  } else {
     matrix.from_lists([values])
   }
 }
