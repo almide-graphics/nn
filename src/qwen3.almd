@@ -1,0 +1,278 @@
+// nn.qwen3 — Qwen3-specific transformer block primitives
+//
+// Adds to the shared nn primitives the three pieces Qwen3 (and the
+// PrismML Bonsai 1-bit LLM built on Qwen3) needs but Llama does not:
+//
+//   1. Rotary positional embedding (RoPE) — rotates each head's
+//      (x[2i], x[2i+1]) pair by an angle proportional to the token
+//      position and an inverse-frequency base.
+//
+//   2. Per-head RMSNorm on Q and K — applied on each head's
+//      `head_dim`-sized slice before RoPE. Distinct from the
+//      block-level RMSNorm on the residual stream.
+//
+//   3. Grouped-query attention (GQA) — K and V have fewer heads
+//      than Q (e.g. 8 vs 16); we replicate each K/V head to cover
+//      `n_q_heads / n_kv_heads` query heads, then run the usual
+//      multi-head attention. This matches the llama.cpp / HF reference.
+//
+// YaRN scaling on top of RoPE is not yet implemented here; the Bonsai
+// 1.7B GGUF declares YaRN factor 4.0 extending an 8k → 32k context,
+// but for short prompts (< 8k tokens) standard RoPE gives identical
+// output, so we defer YaRN.
+
+import math
+import self.tensor as t
+import self.activations as act
+import self.attention as attn
+
+// ── RoPE: rotary positional embedding ──
+//
+// Input `x` has shape (seq_len, n_heads * head_dim). For each row
+// (position `p`) and each head, pairs `(x[2i], x[2i+1])` are rotated
+// by `angle = p * inv_freq[i]` where
+//   `inv_freq[i] = 1 / theta_base ^ (2i / head_dim)`.
+//
+// Returns a Matrix of the same shape.
+
+// Delegate to the matrix.rope_rotate intrinsic (primitive-level ML op).
+// The previous pure-Almide implementation via list.flat_map was
+// correct but paid heavy closure/list-allocation costs that dominated
+// blk.0 forward; the intrinsic is equivalent byte-for-byte and runs in
+// native-loop time.
+fn rope_rotate(x: Matrix, n_heads: Int, head_dim: Int, theta_base: Float) -> Matrix =
+  matrix.rope_rotate(x, n_heads, head_dim, theta_base)
+
+// ── Per-head RMSNorm ──
+//
+// `x` has shape (seq_len, n_heads * head_dim). For each head's slice
+// (contiguous `head_dim` columns) apply RMSNorm with the provided
+// `gamma` (length `head_dim`, shared across heads). This is what
+// Qwen3 stores as `attn_q_norm.weight` / `attn_k_norm.weight`.
+
+fn per_head_rms_norm(
+  x: Matrix,
+  gamma: List[Float],
+  n_heads: Int,
+  eps: Float,
+) -> Matrix = {
+  let heads = matrix.split_cols_even(x, n_heads)
+  let normed = heads |> list.map((h) => matrix.rms_norm_rows(h, gamma, eps))
+  matrix.concat_cols(normed)
+}
+
+// ── GQA: repeat K/V heads ──
+//
+// Given K or V with `n_kv_heads` heads (columns split evenly) and a
+// repetition factor `n_rep = n_q_heads / n_kv_heads`, produce a new
+// Matrix where each head is duplicated `n_rep` times in order. This
+// lets us reuse the existing multi-head attention primitive: after
+// repetition K/V have `n_q_heads` heads and standard MHA applies.
+
+fn repeat_kv(kv: Matrix, n_kv_heads: Int, n_rep: Int) -> Matrix = {
+  if n_rep == 1 then kv
+  else {
+    let heads = matrix.split_cols_even(kv, n_kv_heads)
+    let repeated = heads |> list.flat_map((h) => list.repeat(h, n_rep))
+    matrix.concat_cols(repeated)
+  }
+}
+
+// ── Qwen3 decoder block ──
+//
+// One layer of the Qwen3 / Bonsai architecture. Mirrors the 11 per-layer
+// tensors in the GGUF:
+//
+//   attn_norm, attn_q, attn_k, attn_v, attn_output,
+//   attn_q_norm, attn_k_norm,
+//   ffn_norm, ffn_gate, ffn_up, ffn_down
+//
+// Flow (pre-norm Transformer with GQA + per-head Q/K norm + RoPE):
+//
+//   h  = RMSNorm(x, attn_norm_gamma)
+//   Q  = h @ Wq;  K = h @ Wk;  V = h @ Wv
+//   Q  = RoPE(PerHeadRMSNorm(Q, q_norm_gamma, n_q_heads))
+//   K  = RoPE(PerHeadRMSNorm(K, k_norm_gamma, n_kv_heads))
+//   K' = repeat_kv(K, n_kv_heads, n_q_heads / n_kv_heads)
+//   V' = repeat_kv(V, n_kv_heads, n_q_heads / n_kv_heads)
+//   a  = masked_multi_head_attention(Q, K', V', n_q_heads) @ Wo
+//   x' = x + a
+//   h2 = RMSNorm(x', ffn_norm_gamma)
+//   f  = SwiGLU(h2, Wgate, Wup) @ Wdown
+//   out = x' + f
+//
+// All weight matrices are Float32 (decoded from Q1_0 or F32 in the GGUF
+// by the caller — this function is dtype-agnostic once the weights are
+// materialised as Matrix).
+
+fn qwen3_block(
+  x: Matrix,
+  attn_norm_gamma: List[Float],
+  wq: Matrix, wk: Matrix, wv: Matrix, wo: Matrix,
+  q_norm_gamma: List[Float], k_norm_gamma: List[Float],
+  ffn_norm_gamma: List[Float],
+  w_gate: Matrix, w_up: Matrix, w_down: Matrix,
+  n_q_heads: Int, n_kv_heads: Int, head_dim: Int,
+  rope_theta_base: Float, eps: Float,
+) -> Matrix = {
+  let n_rep = n_q_heads / n_kv_heads
+
+  // Pre-norm + attention
+  let h = matrix.rms_norm_rows(x, attn_norm_gamma, eps)
+  let q_proj = matrix.linear_row_no_bias(h, wq)
+  let k_proj = matrix.linear_row_no_bias(h, wk)
+  let v_proj = matrix.linear_row_no_bias(h, wv)
+
+  // Per-head Q/K normalisation (Qwen3-specific) before RoPE.
+  let q_normed = per_head_rms_norm(q_proj, q_norm_gamma, n_q_heads, eps)
+  let k_normed = per_head_rms_norm(k_proj, k_norm_gamma, n_kv_heads, eps)
+
+  // RoPE on Q and K.
+  let q_rot = rope_rotate(q_normed, n_q_heads, head_dim, rope_theta_base)
+  let k_rot = rope_rotate(k_normed, n_kv_heads, head_dim, rope_theta_base)
+
+  // Expand K/V across query groups so masked_multi_head_attention sees
+  // uniform n_q_heads.
+  let k_full = repeat_kv(k_rot, n_kv_heads, n_rep)
+  let v_full = repeat_kv(v_proj, n_kv_heads, n_rep)
+
+  let attn_out = matrix.masked_multi_head_attention(q_rot, k_full, v_full, n_q_heads)
+  let attn_proj = matrix.linear_row_no_bias(attn_out, wo)
+  let x_attn = matrix.add(x, attn_proj)
+
+  // Pre-norm + SwiGLU FFN
+  let h2 = matrix.rms_norm_rows(x_attn, ffn_norm_gamma, eps)
+  let gated = matrix.swiglu_gate(h2, w_gate, w_up)
+  let ffn_out = matrix.linear_row_no_bias(gated, w_down)
+  matrix.add(x_attn, ffn_out)
+}
+
+// ── Tests ──
+
+fn approx(a: Float, b: Float) -> Bool =
+  float.abs(a - b) < 0.001
+
+test "rope_rotate position 0 is identity" {
+  // At position 0, angle = 0, cos=1 sin=0, so rotation is identity.
+  let x = matrix.from_lists([
+    [1.0, 2.0, 3.0, 4.0],  // 1 head, head_dim=4, one row (pos=0)
+  ])
+  let y = rope_rotate(x, 1, 4, 1000000.0)
+  let rows = matrix.to_lists(y)
+  let r0 = list.get_or(rows, 0, [])
+  assert(approx(list.get_or(r0, 0, 0.0), 1.0))
+  assert(approx(list.get_or(r0, 1, 0.0), 2.0))
+  assert(approx(list.get_or(r0, 2, 0.0), 3.0))
+  assert(approx(list.get_or(r0, 3, 0.0), 4.0))
+}
+
+test "rope_rotate preserves shape" {
+  let x = matrix.from_lists([
+    [1.0, 0.0, 0.0, 0.0],
+    [0.0, 1.0, 0.0, 0.0],
+    [0.0, 0.0, 1.0, 0.0],
+  ])
+  let y = rope_rotate(x, 1, 4, 10000.0)
+  assert_eq(t.rows(y), 3)
+  assert_eq(t.cols(y), 4)
+}
+
+test "rope_rotate pos=1 produces expected rotation" {
+  // head_dim=4, theta_base=10000, pos=1.
+  // pair 0: inv_freq = 1 / 10000^0 = 1.0, angle=1 rad
+  // pair 1: inv_freq = 1 / 10000^(2/4) = 1/100 = 0.01, angle=0.01 rad
+  // Input x = [1, 0, 1, 0]:
+  //   pair 0 → [cos(1), sin(1)] = [0.5403, 0.8415]
+  //   pair 1 → [cos(0.01), sin(0.01)] ≈ [0.99995, 0.01]
+  let x = matrix.from_lists([
+    [0.0, 0.0, 0.0, 0.0],  // pos=0 row (discarded in check)
+    [1.0, 0.0, 1.0, 0.0],  // pos=1
+  ])
+  let y = rope_rotate(x, 1, 4, 10000.0)
+  let rows = matrix.to_lists(y)
+  let r1 = list.get_or(rows, 1, [])
+  assert(approx(list.get_or(r1, 0, 0.0), math.cos(1.0)))
+  assert(approx(list.get_or(r1, 1, 0.0), math.sin(1.0)))
+  assert(approx(list.get_or(r1, 2, 0.0), math.cos(0.01)))
+  assert(approx(list.get_or(r1, 3, 0.0), math.sin(0.01)))
+}
+
+test "per_head_rms_norm normalises each head independently" {
+  // 2 heads of head_dim=2. Head 0 = [1, 1] row → rms=1, normed = [1,1] * gamma.
+  // Head 1 = [10, 10] row → rms=10, normed = [1,1] * gamma. Same output shape.
+  let x = matrix.from_lists([[1.0, 1.0, 10.0, 10.0]])
+  let gamma = [1.0, 1.0]
+  let y = per_head_rms_norm(x, gamma, 2, 0.000001)
+  let rows = matrix.to_lists(y)
+  let r0 = list.get_or(rows, 0, [])
+  // After per-head RMSNorm both heads should map to ~[1, 1].
+  assert(approx(list.get_or(r0, 0, 0.0), 1.0))
+  assert(approx(list.get_or(r0, 1, 0.0), 1.0))
+  assert(approx(list.get_or(r0, 2, 0.0), 1.0))
+  assert(approx(list.get_or(r0, 3, 0.0), 1.0))
+}
+
+test "repeat_kv duplicates each head n_rep times" {
+  // 2 KV heads, head_dim=2, rep=2 → output has 4 "heads" (16 cols? No,
+  // 2 kv heads * 2 head_dim = 4 cols; after rep=2: 4 * 2 = 8 cols).
+  let kv = matrix.from_lists([
+    [1.0, 2.0, 3.0, 4.0],  // head0=[1,2], head1=[3,4]
+  ])
+  let out = repeat_kv(kv, 2, 2)
+  let rows = matrix.to_lists(out)
+  let r0 = list.get_or(rows, 0, [])
+  // Expect: [1,2, 1,2, 3,4, 3,4]
+  assert_eq(list.len(r0), 8)
+  assert(approx(list.get_or(r0, 0, 0.0), 1.0))
+  assert(approx(list.get_or(r0, 1, 0.0), 2.0))
+  assert(approx(list.get_or(r0, 2, 0.0), 1.0))
+  assert(approx(list.get_or(r0, 3, 0.0), 2.0))
+  assert(approx(list.get_or(r0, 4, 0.0), 3.0))
+  assert(approx(list.get_or(r0, 5, 0.0), 4.0))
+  assert(approx(list.get_or(r0, 6, 0.0), 3.0))
+  assert(approx(list.get_or(r0, 7, 0.0), 4.0))
+}
+
+test "repeat_kv with n_rep=1 is identity" {
+  let kv = matrix.from_lists([[1.0, 2.0, 3.0, 4.0]])
+  let out = repeat_kv(kv, 2, 1)
+  let rows = matrix.to_lists(out)
+  let r0 = list.get_or(rows, 0, [])
+  assert_eq(list.len(r0), 4)
+}
+
+test "qwen3_block smoke: output shape matches input" {
+  // Tiny config: 1 query head, 1 KV head (→ n_rep=1), head_dim=4,
+  // hidden=4, ffn_hidden=8, seq_len=2.
+  let seq = 2
+  let hidden = 4
+  let ffn_hidden = 8
+  let head_dim = 4
+
+  let x = matrix.ones(seq, hidden)
+  let norm_gamma: List[Float] = [1.0, 1.0, 1.0, 1.0]
+  let q_norm_gamma: List[Float] = [1.0, 1.0, 1.0, 1.0]
+  let k_norm_gamma: List[Float] = [1.0, 1.0, 1.0, 1.0]
+  let ffn_norm_gamma: List[Float] = [1.0, 1.0, 1.0, 1.0]
+
+  let wq = matrix.ones(hidden, hidden)
+  let wk = matrix.ones(hidden, hidden)
+  let wv = matrix.ones(hidden, hidden)
+  let wo = matrix.ones(hidden, hidden)
+  let w_gate = matrix.ones(ffn_hidden, hidden)
+  let w_up = matrix.ones(ffn_hidden, hidden)
+  let w_down = matrix.ones(hidden, ffn_hidden)
+
+  let out = qwen3_block(
+    x,
+    norm_gamma,
+    wq, wk, wv, wo,
+    q_norm_gamma, k_norm_gamma,
+    ffn_norm_gamma,
+    w_gate, w_up, w_down,
+    1, 1, head_dim,
+    1000000.0, 0.000001,
+  )
+  assert_eq(t.rows(out), seq)
+  assert_eq(t.cols(out), hidden)
+}

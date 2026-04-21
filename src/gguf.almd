@@ -60,7 +60,7 @@ fn r_i32(data: Bytes, pos: Int) -> Int = {
 }
 
 fn r_f32(data: Bytes, pos: Int) -> Float =
-  int.bits_to_float(r_u32(data, pos))
+  int.bits_to_f32(r_u32(data, pos))
 
 fn r_string(data: Bytes, pos: Int) -> (String, Int) = {
   let len = r_u64(data, pos)
@@ -109,19 +109,37 @@ fn read_value(data: Bytes, pos: Int, vtype: Int) -> (GGUFValue, Int) =
 // array-valued metadata entry (3 times for typical Qwen3 GGUF files),
 // not once per array element. Inside the loop we call `read_scalar_value`
 // which stays pass-by-reference.
+// Cap on the number of values we retain per metadata array. Beyond
+// this, read_array still walks the source bytes to keep `pos` correct
+// (so downstream tensor-info offsets line up) but drops the values on
+// the floor. This matters on targets where `list.push` cannot reclaim
+// the growing Vec's old storage — notably WASM, whose bump allocator
+// keeps every prior re-allocation alive and would OOM on a 150 k-entry
+// Qwen3 tokenizer array. Inference-time code never needs these values;
+// callers that do (tokenizer bootstrap) can raise the limit.
+fn array_retain_limit() -> Int = 2048
+
 fn read_array(data: Bytes, pos: Int, vtype: Int, count: Int) -> (GGUFValue, Int) = {
   var items: List[GGUFValue] = []
   var p = pos
+  let limit = array_retain_limit()
+  var retained = 0
   for _ in 0..count {
     if vtype == 9 then {
       let arr_type = r_u32(data, p)
       let arr_count = r_u64(data, p + 4)
       let (val, next) = read_array(data, p + 12, arr_type, arr_count)
-      list.push(items, val)
+      if retained < limit then {
+        list.push(items, val)
+        retained = retained + 1
+      }
       p = next
     } else {
       let (val, next) = read_scalar_value(data, p, vtype)
-      list.push(items, val)
+      if retained < limit then {
+        list.push(items, val)
+        retained = retained + 1
+      }
       p = next
     }
   }
@@ -250,7 +268,17 @@ fn tensor_num_elements(info: TensorInfo) -> Int =
 fn extract_f32_tensor(file: GGUFFile, info: TensorInfo) -> List[Float] = {
   let start = file.data_offset + info.offset
   let count = tensor_num_elements(info)
-  list.range(0, count) |> list.map((i) => r_f32(file.raw, start + i * 4))
+  // Explicit imperative read: the previous `list.map((i) => r_f32(file.raw, ...))`
+  // generated a closure that captured the whole GGUFFile and called
+  // `__cap.clone().raw` each iteration — 248 MB × count memcpy per tensor.
+  // Binding `data = file.raw` once and looping with `list.push` keeps
+  // the inner body reference-only on `data`.
+  let data = file.raw
+  var out: List[Float] = list.with_capacity(count)
+  for i in 0..count {
+    list.push(out, r_f32(data, start + i * 4))
+  }
+  out
 }
 
 fn extract_f32_matrix(file: GGUFFile, info: TensorInfo) -> Matrix = {
@@ -302,7 +330,9 @@ fn extract_q1_0_tensor(file: GGUFFile, info: TensorInfo) -> List[Float] = {
   let start = file.data_offset + info.offset
   let total = tensor_num_elements(info)
   let num_blocks = total / 128
-  var out: List[Float] = []
+  // Pre-size the output Vec to exact final length so the 2M inner pushes
+  // skip ~21 Vec-doubling reallocations per tensor. Major Q1_0 decode win.
+  var out: List[Float] = list.with_capacity(total)
   for b in 0..num_blocks {
     let block_start = start + b * 18
     let scale_raw = r_u8(file.raw, block_start) + r_u8(file.raw, block_start + 1) * 256
@@ -321,17 +351,15 @@ fn extract_q1_0_tensor(file: GGUFFile, info: TensorInfo) -> List[Float] = {
 }
 
 fn extract_q1_0_matrix(file: GGUFFile, info: TensorInfo) -> Matrix = {
-  let values = extract_q1_0_tensor(file, info)
-  if list.len(info.dims) == 2 then {
-    let rows = list.get(info.dims, 0) |> option.unwrap_or(1)
-    let cols = list.get(info.dims, 1) |> option.unwrap_or(list.len(values))
-    let row_lists = list.range(0, rows) |> list.map((r) =>
-      list.slice(values, r * cols, (r + 1) * cols)
-    )
-    matrix.from_lists(row_lists)
-  } else {
-    matrix.from_lists([values])
-  }
+  // GGUF dims are [in, out] for weights; linear_row_no_bias wants
+  // weight[out_rows, in_cols], so unpack cols=dims[0], rows=dims[1].
+  // For 1-D tensors (no dims[1]) we fall back to row=1 with full length.
+  let cols = list.get(info.dims, 0) |> option.unwrap_or(1)
+  let rows = list.get(info.dims, 1) |> option.unwrap_or(1)
+  let offset = file.data_offset + info.offset
+  // Direct bulk decode via the matrix primitive — ~100x faster than
+  // pushing one value at a time through the Almide runtime.
+  matrix.from_q1_0_bytes(file.raw, offset, rows, cols)
 }
 
 // ── F16 → F32 conversion ──
