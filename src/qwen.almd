@@ -1,0 +1,563 @@
+// nn.qwen — Qwen3 decoder-only transformer (Llama-family + QK-norm + GQA)
+//
+// One layer:
+//   h  = x + O( GQA-Attn( RoPE(QKNorm(Q(xn))), RoPE(QKNorm(K(xn))), V(xn) ) )
+//   out = h + Down( SwiGLU(hn) )
+// where xn = rms_norm(x), hn = rms_norm(h). No biases anywhere (Qwen3).
+//
+// RoPE convention: matrix.rope_rotate_at rotates interleaved pairs
+// (x[2i], x[2i+1]). HF Qwen3 uses NeoX pairs (x[j], x[j+half]). The loader
+// (nn.qwen_loader) re-orders Q/K projection output rows and q_norm/k_norm
+// gammas so the interleaved rotation is exactly equivalent — this module
+// assumes weights are already in interleaved layout.
+
+// Self-contained on purpose: importing self.generate currently trips
+// compiler bug #433 (bare cross-module type names in codegen), and the
+// only pieces needed from elsewhere are one-liners (embed = gather_rows,
+// argmax). Re-unify once #433 is fixed.
+
+// ── Model types ──
+
+type QwenConfig = {
+  n_layers: Int,
+  n_heads: Int,     // query heads
+  n_kv_heads: Int,  // key/value heads (GQA: n_kv_heads <= n_heads)
+  head_dim: Int,
+  rope_theta: Float,
+  eps: Float,
+}
+
+type QwenLayer = {
+  attn_norm: List[Float],  // (hidden,)
+  q_norm: List[Float],     // (head_dim,) shared across heads, rope-permuted
+  k_norm: List[Float],     // (head_dim,) shared across heads, rope-permuted
+  wq: Matrix,              // (n_heads * head_dim, hidden), rows rope-permuted
+  wk: Matrix,              // (n_kv_heads * head_dim, hidden), rows rope-permuted
+  wv: Matrix,              // (n_kv_heads * head_dim, hidden)
+  wo: Matrix,              // (hidden, n_heads * head_dim)
+  ffn_norm: List[Float],   // (hidden,)
+  w_gate: Matrix,          // (ffn_hidden, hidden)
+  w_up: Matrix,            // (ffn_hidden, hidden)
+  w_down: Matrix,          // (hidden, ffn_hidden)
+}
+
+type QwenModel = {
+  embedding: Matrix,        // (vocab, hidden) — tied: also the output projection
+  layers: List[QwenLayer],
+  final_norm: List[Float],  // (hidden,)
+  cfg: QwenConfig,
+}
+
+// ── Per-head RMS norm (Qwen3 QK-norm) ──
+//
+// rms_norm over each head's head_dim slice independently, sharing one
+// (head_dim,) gamma across heads. Composed from split/norm/concat until
+// the runtime's per_head_rms_norm helper is exposed as an intrinsic.
+
+fn per_head_norm(m: Matrix, gamma: List[Float], n_heads: Int, eps: Float) -> Matrix =
+  matrix.split_cols_even(m, n_heads)
+    |> list.map((h) => matrix.rms_norm_rows(h, gamma, eps))
+    |> matrix.concat_cols
+
+// ── GQA expansion ──
+//
+// Expand (seq, n_kv * head_dim) K/V to (seq, n_q * head_dim) by repeating
+// each kv head `n_q / n_kv` times consecutively: q-head i reads kv-head
+// i / (n_q / n_kv), matching HF's repeat_kv.
+
+fn expand_kv(m: Matrix, n_kv: Int, n_q: Int) -> Matrix =
+  if n_kv == n_q then m
+  else {
+    let group = n_q / n_kv
+    matrix.split_cols_even(m, n_kv)
+      |> list.flat_map((h) => list.map(list.range(0, group), (_) => h))
+      |> matrix.concat_cols
+  }
+
+// ── One decoder layer ──
+//
+// start_pos: absolute position of row 0 (0 for full-sequence forward;
+// the KV-cache path passes the cache length).
+
+fn qwen_block(x: Matrix, layer: QwenLayer, cfg: QwenConfig, start_pos: Int) -> Matrix = {
+  // Pre-norm attention
+  let xn = matrix.rms_norm_rows(x, layer.attn_norm, cfg.eps)
+  let q = matrix.linear_row_no_bias(xn, layer.wq)
+  let k = matrix.linear_row_no_bias(xn, layer.wk)
+  let v = matrix.linear_row_no_bias(xn, layer.wv)
+
+  let qn = per_head_norm(q, layer.q_norm, cfg.n_heads, cfg.eps)
+  let kn = per_head_norm(k, layer.k_norm, cfg.n_kv_heads, cfg.eps)
+
+  let qr = matrix.rope_rotate_at(qn, cfg.n_heads, cfg.head_dim, cfg.rope_theta, start_pos)
+  let kr = matrix.rope_rotate_at(kn, cfg.n_kv_heads, cfg.head_dim, cfg.rope_theta, start_pos)
+
+  let k_full = expand_kv(kr, cfg.n_kv_heads, cfg.n_heads)
+  let v_full = expand_kv(v, cfg.n_kv_heads, cfg.n_heads)
+
+  let attended = matrix.masked_multi_head_attention(qr, k_full, v_full, cfg.n_heads)
+  let h = matrix.add(x, matrix.linear_row_no_bias(attended, layer.wo))
+
+  // Pre-norm SwiGLU FFN
+  let hn = matrix.rms_norm_rows(h, layer.ffn_norm, cfg.eps)
+  let ffn_out = matrix.linear_row_no_bias(matrix.swiglu_gate(hn, layer.w_gate, layer.w_up), layer.w_down)
+  matrix.add(h, ffn_out)
+}
+
+// ── Full forward: tokens → final hidden states ──
+
+fn qwen_forward(tokens: List[Int], model: QwenModel) -> Matrix = {
+  let x = matrix.gather_rows(model.embedding, tokens)
+  let hidden = list.fold(model.layers, x, (h, layer) => qwen_block(h, layer, model.cfg, 0))
+  matrix.rms_norm_rows(hidden, model.final_norm, model.cfg.eps)
+}
+
+// ── Logits ──
+//
+// Tied embeddings: logits = hidden @ embedding^T, one fused GEMM.
+// (seq, hidden) → (seq, vocab). For parity checks use all positions;
+// generation only needs the last row.
+
+fn logits(hidden: Matrix, embedding: Matrix) -> Matrix =
+  matrix.linear_row_no_bias(hidden, embedding)
+
+fn logits_last(hidden: Matrix, embedding: Matrix) -> List[Float] = {
+  let n = matrix.rows(hidden)
+  let last = matrix.slice_rows(hidden, n - 1, n)
+  let rows = matrix.to_lists(logits(last, embedding))
+  list.get(rows, 0) ?? []
+}
+
+// ── KV-cached path (L2) ──
+//
+// The cache stores, per layer, the ROPE-rotated K and the raw V for every
+// past position: appends are O(1) per step and the rotation never has to be
+// redone (rope_rotate_at writes absolute positions). Decode steps run the
+// projections on the single new row only and attend over the full cache —
+// no causal mask needed because the one query row is the last position.
+// Prefill is the existing full-sequence block, extended to also return its
+// K/V so the first decode step has a cache to append to.
+
+type QwenCache = { ks: List[Matrix], vs: List[Matrix] }
+
+// Shared block body. `mask` selects prefill (causal over the full square)
+// vs decode (single query row attends to everything — no mask).
+fn qwen_block_kv(
+  x: Matrix, layer: QwenLayer, cfg: QwenConfig,
+  k_cache: Matrix, v_cache: Matrix, start_pos: Int, causal: Bool,
+) -> (Matrix, Matrix, Matrix) = {
+  let xn = matrix.rms_norm_rows(x, layer.attn_norm, cfg.eps)
+  let q = matrix.linear_row_no_bias(xn, layer.wq)
+  let k = matrix.linear_row_no_bias(xn, layer.wk)
+  let v = matrix.linear_row_no_bias(xn, layer.wv)
+
+  let qn = per_head_norm(q, layer.q_norm, cfg.n_heads, cfg.eps)
+  let kn = per_head_norm(k, layer.k_norm, cfg.n_kv_heads, cfg.eps)
+
+  let qr = matrix.rope_rotate_at(qn, cfg.n_heads, cfg.head_dim, cfg.rope_theta, start_pos)
+  let kr = matrix.rope_rotate_at(kn, cfg.n_kv_heads, cfg.head_dim, cfg.rope_theta, start_pos)
+
+  let k_all = if matrix.rows(k_cache) == 0 then kr else matrix.append_rows(k_cache, kr)
+  let v_all = if matrix.rows(v_cache) == 0 then v else matrix.append_rows(v_cache, v)
+
+  let k_full = expand_kv(k_all, cfg.n_kv_heads, cfg.n_heads)
+  let v_full = expand_kv(v_all, cfg.n_kv_heads, cfg.n_heads)
+  let attended =
+    if causal then matrix.masked_multi_head_attention(qr, k_full, v_full, cfg.n_heads)
+    else matrix.multi_head_attention(qr, k_full, v_full, cfg.n_heads)
+  let h = matrix.add(x, matrix.linear_row_no_bias(attended, layer.wo))
+
+  let hn = matrix.rms_norm_rows(h, layer.ffn_norm, cfg.eps)
+  let ffn_out = matrix.linear_row_no_bias(matrix.swiglu_gate(hn, layer.w_gate, layer.w_up), layer.w_down)
+  (matrix.add(h, ffn_out), k_all, v_all)
+}
+
+// Full-prompt prefill: returns final hidden states + the primed cache.
+fn qwen_prefill(tokens: List[Int], model: QwenModel) -> (Matrix, QwenCache) = {
+  let x0 = matrix.gather_rows(model.embedding, tokens)
+  let empty = matrix.zeros(0, 1)
+  let (h, ks, vs) = list.fold(model.layers, (x0, [], []), (acc, layer) => {
+    let (x, ks, vs) = acc
+    let (x2, k2, v2) = qwen_block_kv(x, layer, model.cfg, empty, empty, 0, true)
+    (x2, ks + [k2], vs + [v2])
+  })
+  (matrix.rms_norm_rows(h, model.final_norm, model.cfg.eps), { ks: ks, vs: vs })
+}
+
+// One generation step: project the single new token, append to the cache,
+// return last-position logits and the grown cache. `pos` is the token's
+// absolute position (= number of tokens already in the cache).
+fn qwen_decode_step(token: Int, pos: Int, model: QwenModel, cache: QwenCache) -> (List[Float], QwenCache) = {
+  let x0 = matrix.gather_rows(model.embedding, [token])
+  let zipped = list.zip(model.layers, list.zip(cache.ks, cache.vs))
+  let (h, ks, vs) = list.fold(zipped, (x0, [], []), (acc, entry) => {
+    let (x, ks, vs) = acc
+    let (layer, kv) = entry
+    let (k_c, v_c) = kv
+    let (x2, k2, v2) = qwen_block_kv(x, layer, model.cfg, k_c, v_c, pos, false)
+    (x2, ks + [k2], vs + [v2])
+  })
+  let hidden = matrix.rms_norm_rows(h, model.final_norm, model.cfg.eps)
+  (logits_last(hidden, model.embedding), { ks: ks, vs: vs })
+}
+
+fn cached_steps(tokens: List[Int], model: QwenModel, cache: QwenCache, last: Int, eos_id: Int, remaining: Int) -> List[Int] =
+  if remaining <= 0 then tokens
+  else {
+    let (lg, cache2) = qwen_decode_step(last, list.len(tokens) - 1, model, cache)
+    let next = argmax(lg)
+    if next == eos_id then tokens + [next]
+    else cached_steps(tokens + [next], model, cache2, next, eos_id, remaining - 1)
+  }
+
+fn greedy_generate_cached(tokens: List[Int], model: QwenModel, eos_id: Int, max_new: Int) -> List[Int] = {
+  let (hidden, cache) = qwen_prefill(tokens, model)
+  let first = argmax(logits_last(hidden, model.embedding))
+  if first == eos_id or max_new <= 0 then tokens + [first]
+  else cached_steps(tokens + [first], model, cache, first, eos_id, max_new - 1)
+}
+
+// ── f32 bytes-resident path (L2-2) ──
+//
+// The model never exists as a record: weights stay in the raw GGUF buffer
+// and every step passes `raw: Bytes` (by-ref in codegen) plus flat offset
+// lists into the fused per-layer intrinsic. This eliminates the ~13 GB of
+// record deep-clones per generated token that the f64 path pays. Loops are
+// var/while on purpose — a fold lambda capturing `raw` would clone the
+// whole buffer at closure creation.
+
+type QwenF32Cfg = {
+  n_layers: Int,
+  n_heads: Int,
+  n_kv_heads: Int,
+  head_dim: Int,
+  ffn_hidden: Int,
+  hidden: Int,
+  vocab: Int,
+  rope_theta: Float,
+  eps: Float,
+  emb_off: Int,
+  out_norm_off: Int,
+  eos_id: Int,
+}
+
+// Run all layers over `x0`. Empty cache lists = prefill from scratch.
+fn forward_layers_f32(
+  x0: Matrix, raw: Bytes,
+  gammas: List[List[Int]], weights: List[List[Int]],
+  cache_ks: List[Matrix], cache_vs: List[Matrix],
+  cfg: QwenF32Cfg, pos: Int,
+) -> (Matrix, List[Matrix], List[Matrix]) = {
+  var x = x0
+  var ks: List[Matrix] = []
+  var vs: List[Matrix] = []
+  var i = 0
+  while i < cfg.n_layers {
+    let g = list.get(gammas, i) ?? []
+    let w = list.get(weights, i) ?? []
+    let k_c = list.get(cache_ks, i) ?? matrix.zeros(0, 1)
+    let v_c = list.get(cache_vs, i) ?? matrix.zeros(0, 1)
+    let (x2, k2, v2) = matrix.qwen3_block_f32_kv(
+      x, k_c, v_c, raw, g, w, pos,
+      cfg.n_heads, cfg.n_kv_heads, cfg.head_dim, cfg.ffn_hidden,
+      cfg.rope_theta, cfg.eps)
+    x = x2
+    ks = ks + [k2]
+    vs = vs + [v2]
+    i = i + 1
+  }
+  (x, ks, vs)
+}
+
+fn logits_last_f32(hidden: Matrix, raw: Bytes, cfg: QwenF32Cfg) -> List[Float] = {
+  let n = matrix.rows(hidden)
+  let last = matrix.slice_rows(hidden, n - 1, n)
+  let lg = matrix.linear_f32_row_no_bias(last, raw, cfg.emb_off, cfg.vocab, cfg.hidden)
+  let rows = matrix.to_lists(lg)
+  list.get(rows, 0) ?? []
+}
+
+fn prefill_f32(
+  tokens: List[Int], raw: Bytes,
+  gammas: List[List[Int]], weights: List[List[Int]], cfg: QwenF32Cfg,
+) -> (Matrix, List[Matrix], List[Matrix]) = {
+  let x0 = matrix.select_rows_f32(raw, cfg.emb_off, cfg.hidden, tokens)
+  let (h, ks, vs) = forward_layers_f32(x0, raw, gammas, weights, [], [], cfg, 0)
+  let gamma_out = bytes.read_f32_le_array(raw, cfg.out_norm_off, cfg.hidden)
+  (matrix.rms_norm_rows(h, gamma_out, cfg.eps), ks, vs)
+}
+
+fn decode_step_f32(
+  token: Int, pos: Int, raw: Bytes,
+  gammas: List[List[Int]], weights: List[List[Int]],
+  cache_ks: List[Matrix], cache_vs: List[Matrix], cfg: QwenF32Cfg,
+) -> (List[Float], List[Matrix], List[Matrix]) = {
+  let x0 = matrix.select_rows_f32(raw, cfg.emb_off, cfg.hidden, [token])
+  let (h, ks, vs) = forward_layers_f32(x0, raw, gammas, weights, cache_ks, cache_vs, cfg, pos)
+  let gamma_out = bytes.read_f32_le_array(raw, cfg.out_norm_off, cfg.hidden)
+  let hidden = matrix.rms_norm_rows(h, gamma_out, cfg.eps)
+  (logits_last_f32(hidden, raw, cfg), ks, vs)
+}
+
+fn greedy_generate_f32(
+  prompt: List[Int], raw: Bytes,
+  gammas: List[List[Int]], weights: List[List[Int]],
+  cfg: QwenF32Cfg, max_new: Int,
+) -> List[Int] = {
+  let (hidden, ks0, vs0) = prefill_f32(prompt, raw, gammas, weights, cfg)
+  var out = prompt + [argmax(logits_last_f32(hidden, raw, cfg))]
+  var ks = ks0
+  var vs = vs0
+  var remaining = max_new - 1
+  var last = list.get(out, list.len(out) - 1) ?? 0
+  while remaining > 0 and last != cfg.eos_id {
+    let (lg, ks2, vs2) = decode_step_f32(last, list.len(out) - 1, raw, gammas, weights, ks, vs, cfg)
+    last = argmax(lg)
+    out = out + [last]
+    ks = ks2
+    vs = vs2
+    remaining = remaining - 1
+  }
+  out
+}
+
+// ── argmax (local copy — see #433 note above) ──
+
+fn argmax(values: List[Float]) -> Int =
+  list.enumerate(values)
+    |> list.fold((0, -1.0e308), (acc, entry) => {
+      let (best_i, best_v) = acc
+      let (i, v) = entry
+      if v > best_v then (i, v) else (best_i, best_v)
+    })
+    |> ((pair: (Int, Float)) => pair.0)
+
+// ── Greedy generation (L1: full recompute per step; KV cache lands in L2) ──
+
+fn greedy_step(tokens: List[Int], model: QwenModel, eos_id: Int, remaining: Int) -> List[Int] =
+  if remaining <= 0 then tokens
+  else {
+    let hidden = qwen_forward(tokens, model)
+    let next = argmax(logits_last(hidden, model.embedding))
+    if next == eos_id then tokens + [next]
+    else greedy_step(tokens + [next], model, eos_id, remaining - 1)
+  }
+
+fn greedy_generate(tokens: List[Int], model: QwenModel, eos_id: Int, max_new: Int) -> List[Int] =
+  greedy_step(tokens, model, eos_id, max_new)
+
+// ── Test helpers ──
+
+fn approx(a: Float, b: Float) -> Bool =
+  float.abs(a - b) < 0.001
+
+fn zeros_list(n: Int) -> List[Float] =
+  list.repeat(0.0, n)
+
+fn ones_list(n: Int) -> List[Float] =
+  list.repeat(1.0, n)
+
+fn make_zero_layer(hidden: Int, cfg: QwenConfig, ffn_hidden: Int) -> QwenLayer = {
+  attn_norm: ones_list(hidden),
+  q_norm: ones_list(cfg.head_dim),
+  k_norm: ones_list(cfg.head_dim),
+  wq: matrix.zeros(cfg.n_heads * cfg.head_dim, hidden),
+  wk: matrix.zeros(cfg.n_kv_heads * cfg.head_dim, hidden),
+  wv: matrix.zeros(cfg.n_kv_heads * cfg.head_dim, hidden),
+  wo: matrix.zeros(hidden, cfg.n_heads * cfg.head_dim),
+  ffn_norm: ones_list(hidden),
+  w_gate: matrix.zeros(ffn_hidden, hidden),
+  w_up: matrix.zeros(ffn_hidden, hidden),
+  w_down: matrix.zeros(hidden, ffn_hidden),
+}
+
+// ── Tests ──
+
+test "per_head_norm normalizes each head independently" {
+  // One row, 2 heads of dim 2: [3,4 | 6,8]. Both heads are multiples of
+  // [3,4], so both normalize to [3,4]/rms([3,4]) = [0.84853, 1.13137].
+  // gamma [1, 2] scales the second column of each head.
+  let m = matrix.from_lists([[3.0, 4.0, 6.0, 8.0]])
+  let out = per_head_norm(m, [1.0, 2.0], 2, 0.000001)
+  assert(approx(matrix.get(out, 0, 0), 0.84853), "head 1 col 0")
+  assert(approx(matrix.get(out, 0, 1), 2.26274), "head 1 col 1 (gamma 2)")
+  assert(approx(matrix.get(out, 0, 2), 0.84853), "head 2 col 0")
+  assert(approx(matrix.get(out, 0, 3), 2.26274), "head 2 col 1 (gamma 2)")
+}
+
+test "per_head_norm differs from full-row rms_norm" {
+  // Heads with very different magnitudes: per-head norm rescales each to
+  // unit rms; a full-row norm would not.
+  let m = matrix.from_lists([[1.0, 0.0, 100.0, 0.0]])
+  let out = per_head_norm(m, [1.0, 1.0], 2, 0.000001)
+  // Each head [x, 0] has rms = |x|/sqrt(2) → normalized first col = sqrt(2)
+  assert(approx(matrix.get(out, 0, 0), 1.41421), "head 1 normalized")
+  assert(approx(matrix.get(out, 0, 2), 1.41421), "head 2 normalized")
+}
+
+test "expand_kv repeats each kv head group times" {
+  // n_kv=2 (heads [1,2] and [3,4]), n_q=4 → [1,2, 1,2, 3,4, 3,4]
+  let m = matrix.from_lists([[1.0, 2.0, 3.0, 4.0]])
+  let out = expand_kv(m, 2, 4)
+  assert_eq(matrix.cols(out), 8)
+  assert(approx(matrix.get(out, 0, 0), 1.0), "kv0 copy 1")
+  assert(approx(matrix.get(out, 0, 2), 1.0), "kv0 copy 2")
+  assert(approx(matrix.get(out, 0, 4), 3.0), "kv1 copy 1")
+  assert(approx(matrix.get(out, 0, 6), 3.0), "kv1 copy 2")
+}
+
+test "expand_kv is identity when n_kv == n_q" {
+  let m = matrix.from_lists([[1.0, 2.0]])
+  let out = expand_kv(m, 1, 1)
+  assert_eq(matrix.cols(out), 2)
+  assert(approx(matrix.get(out, 0, 1), 2.0))
+}
+
+test "qwen_block identity with zero weights" {
+  // Zero projections → attention and FFN outputs are zero → residuals
+  // carry the input through unchanged.
+  let hidden = 8
+  let cfg = { n_layers: 1, n_heads: 2, n_kv_heads: 1, head_dim: 4, rope_theta: 10000.0, eps: 0.000001 }
+  let layer = make_zero_layer(hidden, cfg, 16)
+  let x = matrix.from_lists([
+    [1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0],
+    [0.5, 1.5, 2.5, 3.5, 4.5, 5.5, 6.5, 7.5],
+  ])
+  let out = qwen_block(x, layer, cfg, 0)
+  assert_eq(matrix.rows(out), 2)
+  assert_eq(matrix.cols(out), hidden)
+  assert(approx(matrix.get(out, 0, 0), 1.0), "row 0 passes through")
+  assert(approx(matrix.get(out, 1, 7), 7.5), "row 1 passes through")
+}
+
+test "qwen_block GQA shape" {
+  // hidden=8, 2 q-heads × head_dim 4 = q dim 8, 1 kv head → k/v dim 4.
+  let hidden = 8
+  let cfg = { n_layers: 1, n_heads: 2, n_kv_heads: 1, head_dim: 4, rope_theta: 10000.0, eps: 0.000001 }
+  let layer = {
+    attn_norm: ones_list(hidden),
+    q_norm: ones_list(cfg.head_dim),
+    k_norm: ones_list(cfg.head_dim),
+    wq: matrix.ones(8, hidden),
+    wk: matrix.ones(4, hidden),
+    wv: matrix.ones(4, hidden),
+    wo: matrix.ones(hidden, 8),
+    ffn_norm: ones_list(hidden),
+    w_gate: matrix.zeros(16, hidden),
+    w_up: matrix.zeros(16, hidden),
+    w_down: matrix.zeros(hidden, 16),
+  }
+  let x = matrix.from_lists([
+    [0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8],
+    [0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9],
+    [0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0],
+  ])
+  let out = qwen_block(x, layer, cfg, 0)
+  assert_eq(matrix.rows(out), 3)
+  assert_eq(matrix.cols(out), hidden)
+}
+
+test "qwen_forward shape and final norm" {
+  // Zero-weight single layer → forward = rms_norm(embedding rows).
+  // Embedding row 0 is constant 0.5 → normalized to ≈ 1.0 everywhere.
+  let hidden = 8
+  let cfg = { n_layers: 1, n_heads: 2, n_kv_heads: 1, head_dim: 4, rope_theta: 10000.0, eps: 0.000001 }
+  let layer = make_zero_layer(hidden, cfg, 16)
+  let emb = matrix.from_lists([
+    list.repeat(0.5, hidden),
+    list.repeat(2.0, hidden),
+    list.repeat(-1.0, hidden),
+  ])
+  let model = { embedding: emb, layers: [layer], final_norm: ones_list(hidden), cfg: cfg }
+  let out = qwen_forward([0, 2, 1], model)
+  assert_eq(matrix.rows(out), 3)
+  assert_eq(matrix.cols(out), hidden)
+  assert(approx(matrix.get(out, 0, 0), 1.0), "constant 0.5 row → rms-normalized to 1")
+  assert(approx(matrix.get(out, 1, 0), -1.0), "constant -1 row → rms-normalized to -1")
+}
+
+// Deterministic pseudo-random weights — non-trivial values so the cached
+// and uncached paths can't agree by accident.
+fn test_weight(rows: Int, cols: Int, seed: Int) -> Matrix =
+  matrix.from_lists(list.range(0, rows) |> list.map((r) =>
+    list.range(0, cols) |> list.map((c) =>
+      math.sin(int.to_float(seed * 31 + r * 7 + c * 3)) * 0.1)))
+
+fn test_gamma(n: Int, seed: Int) -> List[Float] =
+  list.range(0, n) |> list.map((j) => 1.0 + math.sin(int.to_float(seed + j)) * 0.05)
+
+fn make_test_layer(hidden: Int, cfg: QwenConfig, ffn_hidden: Int, seed: Int) -> QwenLayer = {
+  attn_norm: test_gamma(hidden, seed),
+  q_norm: test_gamma(cfg.head_dim, seed + 1),
+  k_norm: test_gamma(cfg.head_dim, seed + 2),
+  wq: test_weight(cfg.n_heads * cfg.head_dim, hidden, seed + 3),
+  wk: test_weight(cfg.n_kv_heads * cfg.head_dim, hidden, seed + 4),
+  wv: test_weight(cfg.n_kv_heads * cfg.head_dim, hidden, seed + 5),
+  wo: test_weight(hidden, cfg.n_heads * cfg.head_dim, seed + 6),
+  ffn_norm: test_gamma(hidden, seed + 7),
+  w_gate: test_weight(ffn_hidden, hidden, seed + 8),
+  w_up: test_weight(ffn_hidden, hidden, seed + 9),
+  w_down: test_weight(hidden, ffn_hidden, seed + 10),
+}
+
+fn make_test_model() -> QwenModel = {
+  let cfg = { n_layers: 2, n_heads: 2, n_kv_heads: 1, head_dim: 4, rope_theta: 10000.0, eps: 0.000001 }
+  {
+    embedding: test_weight(6, 8, 99),
+    layers: [make_test_layer(8, cfg, 16, 7), make_test_layer(8, cfg, 16, 207)],
+    final_norm: test_gamma(8, 55),
+    cfg: cfg,
+  }
+}
+
+test "prefill logits match the uncached forward" {
+  let model = make_test_model()
+  let tokens = [1, 2, 3, 0, 4]
+  let lg_full = logits_last(qwen_forward(tokens, model), model.embedding)
+  let (hidden, _) = qwen_prefill(tokens, model)
+  let lg_pre = logits_last(hidden, model.embedding)
+  assert_eq(list.len(lg_pre), 6)
+  let pairs = list.zip(lg_full, lg_pre)
+  assert(pairs |> list.all((p) => float.abs(p.0 - p.1) < 0.000001), "prefill == forward")
+}
+
+test "cached greedy equals uncached greedy" {
+  let model = make_test_model()
+  let prompt = [1, 2, 3]
+  let plain = greedy_generate(prompt, model, 99, 5)
+  let cached = greedy_generate_cached(prompt, model, 99, 5)
+  assert_eq(list.len(cached), list.len(plain))
+  let pairs = list.zip(plain, cached)
+  assert(pairs |> list.all((p) => p.0 == p.1), "token sequences identical")
+}
+
+test "decode step logits match uncached forward at that position" {
+  let model = make_test_model()
+  let prompt = [2, 5, 1]
+  // Uncached: run the full sequence [2,5,1,4] and read the last logits.
+  let lg_full = logits_last(qwen_forward(prompt + [4], model), model.embedding)
+  // Cached: prefill the prompt, then decode token 4 at position 3.
+  let (_, cache) = qwen_prefill(prompt, model)
+  let (lg_step, _) = qwen_decode_step(4, 3, model, cache)
+  let pairs = list.zip(lg_full, lg_step)
+  assert(pairs |> list.all((p) => float.abs(p.0 - p.1) < 0.000001), "decode step == full forward")
+}
+
+test "logits computes hidden @ embedding^T" {
+  let hidden = matrix.from_lists([[1.0, 2.0]])
+  let emb = matrix.from_lists([[1.0, 0.0], [0.0, 1.0], [1.0, 1.0]])
+  let lg = logits(hidden, emb)
+  assert_eq(matrix.cols(lg), 3)
+  assert(approx(matrix.get(lg, 0, 0), 1.0))
+  assert(approx(matrix.get(lg, 0, 1), 2.0))
+  assert(approx(matrix.get(lg, 0, 2), 3.0))
+}
+
+test "logits_last takes the final position" {
+  let hidden = matrix.from_lists([[9.0, 9.0], [1.0, 2.0]])
+  let emb = matrix.from_lists([[1.0, 0.0], [0.0, 1.0], [1.0, 1.0]])
+  let lg = logits_last(hidden, emb)
+  assert_eq(list.len(lg), 3)
+  assert(approx(list.get(lg, 0) ?? -999.0, 1.0))
+  assert(approx(list.get(lg, 2) ?? -999.0, 3.0))
+}

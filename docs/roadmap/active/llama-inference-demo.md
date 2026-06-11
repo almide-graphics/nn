@@ -1,94 +1,109 @@
-<!-- description: End-to-end Llama inference demo on Almide, from 1-block to full token generation -->
-# Llama Inference Demo
+<!-- description: End-to-end Qwen3 inference on Almide — L1 = logits parity vs HF fp32, then KV-cache + Q1_0 + WebGPU -->
+# LLM Inference Demo (Qwen3)
 
-Almide で Llama / Mistral 系 decoder-only モデルを端から端まで動かし、「LLM が Almide 上で動く」を旗として示す arc。Matrix perf arc (fusion stack + NumPy 勝ち) の投資回収段階で、Mission *"the language LLMs can write most accurately"* に直接効く成果物。
+Almide で decoder-only LLM を端から端まで動かし、「LLM が Almide 上で動く」を旗として示す arc。
+Matrix perf arc (fusion stack + NumPy 勝ち) の投資回収段階で、Mission *"the language LLMs can write most accurately"* に直接効く成果物。
 
-## 現在地 (2026-04-19)
+長期の出口は2つ:
+1. **ローカルAIキャラ体験**: Whisper(済) → LLM(この arc) → nendo VRM → ceangal UI、全部ブラウザ
+2. **Q1_0 (1-bit) × WebGPU**: bitnet.cpp が取っていない空白地帯
 
-- Matrix perf stack: 3²〜1024² 全 shape で NumPy 勝ち、Transformer / Llama 1-block bench も NumPy 超え (`project_matrix_perf_numpy_win.md`)
-- Llama 1-block を Almide で組んだ spec + example が merged (PR #218)
-  - `spec/stdlib/matrix_llama_block_test.almd` — shape / uniform / residual 3 test
-  - `examples/llama_block.almd` — 1 layer を 1 fn に凝縮した demo
-  - 使用 intrinsic: `rms_norm_rows`, `linear_row_no_bias`, `masked_multi_head_attention`, `swiglu_gate`, `matrix.add`
-- egg saturation が全 fusion を single driver で駆動 (imperative `MatrixFusionPass` / `StreamFusionPass` は廃止済、`project_mlir_egg_stage1_step2.md`)
+## 現在地 (2026-06-11 更新)
 
-## Stage 計画
+**ランタイム層はこの文書の旧 Stage 計画を追い越して実装済み。** `runtime/rs/src/matrix.rs`:
 
-### Stage 0 — 1-block demo 済 ✅
+- `rms_norm_rows` / `swiglu_gate` / `silu_mul` — Llama 系プリミティブ一式
+- `rope_rotate` / `rope_rotate_at(start_pos)` — **KVキャッシュ対応 API 形状で実装済み**
+- `append_rows` — KVキャッシュ追記
+- `qwen3_block_q1_0_kv` — Q1_0 量子化 + KVキャッシュ込みの Qwen3 ブロック融合呼び出し
+- **Q1_0 = 自作 1-bit 量子化**(128要素ブロック、符号16バイト+scale、±scale)。
+  `linear_q1_0_row_no_bias` は packed GGUF バイト列から直接 matmul(デコード割当なし)
+- `per_head_rms_norm`(QK-norm) / `repeat_kv`(GQA) は **Rust 内部ヘルパーであり intrinsic 未公開**
+  → nn 側は `split_cols_even` + `rms_norm_rows` + `concat_cols` で合成する(L1)。公開は perf 段階で検討
 
-PR #218 で完了。
+nn 側の資産:
+- `gguf.almd` は汎用 GGUF パーサ(f32/f16)。ただし `extract_f32_matrix` は whisper 形式前提
+  (dims[0]=rows)かつ要素単位読みで遅い。LLM ローダーは `from_bytes_f32_le/f16_le` +
+  llama.cpp 規約(ne[0]=in, ne[1]=out → rows=dims[1], cols=dims[0])で別途実装する
+- Llama 1-block: almide PR #218 (`spec/stdlib/matrix_llama_block_test.almd`, `examples/llama_block.almd`)
 
-### Stage 1 — N-block chain
+## ⚠️ コンパイラ制約と修正状況 (2026-06-12 深夜更新)
 
-Llama layer を for-loop で重ねる。weight を per-layer の List で持つ形。
+3つの独立したコンパイラ問題を特定。**全リリース版(〜v0.27.3)はこのパッケージを
+ネイティブでビルドできない**。修正済みワークツリーのバイナリを使うこと:
+`/tmp/almide-latest/target/release/almide` (branch `fix-bare-type-refs-in-lambdas`,
+commit 92dd805b。codegen 107/107 + spec 265/265 通過)
 
-- [ ] `fn llama_forward(x, weights: List[LayerWeights], n_layers, ...)` 的な shape で書ける
-- [ ] spec: N=2/3 で shape 収束を検証
-- [ ] example: `examples/llama_forward.almd` で N-layer 出力
+1. **#433系: 裸の型名** (v0.26.16〜、修正済み): エイリアスimport型注釈 /
+   `Option[自モジュール型]` 返却 / 自モジュールvariant / **ラムダparam・return型** /
+   `Call.type_args` / `RcWrap.cast_ty` が正規化されず codegen に到達。
+   修正: 入口での repair + リンク mangle の完備化 + 検証器の網羅。
+   詳細: ワークツリーの `ISSUE_DRAFT_bare_type_names.md`
+2. **records-of-Matrix がネイティブで不能** (多バージョン、修正済み):
+   `AlmideRepr for AlmideMatrix` 欠落。`almide test` が WASM 優先なので発覚せず
+3. **burn スプライスのマーカー腐敗** (flat移行で発生、ローカル回避のみ):
+   `replace_matrix_runtime` の検出マーカーが flat-struct 移行後に kernel bridge の
+   別の行へ誤マッチ → HEAD の全ネイティブ matrix ビルド破壊。本修正は flat 移行
+   作業の領分(回避: スプライス skip)
 
-### Stage 2 — NumPy bench 更新 (1-block + N-block)
+パフォーマンス注意: 値セマンティクスのクローンが支配的(実測: 実行時間の84%が
+memmove)。fold クロージャが Bytes を掴むと引数が by-value に降格して 2.4GB/call。
+L2 の最優先 perf ターゲット(Matrix/Bytes の RcCow 化 or borrow 推定の強化)。
 
-bench harness の所在を先に再確認 (main repo / 別リポ / local スクリプト)。
+## 確定事項
 
-- [ ] `project_matrix_perf_numpy_win.md` の 1-block 数値を egg flip 後の現状で refresh
-- [ ] N-block (N=4, 8, 12) での数値追加
-- [ ] 結果を roadmap 完了セクション or 公開できる README に反映
+- **被験体: Qwen3-0.6B**(hidden 1024 / 28 layers / 16 q-heads / 8 kv-heads / head_dim 128 /
+  QK-norm / バイアスなし / tied embeddings / byte-level BPE / rope_theta 1e6 / rms_eps 1e-6)。
+  ランタイム部品が Qwen3 の形をしている(QK-norm 等)。SentencePiece/protobuf 作業は不要になった
+- **RoPE 規約**: `rope_rotate_at` は interleaved(GPT-J)方式 — (x[2i], x[2i+1]) 回転。
+  HF Qwen3 は NeoX(rotate_half)方式。**ローダーで Q/K 重み行と q_norm/k_norm gamma を
+  head 内 [j, j+half] → [2j, 2j+1] に並べ替えて吸収する**(q·k 内積はヘッド内同一置換に不変)
+- **L1 合格基準: HF transformers fp32 と logits top-1 一致 ≥99% / 相対誤差 <1e-3**
+  (固定トークンID列 20本、tokenizer はクリティカルパス外)。parity は f32 GGUF で取る
+- Q1_0 融合パス(`qwen3_block_q1_0_kv`)は f32 で正解確立後の差別化レイヤー
 
-### Stage 3 — Weight loader
+## Stage 計画 (改訂)
 
-既存 `matrix.from_bytes_f32_le` / `from_bytes_f16_le` / `from_bytes_f64_le` を活用。
+### L1 — f32 正解パス (logits parity) ← いまここ
 
-- [ ] toy weight file (f32 raw) から matrix を load する example
-- [ ] safetensors reader: header JSON parse + tensor offset 解決 (stdlib json を使う)
-- [ ] gguf reader (optional、Llama.cpp 互換): Mistral などはこちら
-- [ ] Llama 7B / TinyLlama 1.1B の weight file を実際に load
+- [ ] `src/qwen.almd`: QwenLayer/QwenConfig 型、qwen_block(rms_norm → QKV → per-head QK-norm →
+      rope_rotate_at → GQA expand → masked MHA → o_proj → 残差 → rms_norm → swiglu_gate → 残差)、
+      qwen_forward、単体テスト
+- [ ] `src/generate.almd`: `project()` を dot_row ループ → `linear_row_no_bias` 1 呼び出しに
+      (Qwen vocab 151,936 で 15万 native call/step になるため。Whisper も共用で速くなる)
+- [ ] `src/qwen_loader.almd`: GGUF → QwenModel。テンソル名マップ、メタデータ、RoPE 並べ替え
+- [ ] `tools/dump_logits.py` + `examples/_parity_qwen3.almd` + 比較器
+- [ ] greedy E2E (ID列→ID列、HF と 64 トークン照合はソフト基準)
 
-### Stage 4 — Tokenizer (BPE)
+### L2 — 速さの土台
 
-Llama / Mistral は SentencePiece BPE。tokenizer.model から vocab + merge rule を読み込み、prompt → token ID sequence に。
+- [ ] KVキャッシュ配線 (`rope_rotate_at` + `append_rows` は準備済み。attention 側 API 変更)
+- [ ] サンプリング: top-k / top-p / temperature
+- [ ] tokenizer: GGUF メタデータ(tokenizer.ggml.tokens/merges)から byte-BPE、ChatML テンプレート
+- [ ] ストリーミングコールバック (almide-wasm-bindgen 経由)
 
-- [ ] SentencePiece model format parser (protobuf)
-- [ ] BPE encode / decode
-- [ ] 英語プロンプトの正確な tokenize
-- [ ] special tokens (`<s>`, `</s>`, `<|user|>` など) 対応
+### L3 — WebGPU
 
-### Stage 5 — Inference loop
+- [ ] WGSL GEMV/GEMM カーネル (snaidhm の tile dispatch 基盤と合流、`@gpu fn` 計画と整合)
+- [ ] ブラウザで 0.6B が 30 tok/s 級
 
-- [ ] KV-cache (layer ごとに `[seq, d_head]` を追記で保持)
-- [ ] causal mask 適用 (既存 `masked_multi_head_attention` で取れているか再確認)
-- [ ] sampling: greedy / top-k / top-p / temperature
-- [ ] token generation ループ: prompt → N token 生成 → decode
-- [ ] `almide run examples/llama_chat.almd "What is Almide?"` で応答が出る
+### L4 — Q1_0 差別化
 
-### Stage 6 — 公開資料
+- [ ] `qwen3_block_q1_0_kv` パスの精度評価 (BitNet b1.58 系チェックポイント)
+- [ ] WebGPU 版 Q1_0 カーネル — bitnet.cpp(CPU専用)に対する空白地帯
 
-- [ ] README.md に「Llama on Almide」セクション
-- [ ] blog post 下書き (数値 + demo コード)
-- [ ] Dojo の task bank に Llama 関連タスク (inference を LLM に書かせる)
+### L5 — 公開
 
-## 規模感
-
-Stage ごとの見積:
-
-| Stage | 想定 session 数 | 代表工数 |
-|---|---|---|
-| 1: N-block chain | 1 | fn refactor + spec |
-| 2: bench 更新 | 1 | harness refresh |
-| 3: weight loader | 2-3 | safetensors parser (JSON + binary) |
-| 4: tokenizer | 2-3 | BPE + protobuf |
-| 5: inference loop | 2-3 | KV-cache + sampling |
-| 6: 公開資料 | 1-2 | 編集作業 |
-
-合計 **9-13 session** / 2-3 ヶ月。
+- [ ] README「LLM on Almide」、ブラウザデモ公開 URL、再現ベンチ
+- [ ] ローカルAIキャラデモ統合 (Whisper + LLM + nendo + ceangal)
 
 ## 非ゴール
 
-- LLM の訓練 (forward のみ、back-prop は Stage 7 以降 or 別 arc)
-- GPU backend (Stage 5 Rust target で CPU 推論、GPU は `mlir-backend-adoption` Stage 3 と合流)
-- 量子化 (GGUF Q8/Q4 などは Stage 3.5 で検討)
+- 訓練 (forward のみ)
+- Llama/Mistral 系の網羅対応 (Qwen3 1本。アーキ追加はデモ後)
+- GGUF の全量子化型対応 (f32/f16 + Q1_0 のみ。Q8_0 は L2 で検討)
 
 ## 参照
 
-- 現状の Matrix fusion stack: `docs/roadmap/active/mlir-backend-adoption.md` (Stage 1A 完了)
-- bench baseline memo: `project_matrix_perf_numpy_win.md` (私的 memory)
-- Whisper E2E: `docs/roadmap/active/whisper-almide.md` の実例
+- Whisper E2E: `docs/roadmap/active/whisper-almide.md`
+- Matrix fusion stack: almide repo `docs/roadmap/active/mlir-backend-adoption.md`

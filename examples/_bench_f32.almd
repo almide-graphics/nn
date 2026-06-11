@@ -1,0 +1,41 @@
+// f32 bytes-resident generation bench (L2-2): the model never exists as a
+// record, so the f64 path's ~13 GB/token clone tax is gone.
+//
+// Run:
+//   almide build examples/_bench_f32.almd -o /tmp/bench_f32 && /tmp/bench_f32
+// Expected ids (HF greedy, prompt 0):
+//   12095,13,576,6722,315,15344,374,21718,...
+
+import datetime
+import fs
+import self.qwen
+import self.qwen_loader
+
+fn parse_ids(text: String) -> List[Int] =
+  string.split(text, ",")
+    |> list.filter_map((s) => int.parse(string.trim(s))?)
+
+fn ms_between(t0: Int, t1: Int) -> Float =
+  int.to_float(t1 - t0) / 1000000.0
+
+effect fn main() -> () = {
+  let t0 = datetime.monotonic_ns()
+  let (raw, cfg, gammas, weights) = qwen_loader.load_f32("parity/qwen3-0.6b-f32.gguf")!
+  let t1 = datetime.monotonic_ns()
+  println("load_f32: " + float.to_string(ms_between(t0, t1)) + " ms ("
+    + int.to_string(cfg.n_layers) + " layers, vocab " + int.to_string(cfg.vocab) + ")")
+
+  let prompt = parse_ids(fs.read_text("parity/token_ids_0.txt")!)
+  let n_new = 16
+
+  let t2 = datetime.monotonic_ns()
+  let out = qwen.greedy_generate_f32(prompt, raw, gammas, weights, cfg, n_new)
+  let t3 = datetime.monotonic_ns()
+  let gen_ms = ms_between(t2, t3)
+  let n_gen = list.len(out) - list.len(prompt)
+  let tps = int.to_float(n_gen) / (gen_ms / 1000.0)
+  println("f32 generate: " + int.to_string(n_gen) + " tokens in "
+    + float.to_string(gen_ms) + " ms → " + float.to_string(tps) + " tok/s")
+  println("ids: " + (list.slice(out, list.len(prompt), list.len(out))
+    |> list.map((t) => int.to_string(t)) |> list.join(",")))
+}

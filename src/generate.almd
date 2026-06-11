@@ -26,11 +26,14 @@ fn argmax(logits: List[Float]) -> Int =
 // Whisper ties the output projection to the token embedding matrix, so the
 // same weights are used on the way in (embed) and on the way out (project).
 
-fn project(hidden_last: List[Float], embedding: Matrix) -> List[Float] =
-  // Compute logits[i] = embedding[i] · hidden_last using native row-dot.
-  // Avoids materialising the entire embedding as List[List[Float]].
-  list.map(list.range(0, matrix.rows(embedding)), (i) =>
-    matrix.dot_row(embedding, i, hidden_last))
+fn project(hidden_last: List[Float], embedding: Matrix) -> List[Float] = {
+  // One fused GEMV (hidden @ embedding^T) instead of one dot_row call per
+  // vocab row — that was ~51k native calls per step for Whisper and would
+  // be ~152k at Qwen vocab size.
+  let h = matrix.from_lists([hidden_last])
+  let rows = matrix.to_lists(matrix.linear_row_no_bias(h, embedding))
+  list.get(rows, 0) ?? []
+}
 
 // ── One decoding step ──
 //

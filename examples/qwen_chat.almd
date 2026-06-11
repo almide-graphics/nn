@@ -1,0 +1,26 @@
+// Greedy E2E generation with Qwen3-0.6B on Almide (L1-5 soft check).
+//
+// L1 scope: token IDs in, token IDs out — the tokenizer lands in L2, so
+// prompts come from a token-ID file produced by tools/dump_logits.py.
+// Compare against tools/greedy_ref.py output.
+//
+// Run (from the repo root, after the parity prereqs):
+//   almide build examples/qwen_chat.almd -o /tmp/qwen_chat && /tmp/qwen_chat
+
+import fs
+import self.qwen
+import self.qwen_loader
+
+fn parse_ids(text: String) -> List[Int] =
+  string.split(text, ",")
+    |> list.filter_map((s) => int.parse(string.trim(s))?)
+
+effect fn main() -> () = {
+  let (model, eos) = qwen_loader.load("parity/qwen3-0.6b-f32.gguf")!
+  let prompt = parse_ids(fs.read_text("parity/token_ids_0.txt")!)
+  println("prompt ids: " + (prompt |> list.map((t) => int.to_string(t)) |> list.join(",")))
+
+  let out = qwen.greedy_generate(prompt, model, eos, 16)
+  let generated = list.slice(out, list.len(prompt), list.len(out))
+  println("greedy ids: " + (generated |> list.map((t) => int.to_string(t)) |> list.join(",")))
+}

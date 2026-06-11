@@ -1,0 +1,52 @@
+// Almide-side logits dump for the Qwen3 parity check (L1 gate).
+//
+// Prereqs (from the repo root):
+//   tools/.venv/bin/python tools/export_gguf.py --out parity/qwen3-0.6b-f32.gguf
+//   tools/.venv/bin/python tools/dump_logits.py --out parity
+// Run:
+//   almide build examples/_parity_qwen3.almd -o /tmp/parity_qwen3 && /tmp/parity_qwen3
+// Compare:
+//   tools/.venv/bin/python tools/compare_logits.py
+//
+// Imports are deliberately unaliased — aliased type annotations trip the
+// #433-family canonicalization bug (verified on almide 0.27.3).
+
+import fs
+import self.qwen
+import self.qwen_loader
+
+fn parse_ids(text: String) -> List[Int] =
+  string.split(text, ",")
+    |> list.filter_map((s) => int.parse(string.trim(s))?)
+
+effect fn run_prompt(i: Int, model: qwen.QwenModel) -> Unit = {
+  let tag = int.to_string(i)
+  let ids = parse_ids(fs.read_text("parity/token_ids_" + tag + ".txt")!)
+  let hidden = qwen.qwen_forward(ids, model)
+  let lg = qwen.logits(hidden, model.embedding)
+  let n = matrix.rows(lg)
+  let last = matrix.slice_rows(lg, n - 1, n)
+  // Text output (float.to_string = shortest-roundtrip f64) instead of
+  // to_bytes_f32_le — that intrinsic is missing from the only compiler
+  // version whose native matrix runtime currently builds (v0.26.0).
+  let rows = matrix.to_lists(last)
+  let line = (list.get(rows, 0) ?? [])
+    |> list.map((v) => float.to_string(v))
+    |> list.join(",")
+  fs.write("parity/alm_logits_" + tag + ".txt", line)!
+  let top1 = matrix.to_lists(lg)
+    |> list.map((row) => int.to_string(qwen.argmax(row)))
+    |> list.join(",")
+  fs.write("parity/alm_top1_" + tag + ".txt", top1)!
+  println("[" + tag + "] " + int.to_string(list.len(ids)) + " tokens done")
+}
+
+effect fn main() -> () = {
+  let (model, eos) = qwen_loader.load("parity/qwen3-0.6b-f32.gguf")!
+  println("model loaded: " + int.to_string(model.cfg.n_layers) + " layers, "
+    + int.to_string(matrix.rows(model.embedding)) + " vocab, eos=" + int.to_string(eos))
+  for i in list.range(0, 20) {
+    run_prompt(i, model)!
+  }
+  println("all prompts done")
+}

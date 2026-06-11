@@ -1,0 +1,58 @@
+// Generation throughput bench (L2-0): load / prefill / decode tok/s,
+// uncached vs KV-cached.
+//
+// Run (from the repo root, after the parity prereqs):
+//   almide build examples/_bench_generate.almd -o /tmp/bench_gen && /tmp/bench_gen
+// Baseline on the same machine:
+//   llama-cli -m parity/qwen3-0.6b-f32.gguf -p "The capital of France is" -n 16
+
+import datetime
+import fs
+import self.qwen
+import self.qwen_loader
+
+fn parse_ids(text: String) -> List[Int] =
+  string.split(text, ",")
+    |> list.filter_map((s) => int.parse(string.trim(s))?)
+
+fn ms_between(t0: Int, t1: Int) -> Float =
+  int.to_float(t1 - t0) / 1000000.0
+
+fn report(label: String, n_tokens: Int, ms: Float) -> Unit = {
+  let tps = int.to_float(n_tokens) / (ms / 1000.0)
+  println(label + ": " + int.to_string(n_tokens) + " tokens in "
+    + float.to_string(ms) + " ms → " + float.to_string(tps) + " tok/s")
+}
+
+effect fn main() -> () = {
+  let t0 = datetime.monotonic_ns()
+  let (model, eos) = qwen_loader.load("parity/qwen3-0.6b-f32.gguf")!
+  let t1 = datetime.monotonic_ns()
+  println("load: " + float.to_string(ms_between(t0, t1)) + " ms")
+
+  let prompt = parse_ids(fs.read_text("parity/token_ids_0.txt")!)
+  let n_new = 8
+
+  // KV-cached: prefill timed separately from decode steps.
+  let t2 = datetime.monotonic_ns()
+  let (hidden, cache) = qwen.qwen_prefill(prompt, model)
+  let t3 = datetime.monotonic_ns()
+  println("prefill (" + int.to_string(list.len(prompt)) + " tokens): "
+    + float.to_string(ms_between(t2, t3)) + " ms")
+
+  let first = qwen.argmax(qwen.logits_last(hidden, model.embedding))
+  let t4 = datetime.monotonic_ns()
+  let out_cached = qwen.cached_steps(prompt + [first], model, cache, first, eos, n_new - 1)
+  let t5 = datetime.monotonic_ns()
+  report("cached decode", n_new - 1, ms_between(t4, t5))
+  println("cached ids: " + (list.slice(out_cached, list.len(prompt), list.len(out_cached))
+    |> list.map((t) => int.to_string(t)) |> list.join(",")))
+
+  // Uncached reference (full recompute per step).
+  let t6 = datetime.monotonic_ns()
+  let out_plain = qwen.greedy_generate(prompt, model, eos, n_new)
+  let t7 = datetime.monotonic_ns()
+  report("uncached decode", n_new, ms_between(t6, t7))
+  println("plain ids:  " + (list.slice(out_plain, list.len(prompt), list.len(out_plain))
+    |> list.map((t) => int.to_string(t)) |> list.join(",")))
+}

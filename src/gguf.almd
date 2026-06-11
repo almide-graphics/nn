@@ -182,9 +182,12 @@ effect fn parse(data: Bytes) -> Result[GGUFFile, String] =
   }
 
 effect fn load(path: String) -> Result[GGUFFile, String] =
-  match fs.read_bytes(path) {
+  // read_bytes_raw returns Bytes directly — the List[Int] round-trip of
+  // fs.read_bytes costs 8 bytes of memory per file byte (19 GB for a
+  // 2.4 GB model file).
+  match fs.read_bytes_raw(path) {
     err(e) => err("failed to read " + path + ": " + e)
-    ok(raw) => parse(bytes.from_list(raw))
+    ok(raw) => parse(raw)
   }
 
 // ── Tensor data extraction ──
@@ -262,6 +265,14 @@ fn get_metadata_int(file: GGUFFile, key: String) -> Option[Int] =
   list.find(file.metadata.entries, (e) => e.0 == key)
     |> option.flat_map((e) => match e.1 {
       ValInt(n) => some(n)
+      _ => none
+    })
+
+fn get_metadata_float(file: GGUFFile, key: String) -> Option[Float] =
+  list.find(file.metadata.entries, (e) => e.0 == key)
+    |> option.flat_map((e) => match e.1 {
+      ValFloat(f) => some(f)
+      ValInt(n) => some(int.to_float(n))
       _ => none
     })
 

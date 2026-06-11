@@ -1,0 +1,489 @@
+// nn.qwen_loader — Load a Qwen3 GGUF (llama.cpp tensor naming) into QwenModel.
+//
+// Self-contained GGUF reading (does NOT import nn.gguf) and written in a
+// deliberate "primitive-flow" style: compiler issue #433-family (verified on
+// almide 0.27.3) still mis-canonicalizes module types in two signature
+// shapes — `Option[OwnType]` returns and own-variant types — when the module
+// is linked from another module. So this file:
+//   - returns TensorLoc records DIRECTLY with a `found: Bool` flag instead
+//     of Option[TensorLoc]
+//   - flattens metadata into a MetaTable record of Int/Float fields instead
+//     of a GGUFValue-style variant
+//   - is imported WITHOUT an alias (aliased type annotations also trip it)
+//
+// Layout convention: GGUF stores 2D tensors with ne = [in_features,
+// out_features] and the data as out_features rows of length in_features —
+// i.e. PyTorch (out, in) order, exactly what matrix.linear_row_no_bias
+// consumes. So matrix rows = dims[1], cols = dims[0].
+//
+// RoPE convention: matrix.rope_rotate_at rotates interleaved pairs
+// (x[2i], x[2i+1]) while HF Qwen3 rotates NeoX pairs (x[j], x[j+half]).
+// Attention scores are invariant under any per-head permutation applied to
+// BOTH q and k, so we re-order the output rows of wq/wk (and the
+// q_norm/k_norm gammas to match) with new[2j] = old[j], new[2j+1] =
+// old[j+half]. After that the interleaved rotation computes exactly the
+// NeoX result. v/wo are untouched.
+
+import fs
+import self.qwen
+
+// ── Binary readers (little-endian) ──
+
+fn r_u8(data: Bytes, pos: Int) -> Int =
+  int.band(bytes.get(data, pos) ?? 0, 255)
+
+fn r_u32(data: Bytes, pos: Int) -> Int =
+  r_u8(data, pos) + r_u8(data, pos + 1) * 256 +
+  r_u8(data, pos + 2) * 65536 + r_u8(data, pos + 3) * 16777216
+
+fn r_u64(data: Bytes, pos: Int) -> Int =
+  r_u32(data, pos) + r_u32(data, pos + 4) * 4294967296
+
+// Arithmetic IEEE-754 decode (sign/exponent/mantissa) instead of
+// int.bits_to_float — that intrinsic's 32-bit semantics differ across
+// compiler versions, and this fn only feeds small metadata scalars.
+fn r_f32(data: Bytes, pos: Int) -> Float = {
+  let raw = r_u32(data, pos)
+  let sign = int.band(int.bshr(raw, 31), 1)
+  let exponent = int.band(int.bshr(raw, 23), 255)
+  let mantissa = int.band(raw, 8388607)
+  if exponent == 0 then {
+    let val = int.to_float(mantissa) / 8388608.0 * math.fpow(2.0, -126.0)
+    if sign == 1 then 0.0 - val else val
+  } else if exponent == 255 then {
+    if sign == 1 then -99999999.0 else 99999999.0
+  } else {
+    let val = (1.0 + int.to_float(mantissa) / 8388608.0) * math.fpow(2.0, int.to_float(exponent) - 127.0)
+    if sign == 1 then 0.0 - val else val
+  }
+}
+
+fn r_string(data: Bytes, pos: Int) -> (String, Int) = {
+  let len = r_u64(data, pos)
+  let raw = bytes.to_list(bytes.slice(data, pos + 8, pos + 8 + len))
+  (string.from_bytes(raw), pos + 8 + len)
+}
+
+fn skip_string(data: Bytes, pos: Int) -> Int =
+  pos + 8 + r_u64(data, pos)
+
+// GGUF value types: 0=u8 1=i8 2=u16 3=i16 4=u32 5=i32 6=f32 7=bool
+//                   8=string 9=array 10=u64 11=i64 12=f64
+fn scalar_size(vtype: Int) -> Int =
+  match vtype {
+    0 => 1, 1 => 1, 7 => 1,
+    2 => 2, 3 => 2,
+    4 => 4, 5 => 4, 6 => 4,
+    10 => 8, 11 => 8, 12 => 8,
+    _ => 0,
+  }
+
+// Skip one value of `vtype` at `pos`, return the next position.
+//
+// var/while instead of fold or recursion, deliberately: recursion over a
+// 152k-string array blows the native stack, and a fold lambda that captures
+// `data` clones the whole multi-GB buffer at closure creation (codegen
+// demotes captured Bytes to by-value — measured at 84% of load wall-time).
+fn skip_value(data: Bytes, pos: Int, vtype: Int) -> Int =
+  if vtype == 8 then skip_string(data, pos)
+  else if vtype == 9 then {
+    let elem_type = r_u32(data, pos)
+    let count = r_u64(data, pos + 4)
+    let body = pos + 12
+    if elem_type == 8 then {
+      var p = body
+      var k = 0
+      while k < count {
+        p = skip_string(data, p)
+        k = k + 1
+      }
+      p
+    }
+    else
+      body + count * scalar_size(elem_type)
+  }
+  else pos + scalar_size(vtype)
+
+// Read a numeric value (int-like or f32/f64) as Int / Float; 0 for others.
+fn value_as_int(data: Bytes, pos: Int, vtype: Int) -> Int =
+  match vtype {
+    0 => r_u8(data, pos),
+    4 => r_u32(data, pos),
+    5 => r_u32(data, pos),
+    10 => r_u64(data, pos),
+    11 => r_u64(data, pos),
+    _ => 0,
+  }
+
+fn value_as_float(data: Bytes, pos: Int, vtype: Int) -> Float =
+  if vtype == 6 then r_f32(data, pos)
+  else int.to_float(value_as_int(data, pos, vtype))
+
+// ── Flat metadata table (no variant types — see header comment) ──
+
+type MetaTable = {
+  block_count: Int,
+  head_count: Int,
+  head_count_kv: Int,
+  key_length: Int,
+  eos_id: Int,
+  alignment: Int,
+  freq_base: Float,
+  rms_eps: Float,
+}
+
+fn default_meta() -> MetaTable = {
+  block_count: 0,
+  head_count: 1,
+  head_count_kv: 1,
+  key_length: 128,
+  eos_id: 151645,
+  alignment: 32,
+  freq_base: 1000000.0,
+  rms_eps: 0.000001,
+}
+
+fn absorb_meta(m: MetaTable, key: String, data: Bytes, pos: Int, vtype: Int) -> MetaTable =
+  match key {
+    "qwen3.block_count" => { block_count: value_as_int(data, pos, vtype), head_count: m.head_count, head_count_kv: m.head_count_kv, key_length: m.key_length, eos_id: m.eos_id, alignment: m.alignment, freq_base: m.freq_base, rms_eps: m.rms_eps },
+    "qwen3.attention.head_count" => { block_count: m.block_count, head_count: value_as_int(data, pos, vtype), head_count_kv: m.head_count_kv, key_length: m.key_length, eos_id: m.eos_id, alignment: m.alignment, freq_base: m.freq_base, rms_eps: m.rms_eps },
+    "qwen3.attention.head_count_kv" => { block_count: m.block_count, head_count: m.head_count, head_count_kv: value_as_int(data, pos, vtype), key_length: m.key_length, eos_id: m.eos_id, alignment: m.alignment, freq_base: m.freq_base, rms_eps: m.rms_eps },
+    "qwen3.attention.key_length" => { block_count: m.block_count, head_count: m.head_count, head_count_kv: m.head_count_kv, key_length: value_as_int(data, pos, vtype), eos_id: m.eos_id, alignment: m.alignment, freq_base: m.freq_base, rms_eps: m.rms_eps },
+    "tokenizer.ggml.eos_token_id" => { block_count: m.block_count, head_count: m.head_count, head_count_kv: m.head_count_kv, key_length: m.key_length, eos_id: value_as_int(data, pos, vtype), alignment: m.alignment, freq_base: m.freq_base, rms_eps: m.rms_eps },
+    "general.alignment" => { block_count: m.block_count, head_count: m.head_count, head_count_kv: m.head_count_kv, key_length: m.key_length, eos_id: m.eos_id, alignment: value_as_int(data, pos, vtype), freq_base: m.freq_base, rms_eps: m.rms_eps },
+    "qwen3.rope.freq_base" => { block_count: m.block_count, head_count: m.head_count, head_count_kv: m.head_count_kv, key_length: m.key_length, eos_id: m.eos_id, alignment: m.alignment, freq_base: value_as_float(data, pos, vtype), rms_eps: m.rms_eps },
+    "qwen3.attention.layer_norm_rms_epsilon" => { block_count: m.block_count, head_count: m.head_count, head_count_kv: m.head_count_kv, key_length: m.key_length, eos_id: m.eos_id, alignment: m.alignment, freq_base: m.freq_base, rms_eps: value_as_float(data, pos, vtype) },
+    _ => m,
+  }
+
+// Walk all metadata entries: absorb the keys we care about, return
+// (table, position-after-metadata).
+fn walk_metadata(data: Bytes, start: Int, count: Int) -> (MetaTable, Int) =
+  list.fold(list.range(0, count), (default_meta(), start), (acc, _) => {
+    let (m, pos) = acc
+    let (key, p1) = r_string(data, pos)
+    let vtype = r_u32(data, p1)
+    let vpos = p1 + 4
+    (absorb_meta(m, key, data, vpos, vtype), skip_value(data, vpos, vtype))
+  })
+
+// ── Tensor table ──
+
+type TensorLoc = {
+  name: String,
+  offset: Int,
+  rows: Int,
+  cols: Int,
+  dtype: Int,
+  found: Bool,
+}
+
+fn missing_loc() -> TensorLoc =
+  { name: "", offset: 0, rows: 1, cols: 0, dtype: -1, found: false }
+
+fn walk_tensors(data: Bytes, start: Int, count: Int) -> (List[TensorLoc], Int) =
+  list.fold(list.range(0, count), ([], start), (acc, _) => {
+    let (locs, pos) = acc
+    let (name, p1) = r_string(data, pos)
+    let n_dims = r_u32(data, p1)
+    // ne[0] / ne[1] read directly — a `dims` list.map lambda here captures
+    // `data` and clones the 2.4 GB buffer once PER TENSOR (339×). All
+    // qwen3 tensors are 1-D or 2-D; >2-D would need the full ne walk.
+    let cols = if n_dims >= 1 then r_u64(data, p1 + 4) else 0
+    let rows = if n_dims >= 2 then r_u64(data, p1 + 12) else 1
+    let p2 = p1 + 4 + n_dims * 8
+    let dtype = r_u32(data, p2)
+    let offset = r_u64(data, p2 + 4)
+    (locs + [{ name: name, offset: offset, rows: rows, cols: cols, dtype: dtype, found: true }], p2 + 12)
+  })
+
+// Direct-return lookup (no Option — see header comment). fold, not
+// list.find, so no Option[TensorLoc] appears anywhere in the program.
+fn loc_of(locs: List[TensorLoc], name: String) -> TensorLoc =
+  list.fold(locs, missing_loc(), (acc, l) => if l.name == name then l else acc)
+
+fn align_to(pos: Int, alignment: Int) -> Int = {
+  let rem = pos % alignment
+  if rem == 0 then pos else pos + alignment - rem
+}
+
+// ── Tensor data → Matrix / List[Float] ──
+
+fn tensor_matrix(data: Bytes, data_offset: Int, locs: List[TensorLoc], name: String) -> Matrix = {
+  let loc = loc_of(locs, name)
+  let start = data_offset + loc.offset
+  match loc.dtype {
+    0 => matrix.from_bytes_f32_le(data, start, loc.rows, loc.cols),
+    1 => matrix.from_bytes_f16_le(data, start, loc.rows, loc.cols),
+    _ => matrix.zeros(loc.rows, loc.cols),
+  }
+}
+
+fn tensor_vec(data: Bytes, data_offset: Int, locs: List[TensorLoc], name: String) -> List[Float] = {
+  let loc = loc_of(locs, name)
+  let start = data_offset + loc.offset
+  match loc.dtype {
+    0 => bytes.read_f32_le_array(data, start, loc.cols),
+    1 => bytes.read_f16_le_array(data, start, loc.cols),
+    _ => list.repeat(0.0, loc.cols),
+  }
+}
+
+// ── RoPE layout permutation (NeoX → interleaved) ──
+
+fn rope_perm(n_heads: Int, head_dim: Int) -> List[Int] =
+  list.range(0, n_heads) |> list.flat_map((h) => {
+    let base = h * head_dim
+    let half = head_dim / 2
+    list.range(0, half) |> list.flat_map((j) => [base + j, base + j + half])
+  })
+
+fn rope_perm_vec(v: List[Float], head_dim: Int) -> List[Float] = {
+  let half = head_dim / 2
+  list.range(0, half) |> list.flat_map((j) =>
+    [list.get(v, j) ?? 0.0, list.get(v, j + half) ?? 0.0])
+}
+
+// ── Model assembly ──
+
+fn load_layer(data: Bytes, data_offset: Int, locs: List[TensorLoc], i: Int, meta: MetaTable) -> qwen.QwenLayer = {
+  let p = "blk." + int.to_string(i) + "."
+  let head_dim = meta.key_length
+  {
+    attn_norm: tensor_vec(data, data_offset, locs, p + "attn_norm.weight"),
+    q_norm: rope_perm_vec(tensor_vec(data, data_offset, locs, p + "attn_q_norm.weight"), head_dim),
+    k_norm: rope_perm_vec(tensor_vec(data, data_offset, locs, p + "attn_k_norm.weight"), head_dim),
+    wq: matrix.gather_rows(tensor_matrix(data, data_offset, locs, p + "attn_q.weight"), rope_perm(meta.head_count, head_dim)),
+    wk: matrix.gather_rows(tensor_matrix(data, data_offset, locs, p + "attn_k.weight"), rope_perm(meta.head_count_kv, head_dim)),
+    wv: tensor_matrix(data, data_offset, locs, p + "attn_v.weight"),
+    wo: tensor_matrix(data, data_offset, locs, p + "attn_output.weight"),
+    ffn_norm: tensor_vec(data, data_offset, locs, p + "ffn_norm.weight"),
+    w_gate: tensor_matrix(data, data_offset, locs, p + "ffn_gate.weight"),
+    w_up: tensor_matrix(data, data_offset, locs, p + "ffn_up.weight"),
+    w_down: tensor_matrix(data, data_offset, locs, p + "ffn_down.weight"),
+  }
+}
+
+fn layer_tensor_names(i: Int) -> List[String] = {
+  let p = "blk." + int.to_string(i) + "."
+  [
+    p + "attn_norm.weight", p + "attn_q_norm.weight", p + "attn_k_norm.weight",
+    p + "attn_q.weight", p + "attn_k.weight", p + "attn_v.weight",
+    p + "attn_output.weight", p + "ffn_norm.weight",
+    p + "ffn_gate.weight", p + "ffn_up.weight", p + "ffn_down.weight",
+  ]
+}
+
+// Expected-but-missing tensor names; empty means complete.
+fn validate(locs: List[TensorLoc], n_layers: Int) -> List[String] = {
+  let names = ["token_embd.weight", "output_norm.weight"]
+    + (list.range(0, n_layers) |> list.flat_map((i) => layer_tensor_names(i)))
+  names |> list.filter((n) => loc_of(locs, n).found == false)
+}
+
+// ── Entry point ──
+//
+// Returns (model, eos_token_id).
+
+effect fn load(path: String) -> Result[(qwen.QwenModel, Int), String] =
+  match fs.read_bytes_raw(path) {
+    err(e) => err("failed to read " + path + ": " + e)
+    ok(data) => {
+      if r_u32(data, 0) != 1179993927 then err(path + " is not a GGUF file")
+      else {
+        let tensor_count = r_u64(data, 8)
+        let metadata_count = r_u64(data, 16)
+        let (meta, p1) = walk_metadata(data, 24, metadata_count)
+        let (locs, p2) = walk_tensors(data, p1, tensor_count)
+        let data_offset = align_to(p2, meta.alignment)
+        let missing = validate(locs, meta.block_count)
+        if list.len(missing) > 0 then
+          err("missing tensors: " + list.join(missing, ", "))
+        else {
+          let cfg = {
+            n_layers: meta.block_count,
+            n_heads: meta.head_count,
+            n_kv_heads: meta.head_count_kv,
+            head_dim: meta.key_length,
+            rope_theta: meta.freq_base,
+            eps: meta.rms_eps,
+          }
+          // The layer-loading closure captures `data` (2.4 GB Bytes) by
+          // move, so it must be the LAST use — embedding/final_norm are
+          // extracted first.
+          let embedding = tensor_matrix(data, data_offset, locs, "token_embd.weight")
+          let final_norm = tensor_vec(data, data_offset, locs, "output_norm.weight")
+          let layers = list.range(0, meta.block_count)
+            |> list.map((i) => load_layer(data, data_offset, locs, i, meta))
+          ok(({ embedding: embedding, layers: layers, final_norm: final_norm, cfg: cfg }, meta.eos_id))
+        }
+      }
+    }
+  }
+
+// ── f32 bytes-resident entry point (L2-2) ──
+//
+// Returns the raw buffer plus flat offset tables — no decoded matrices, no
+// model record. See nn.qwen's f32 path for why.
+
+fn abs_off(data_offset: Int, locs: List[TensorLoc], name: String) -> Int =
+  data_offset + loc_of(locs, name).offset
+
+fn layer_gamma_offs(data_offset: Int, locs: List[TensorLoc], i: Int) -> List[Int] = {
+  let p = "blk." + int.to_string(i) + "."
+  [
+    abs_off(data_offset, locs, p + "attn_norm.weight"),
+    abs_off(data_offset, locs, p + "attn_q_norm.weight"),
+    abs_off(data_offset, locs, p + "attn_k_norm.weight"),
+    abs_off(data_offset, locs, p + "ffn_norm.weight"),
+  ]
+}
+
+fn layer_weight_offs(data_offset: Int, locs: List[TensorLoc], i: Int) -> List[Int] = {
+  let p = "blk." + int.to_string(i) + "."
+  [
+    abs_off(data_offset, locs, p + "attn_q.weight"),
+    abs_off(data_offset, locs, p + "attn_k.weight"),
+    abs_off(data_offset, locs, p + "attn_v.weight"),
+    abs_off(data_offset, locs, p + "attn_output.weight"),
+    abs_off(data_offset, locs, p + "ffn_gate.weight"),
+    abs_off(data_offset, locs, p + "ffn_up.weight"),
+    abs_off(data_offset, locs, p + "ffn_down.weight"),
+  ]
+}
+
+// (raw bytes, config, per-layer gamma offsets, per-layer weight offsets).
+// f32 tensors only — dtype is validated so a quantized GGUF fails loudly
+// instead of decoding garbage.
+effect fn load_f32(path: String) -> Result[(Bytes, qwen.QwenF32Cfg, List[List[Int]], List[List[Int]]), String] =
+  match fs.read_bytes_raw(path) {
+    err(e) => err("failed to read " + path + ": " + e)
+    ok(data) => {
+      if r_u32(data, 0) != 1179993927 then err(path + " is not a GGUF file")
+      else {
+        let tensor_count = r_u64(data, 8)
+        let metadata_count = r_u64(data, 16)
+        let (meta, p1) = walk_metadata(data, 24, metadata_count)
+        let (locs, p2) = walk_tensors(data, p1, tensor_count)
+        let data_offset = align_to(p2, meta.alignment)
+        let missing = validate(locs, meta.block_count)
+        let non_f32 = locs |> list.filter((l) => l.dtype != 0) |> list.len
+        if list.len(missing) > 0 then
+          err("missing tensors: " + list.join(missing, ", "))
+        else if non_f32 > 0 then
+          err("load_f32 requires an all-f32 GGUF (" + int.to_string(non_f32) + " other-dtype tensors)")
+        else {
+          let emb = loc_of(locs, "token_embd.weight")
+          let cfg = {
+            n_layers: meta.block_count,
+            n_heads: meta.head_count,
+            n_kv_heads: meta.head_count_kv,
+            head_dim: meta.key_length,
+            ffn_hidden: loc_of(locs, "blk.0.ffn_gate.weight").rows,
+            hidden: emb.cols,
+            vocab: emb.rows,
+            rope_theta: meta.freq_base,
+            eps: meta.rms_eps,
+            emb_off: data_offset + emb.offset,
+            out_norm_off: abs_off(data_offset, locs, "output_norm.weight"),
+            eos_id: meta.eos_id,
+          }
+          let gammas = list.range(0, meta.block_count)
+            |> list.map((i) => layer_gamma_offs(data_offset, locs, i))
+          let weights = list.range(0, meta.block_count)
+            |> list.map((i) => layer_weight_offs(data_offset, locs, i))
+          ok((data, cfg, gammas, weights))
+        }
+      }
+    }
+  }
+
+// ── Tests ──
+
+fn approx(a: Float, b: Float) -> Bool =
+  float.abs(a - b) < 0.0001
+
+test "neox rope rotates (j, j+half) pairs in place" {
+  // x = [1,2,3,4], head_dim 4, pos 1, theta 10000 — same numbers as the
+  // interleaved test above but WITHOUT any permutation.
+  let m = matrix.from_lists([[1.0, 2.0, 3.0, 4.0]])
+  let out = matrix.rope_rotate_neox_at(m, 1, 4, 10000.0, 1)
+  let c1 = math.cos(1.0)
+  let s1 = math.sin(1.0)
+  let c2 = math.cos(0.01)
+  let s2 = math.sin(0.01)
+  assert(approx(matrix.get(out, 0, 0), 1.0 * c1 - 3.0 * s1), "x0'")
+  assert(approx(matrix.get(out, 0, 2), 1.0 * s1 + 3.0 * c1), "x2'")
+  assert(approx(matrix.get(out, 0, 1), 2.0 * c2 - 4.0 * s2), "x1'")
+  assert(approx(matrix.get(out, 0, 3), 2.0 * s2 + 4.0 * c2), "x3'")
+}
+
+test "rope_perm interleaves the two halves of each head" {
+  assert_eq(rope_perm(1, 4), [0, 2, 1, 3])
+  assert_eq(rope_perm(2, 4), [0, 2, 1, 3, 4, 6, 5, 7])
+}
+
+test "rope_perm_vec reorders gamma the same way" {
+  let v = rope_perm_vec([10.0, 20.0, 30.0, 40.0], 4)
+  assert_eq(list.len(v), 4)
+  assert(approx(list.get(v, 0) ?? 0.0, 10.0), "new[0] = old[0]")
+  assert(approx(list.get(v, 1) ?? 0.0, 30.0), "new[1] = old[half]")
+  assert(approx(list.get(v, 2) ?? 0.0, 20.0), "new[2] = old[1]")
+  assert(approx(list.get(v, 3) ?? 0.0, 40.0), "new[3] = old[half+1]")
+}
+
+test "interleaved rope on permuted layout equals NeoX rope" {
+  // x = [1,2,3,4], head_dim 4, position 1, theta 10000.
+  // NeoX (HF Qwen3): pairs (0,2) angle 1.0 and (1,3) angle 0.01.
+  // Our pipeline permutes to [1,3,2,4] and rotates interleaved pairs;
+  // the result lands in permuted layout [x0', x2', x1', x3'].
+  let permuted = matrix.from_lists([[1.0, 3.0, 2.0, 4.0]])
+  let out = matrix.rope_rotate_at(permuted, 1, 4, 10000.0, 1)
+  let c1 = math.cos(1.0)
+  let s1 = math.sin(1.0)
+  let c2 = math.cos(0.01)
+  let s2 = math.sin(0.01)
+  assert(approx(matrix.get(out, 0, 0), 1.0 * c1 - 3.0 * s1), "x0'")
+  assert(approx(matrix.get(out, 0, 1), 1.0 * s1 + 3.0 * c1), "x2'")
+  assert(approx(matrix.get(out, 0, 2), 2.0 * c2 - 4.0 * s2), "x1'")
+  assert(approx(matrix.get(out, 0, 3), 2.0 * s2 + 4.0 * c2), "x3'")
+}
+
+test "rope_rotate_at start_pos 0 is identity" {
+  let m = matrix.from_lists([[1.0, 2.0, 3.0, 4.0]])
+  let out = matrix.rope_rotate_at(m, 1, 4, 10000.0, 0)
+  assert(approx(matrix.get(out, 0, 0), 1.0))
+  assert(approx(matrix.get(out, 0, 3), 4.0))
+}
+
+test "binary readers decode little-endian" {
+  // bytes: u32 0x01020304 stored LE, then f32 1.0 (0x3F800000 LE)
+  let data = bytes.from_list([4, 3, 2, 1, 0, 0, 128, 63])
+  assert_eq(r_u32(data, 0), 16909060)
+  assert(approx(r_f32(data, 4), 1.0), "f32 decode")
+}
+
+test "skip_value over a string array walks every element" {
+  // array(vtype=8 string, count=2): "ab", "c"
+  // layout: u32 8, u64 2, (u64 2, 'a','b'), (u64 1, 'c')
+  let data = bytes.from_list([
+    8, 0, 0, 0,
+    2, 0, 0, 0, 0, 0, 0, 0,
+    2, 0, 0, 0, 0, 0, 0, 0, 97, 98,
+    1, 0, 0, 0, 0, 0, 0, 0, 99,
+  ])
+  assert_eq(skip_value(data, 0, 9), 31)
+}
+
+test "loc_of returns found=false for unknown names" {
+  let locs = [{ name: "a", offset: 0, rows: 1, cols: 4, dtype: 0, found: true }]
+  assert_eq(loc_of(locs, "a").found, true)
+  assert_eq(loc_of(locs, "b").found, false)
+}
+
+test "align_to rounds up to the alignment" {
+  assert_eq(align_to(0, 32), 0)
+  assert_eq(align_to(1, 32), 32)
+  assert_eq(align_to(32, 32), 32)
+  assert_eq(align_to(33, 32), 64)
+}
