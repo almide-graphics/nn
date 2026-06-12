@@ -46,4 +46,8 @@ try {
   document.title = "M1_FAIL " + (e.message || e);
   say(document.title);
 }
+
+const _report = () => fetch("/__result__/" + encodeURIComponent(document.title || "NO_TITLE")).catch(() => {});
+const _iv = setInterval(() => { if (document.title) { clearInterval(_iv); _report(); } }, 250);
+setTimeout(() => { clearInterval(_iv); _report(); }, 14000);
 </script></body></html>

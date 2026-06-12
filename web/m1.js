@@ -79,33 +79,44 @@ function fp16ToF32(h) {
 }
 
 class Packer {
-  constructor(gguf) {
+  // names: every Q8 tensor that will be packed, so the buffer is one
+  // preallocated Uint32Array (the real model is ~170M words — growing a
+  // JS number array would triple the memory)
+  constructor(gguf, names) {
     this.gguf = gguf;
-    this.words = [];
+    let total = 0;
+    for (const name of names) {
+      const t = gguf.tensors[name];
+      if (!t) throw new Error("missing tensor " + name);
+      total += (t.ne[0] / 32) * t.ne[1] * 9;
+    }
+    this.words = new Uint32Array(total);
+    this.cursor = 0;
   }
   // returns the word offset of the repacked tensor
   pack(name) {
     const t = this.gguf.tensors[name];
-    if (!t) throw new Error("missing tensor " + name);
     const [cols, rows] = t.ne; // GGUF ne = [in, out]
     const bpr = cols / 32;
     const base = this.gguf.dataOff + t.off;
     const bytes = new Uint8Array(this.gguf.buf);
     const dv = new DataView(this.gguf.buf);
-    const start = this.words.length;
+    const start = this.cursor;
     const sf = new Float32Array(1);
     const su = new Uint32Array(sf.buffer);
+    let w = this.cursor;
     for (let r = 0; r < rows; r++) {
       const rb = base + r * bpr * 34;
       for (let b = 0; b < bpr; b++) {
         const bb = rb + b * 34;
         sf[0] = fp16ToF32(bytes[bb] | (bytes[bb + 1] << 8));
-        this.words.push(su[0]);
+        this.words[w++] = su[0];
         for (let k = 0; k < 8; k++) {
-          this.words.push(dv.getUint32(bb + 2 + k * 4, true));
+          this.words[w++] = dv.getUint32(bb + 2 + k * 4, true);
         }
       }
     }
+    this.cursor = w;
     return start;
   }
 }
@@ -160,7 +171,13 @@ export async function loadModel(device, wgslText, ggufBuf, report = () => {}) {
   report(`model: ${nLayers}L hidden=${hidden} heads=${nHeads}/${nKv} ffn=${ffn} vocab=${vocab}`);
 
   // repack weights + gammas (same order as native: emb, then per layer)
-  const pk = new Packer(g);
+  const wNames = ["token_embd.weight"];
+  for (let l = 0; l < nLayers; l++) {
+    for (const s of ["attn_q", "attn_k", "attn_v", "attn_output", "ffn_gate", "ffn_up", "ffn_down"]) {
+      wNames.push(`blk.${l}.${s}.weight`);
+    }
+  }
+  const pk = new Packer(g, wNames);
   const gk = new GammaPacker(g);
   const embW = pk.pack("token_embd.weight");
   const layerW = [];
@@ -186,7 +203,7 @@ export async function loadModel(device, wgslText, ggufBuf, report = () => {}) {
     buf.unmap();
     return buf;
   };
-  const wbuf = mkInit(new Uint32Array(pk.words), GPUBufferUsage.STORAGE);
+  const wbuf = mkInit(pk.words, GPUBufferUsage.STORAGE);
   const gammasBuf = mkInit(new Float32Array(gk.vals), GPUBufferUsage.STORAGE);
 
   // pipelines with explicit layouts (mirrors Builder::new)
