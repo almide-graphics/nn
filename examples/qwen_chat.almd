@@ -1,17 +1,22 @@
-// Qwen3 chat on the cpu_fast engine — text in, streaming text out.
-//
-// The first real text-to-text path: tokenizer (pure Almide) + lockstep
-// AVX2 engine (native module), greedy decode, Qwen3 chat template with
-// an empty <think> block (non-thinking mode).
+// Qwen3 chat on the cpu_fast engine — interactive REPL, multi-turn KV
+// context, temperature/top-p sampling, streaming UTF-8-safe output.
 //
 //   almide build examples/qwen_chat.almd -o /tmp/qwen_chat
-//   /tmp/qwen_chat "好きな食べ物は？" [model.gguf]
+//   /tmp/qwen_chat                        # REPL (/reset, /exit)
+//   /tmp/qwen_chat "好きな食べ物は？"      # single-shot
+//   /tmp/qwen_chat model.gguf             # REPL on another GGUF
 //
 // The GGUF must carry tokenizer.ggml.tokens/merges (tools/export_gguf.py
 // writes them; any official llama.cpp Qwen3 GGUF works too).
+//
+// Multi-turn context: the engine KV cache is positional, so a turn is
+// appended by feeding [<|im_end|>, "\n"] (closing the previous assistant
+// message) + the new user turn at the current position. /reset just
+// rewinds pos to 0 — the cache is overwritten in place.
 
 import io
 import process
+import datetime
 import self.qwen_loader
 import self.qwen_tokenizer
 
@@ -22,8 +27,8 @@ fn cpu_load_model(
   emb_off: Int, out_norm_off: Int, gammas: List[Int], weights: List[Int],
 ) -> Int
 
-@extern(rs, "cpu_fast", "decode_argmax")
-fn cpu_decode_argmax(raw: Bytes, token: Int, pos: Int) -> Int
+@extern(rs, "cpu_fast", "decode_sample")
+fn cpu_decode_sample(raw: Bytes, token: Int, pos: Int, temp: Float, top_p: Float, seed: Int) -> Int
 
 // Vocab id of an exact token string (special tokens never pass through
 // BPE). Clones the dictionary — startup use only.
@@ -61,9 +66,20 @@ fn utf8_complete_len(bs: List[Int]) -> Int = {
 
 effect fn main() -> () = {
   let args = process.args()
-  let prompt = list.get(args, 1) ?? "自己紹介してください。"
-  let gguf = list.get(args, 2) ?? "parity/qwen3-0.6b-q8_0.gguf"
+  var gguf = "parity/qwen3-0.6b-q8_0.gguf"
+  var oneshot = ""
+  for a in list.drop(args, 1) {
+    if string.ends_with(a, ".gguf") then {
+      gguf = a
+    } else {
+      oneshot = a
+    }
+  }
+  let temp = 0.7
+  let top_p = 0.9
   let max_new = 256
+  let max_seq = 2048
+  let seed = datetime.monotonic_ns()
 
   let (raw, cfg, gammas, weights) = qwen_loader.load_f32(gguf)!
   let t = qwen_tokenizer.load(gguf)!
@@ -74,63 +90,105 @@ effect fn main() -> () = {
   if loaded != 1 then {
     println("engine init failed")
   } else {
-    // Qwen3 chat template, thinking disabled via an empty think block:
-    // <|im_start|>user\n{prompt}<|im_end|>\n<|im_start|>assistant\n<think>\n\n</think>\n\n
     let im_start = tok_id(t, "<|im_start|>")
     let im_end = tok_id(t, "<|im_end|>")
     let think_open = tok_id(t, "<think>")
     let think_close = tok_id(t, "</think>")
-    var ids: List[Int] = [im_start]
-    for id in qwen_tokenizer.encode(t, "user\n" + prompt) { list.push(ids, id) }
-    list.push(ids, im_end)
-    for id in qwen_tokenizer.encode(t, "\n") { list.push(ids, id) }
-    list.push(ids, im_start)
-    for id in qwen_tokenizer.encode(t, "assistant\n") { list.push(ids, id) }
-    if think_open >= 0 and think_close >= 0 then {
-      list.push(ids, think_open)
-      for id in qwen_tokenizer.encode(t, "\n\n") { list.push(ids, id) }
-      list.push(ids, think_close)
-      for id in qwen_tokenizer.encode(t, "\n\n") { list.push(ids, id) }
+
+    if oneshot == "" then {
+      println("nn chat — Qwen3-0.6B Q8_0 on the Almide cpu_fast engine")
+      println("(/reset で文脈クリア, /exit で終了, 空行2回でも終了)")
     }
 
-    // prefill all but the last template token
     var pos = 0
-    var next = 0
-    for tk in ids {
-      next = cpu_decode_argmax(raw, tk, pos)
-      pos = pos + 1
-    }
-
-    // greedy decode, streaming. All dictionary reads stay inline on `t`
-    // (a helper call would clone the whole tokenizer per token).
-    var pending: List[Int] = []
-    var k = 0
-    var stop = false
-    while k < max_new and not stop {
-      if next == im_end or next == cfg.eos_id then {
-        stop = true
+    var running = true
+    var empties = 0
+    while running {
+      var line = oneshot
+      if oneshot == "" then {
+        io.print("> ")
+        line = string.trim(io.read_line())
+      }
+      if line == "" then {
+        empties = empties + 1
+        if empties >= 2 or oneshot != "" then {
+          running = false
+        }
+      } else if line == "/exit" or line == "exit" or line == "quit" then {
+        running = false
+      } else if line == "/reset" then {
+        pos = 0
+        println("(context reset)")
       } else {
-        let piece = list.get(t.vocab, next) ?? ""
-        for c in string.chars(piece) {
-          let cp = string.codepoint(c) ?? 0
-          let b = if cp < 512 then list.get(t.char_to_byte, cp) ?? -1 else -1
-          if b >= 0 then {
-            list.push(pending, b)
+        empties = 0
+        // Qwen3 chat template, thinking disabled via an empty think block:
+        // <|im_start|>user\n{msg}<|im_end|>\n<|im_start|>assistant\n<think>\n\n</think>\n\n
+        var turn: List[Int] = [im_start]
+        for id in qwen_tokenizer.encode(t, "user\n" + line) { list.push(turn, id) }
+        list.push(turn, im_end)
+        for id in qwen_tokenizer.encode(t, "\n") { list.push(turn, id) }
+        list.push(turn, im_start)
+        for id in qwen_tokenizer.encode(t, "assistant\n") { list.push(turn, id) }
+        if think_open >= 0 and think_close >= 0 then {
+          list.push(turn, think_open)
+          for id in qwen_tokenizer.encode(t, "\n\n") { list.push(turn, id) }
+          list.push(turn, think_close)
+          for id in qwen_tokenizer.encode(t, "\n\n") { list.push(turn, id) }
+        }
+        if pos > 0 and pos + list.len(turn) + max_new + 16 > max_seq then {
+          println("(context full — resetting)")
+          pos = 0
+        }
+        // close the previous assistant message before appending the turn
+        var ids: List[Int] = []
+        if pos > 0 then {
+          list.push(ids, im_end)
+          for id in qwen_tokenizer.encode(t, "\n") { list.push(ids, id) }
+        }
+        for id in turn { list.push(ids, id) }
+
+        // prefill; the last feed's return value is the first sampled token
+        var next = 0
+        for tk in ids {
+          next = cpu_decode_sample(raw, tk, pos, temp, top_p, seed)
+          pos = pos + 1
+        }
+
+        // sampled decode, streaming. Dictionary reads stay inline on `t`
+        // (a helper call would clone the whole tokenizer per token).
+        var pending: List[Int] = []
+        var k = 0
+        var stop = false
+        while k < max_new and not stop {
+          if next == im_end or next == cfg.eos_id or next < 0 then {
+            stop = true
+          } else {
+            let piece = list.get(t.vocab, next) ?? ""
+            for c in string.chars(piece) {
+              let cp = string.codepoint(c) ?? 0
+              let b = if cp < 512 then list.get(t.char_to_byte, cp) ?? -1 else -1
+              if b >= 0 then {
+                list.push(pending, b)
+              }
+            }
+            let cut = utf8_complete_len(pending)
+            if cut > 0 then {
+              io.print(string.from_bytes(list.slice(pending, 0, cut)))
+              pending = list.slice(pending, cut, list.len(pending))
+            }
+            next = cpu_decode_sample(raw, next, pos, temp, top_p, seed)
+            pos = pos + 1
+            k = k + 1
           }
         }
-        let cut = utf8_complete_len(pending)
-        if cut > 0 then {
-          io.print(string.from_bytes(list.slice(pending, 0, cut)))
-          pending = list.slice(pending, cut, list.len(pending))
+        if list.len(pending) > 0 then {
+          io.print(string.from_bytes(pending))
         }
-        next = cpu_decode_argmax(raw, next, pos)
-        pos = pos + 1
-        k = k + 1
+        println("")
+        if oneshot != "" then {
+          running = false
+        }
       }
     }
-    if list.len(pending) > 0 then {
-      io.print(string.from_bytes(pending))
-    }
-    println("")
   }
 }

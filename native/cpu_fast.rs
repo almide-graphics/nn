@@ -16,7 +16,9 @@
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Mutex, OnceLock};
 
-const MAX_SEQ: usize = 512;
+// 2048 = chat-demo context. KV pool cost: 2048 × kv_hidden(1024) × 2 × 28
+// layers × 4B ≈ 470 MB, allocated zeroed at load.
+const MAX_SEQ: usize = 2048;
 const Q8B: usize = 32; // values per Q8_0 block
 const Q8BB: usize = 34; // bytes per Q8_0 block
 
@@ -1051,6 +1053,75 @@ pub fn decode_argmax(raw: impl std::ops::Deref<Target = Vec<u8>>, token: i64, po
         }
     }
     best as i64
+}
+
+/// Feed one token; sample the next from temperature + top-p (nucleus).
+/// temp <= 0 degrades to argmax. Deterministic for a given (seed, pos) —
+/// the caller passes one seed per conversation and gets a reproducible
+/// stream. Sampling stays native: shipping 152k logits across the FFI and
+/// sorting them in Almide per token would dominate the decode step.
+pub fn decode_sample(
+    raw: impl std::ops::Deref<Target = Vec<u8>>,
+    token: i64,
+    pos: i64,
+    temp: f64,
+    top_p: f64,
+    seed: i64,
+) -> i64 {
+    let mut cell = cell().lock().unwrap();
+    let Some(st) = cell.as_mut() else { return -1 };
+    if pos as usize >= MAX_SEQ {
+        return -2;
+    }
+    let nt = lockstep_threads();
+    token_pass(st, &raw, token as usize, pos as usize, nt);
+    if temp <= 0.0 {
+        let mut best = 0usize;
+        let mut bv = f32::NEG_INFINITY;
+        for (i, &v) in st.logits.iter().enumerate() {
+            if v > bv {
+                bv = v;
+                best = i;
+            }
+        }
+        return best as i64;
+    }
+    // top-K preselect (K=256 covers any practical nucleus), then top-p cut
+    const K: usize = 256;
+    let mut pairs: Vec<(f32, u32)> = st.logits.iter().enumerate().map(|(i, &v)| (v, i as u32)).collect();
+    let k = K.min(pairs.len());
+    pairs.select_nth_unstable_by(k - 1, |a, b| b.0.partial_cmp(&a.0).unwrap());
+    pairs.truncate(k);
+    pairs.sort_unstable_by(|a, b| b.0.partial_cmp(&a.0).unwrap());
+    let inv_t = 1.0 / temp;
+    let m = pairs[0].0 as f64;
+    let ps: Vec<f64> = pairs.iter().map(|p| ((p.0 as f64 - m) * inv_t).exp()).collect();
+    let sum: f64 = ps.iter().sum();
+    let cut = top_p.clamp(0.0, 1.0) * sum;
+    let mut n_keep = ps.len();
+    let mut acc = 0.0;
+    for (i, &p) in ps.iter().enumerate() {
+        acc += p;
+        if acc >= cut {
+            n_keep = i + 1;
+            break;
+        }
+    }
+    // xorshift64* seeded by (seed, pos): one user seed → reproducible stream
+    let mut s = (seed as u64) ^ 0x9E37_79B9_7F4A_7C15 ^ ((pos as u64).wrapping_mul(0xA24B_AED4_963E_E407));
+    s ^= s << 13;
+    s ^= s >> 7;
+    s ^= s << 17;
+    let total: f64 = ps[..n_keep].iter().sum();
+    let r = (s >> 11) as f64 / (1u64 << 53) as f64 * total;
+    let mut acc2 = 0.0;
+    for i in 0..n_keep {
+        acc2 += ps[i];
+        if r <= acc2 {
+            return pairs[i].1 as i64;
+        }
+    }
+    pairs[n_keep - 1].1 as i64
 }
 
 /// Parity variant: full logits.
