@@ -1,0 +1,49 @@
+<!DOCTYPE html><html><head><meta charset="utf-8"></head><body>
+<pre id="out">running…</pre>
+<script type="module">
+// M1 acceptance: tiny model, feed [1,2,3,4], logits for token 5 at pos 4,
+// compare against the NATIVE GPU dump (testdata/tiny_ref_logits.txt).
+import { loadModel } from "./m1.js";
+
+const out = document.getElementById("out");
+const lines = [];
+const say = (t) => { lines.push(t); out.textContent = lines.join("\n"); };
+
+try {
+  const adapter = await navigator.gpu?.requestAdapter();
+  if (!adapter) throw new Error("no adapter");
+  const device = await adapter.requestDevice();
+  const wgsl = await (await fetch("../native/wgsl/qwen3.wgsl")).text();
+  const gguf = await (await fetch("../testdata/tiny-qwen3-q8_0.gguf")).arrayBuffer();
+  const refText = await (await fetch("../testdata/tiny_ref_logits.txt")).text();
+  const ref = refText.trim().split(",").map(Number);
+
+  const model = await loadModel(device, wgsl, gguf, say);
+  let pos = 0;
+  for (const t of [1, 2, 3, 4]) {
+    await model.step(t, pos);
+    pos++;
+  }
+  const logits = await model.step(5, pos);
+  if (logits.length !== ref.length) throw new Error(`vocab mismatch ${logits.length} vs ${ref.length}`);
+
+  let maxRel = 0, maxAbs = 0, argGot = 0, argWant = 0;
+  for (let i = 0; i < ref.length; i++) {
+    const d = Math.abs(logits[i] - ref[i]);
+    maxAbs = Math.max(maxAbs, d);
+    maxRel = Math.max(maxRel, d / Math.max(1e-6, Math.abs(ref[i])));
+    if (logits[i] > logits[argGot]) argGot = i;
+    if (ref[i] > ref[argWant]) argWant = i;
+  }
+  say(`argmax: got ${argGot}, want ${argWant}`);
+  say(`max_abs=${maxAbs.toExponential(3)} max_rel=${maxRel.toExponential(3)}`);
+  const pass = argGot === argWant && maxAbs < 1e-2;
+  document.title = pass
+    ? `M1_PASS abs=${maxAbs.toExponential(2)}`
+    : `M1_FAIL argmax ${argGot}/${argWant} abs=${maxAbs.toExponential(2)}`;
+  say(document.title);
+} catch (e) {
+  document.title = "M1_FAIL " + (e.message || e);
+  say(document.title);
+}
+</script></body></html>

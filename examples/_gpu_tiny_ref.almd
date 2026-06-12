@@ -1,0 +1,55 @@
+// M1 reference dump: run the tiny test model (testdata/tiny-qwen3-q8_0.gguf)
+// through the NATIVE GPU path and write the logits after a fixed token
+// sequence. The browser port (web/m1.js) must reproduce these numbers —
+// same GGUF, same kernels, different host.
+//
+//   tools/.venv/bin/python tools/export_test_gguf.py
+//   almide build examples/_gpu_tiny_ref.almd -o /tmp/gpu_tiny_ref && /tmp/gpu_tiny_ref
+
+import fs
+import self.qwen
+import self.qwen_loader
+
+@extern(rs, "gpu", "init")
+fn gpu_init() -> Int
+
+@extern(rs, "gpu_model", "load_model")
+fn gpu_load_model(
+  raw: Bytes, n_layers: Int, n_heads: Int, n_kv_heads: Int, head_dim: Int,
+  ffn_hidden: Int, hidden: Int, vocab: Int, rope_theta: Float, eps: Float,
+  emb_off: Int, out_norm_off: Int, gammas: List[Int], weights: List[Int],
+) -> Int
+
+@extern(rs, "gpu_model", "decode_argmax")
+fn gpu_decode_argmax(token: Int, pos: Int) -> Int
+
+@extern(rs, "gpu_model", "decode_logits")
+fn gpu_decode_logits(token: Int, pos: Int) -> List[Float]
+
+effect fn main() -> () = {
+  let (raw, cfg, gammas, weights) = qwen_loader.load_f32("testdata/tiny-qwen3-q8_0.gguf")!
+  if gpu_init() != 1 then {
+    println("NO GPU ADAPTER")
+  } else {
+    let loaded = gpu_load_model(raw, cfg.n_layers, cfg.n_heads, cfg.n_kv_heads, cfg.head_dim,
+      cfg.ffn_hidden, cfg.hidden, cfg.vocab, cfg.rope_theta, cfg.eps,
+      cfg.emb_off, cfg.out_norm_off,
+      gammas |> list.flat_map((g) => g), weights |> list.flat_map((w) => w))
+    if loaded != 1 then {
+      println("gpu load failed")
+    } else {
+      // fixed sequence: feed 1,2,3,4 then dump logits for token 5 at pos 4
+      let ids = [1, 2, 3, 4]
+      var pos = 0
+      for tk in ids {
+        let _ = gpu_decode_argmax(tk, pos)
+        pos = pos + 1
+      }
+      let lg = gpu_decode_logits(5, pos)
+      let line = lg |> list.map((v) => float.to_string(v)) |> list.join(",")
+      fs.write("testdata/tiny_ref_logits.txt", line)!
+      println("vocab=" + int.to_string(list.len(lg)))
+      println("wrote testdata/tiny_ref_logits.txt")
+    }
+  }
+}
