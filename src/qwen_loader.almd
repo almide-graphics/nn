@@ -1,6 +1,6 @@
 // nn.qwen_loader — Load a Qwen3 GGUF (llama.cpp tensor naming) into QwenModel.
 //
-// Self-contained GGUF reading (does NOT import nn.gguf) and written in a
+// GGUF reading on self.gguf_prims (does NOT import nn.gguf), written in a
 // deliberate "primitive-flow" style: compiler issue #433-family (verified on
 // almide 0.27.3) still mis-canonicalizes module types in two signature
 // shapes — `Option[OwnType]` returns and own-variant types — when the module
@@ -26,98 +26,7 @@
 
 import fs
 import self.qwen
-
-// ── Binary readers (little-endian) ──
-
-fn r_u8(data: Bytes, pos: Int) -> Int =
-  int.band(bytes.get(data, pos) ?? 0, 255)
-
-fn r_u32(data: Bytes, pos: Int) -> Int =
-  r_u8(data, pos) + r_u8(data, pos + 1) * 256 +
-  r_u8(data, pos + 2) * 65536 + r_u8(data, pos + 3) * 16777216
-
-fn r_u64(data: Bytes, pos: Int) -> Int =
-  r_u32(data, pos) + r_u32(data, pos + 4) * 4294967296
-
-// Arithmetic IEEE-754 decode (sign/exponent/mantissa) instead of
-// int.bits_to_float — that intrinsic's 32-bit semantics differ across
-// compiler versions, and this fn only feeds small metadata scalars.
-fn r_f32(data: Bytes, pos: Int) -> Float = {
-  let raw = r_u32(data, pos)
-  let sign = int.band(int.bshr(raw, 31), 1)
-  let exponent = int.band(int.bshr(raw, 23), 255)
-  let mantissa = int.band(raw, 8388607)
-  if exponent == 0 then {
-    let val = int.to_float(mantissa) / 8388608.0 * math.fpow(2.0, -126.0)
-    if sign == 1 then 0.0 - val else val
-  } else if exponent == 255 then {
-    if sign == 1 then -99999999.0 else 99999999.0
-  } else {
-    let val = (1.0 + int.to_float(mantissa) / 8388608.0) * math.fpow(2.0, int.to_float(exponent) - 127.0)
-    if sign == 1 then 0.0 - val else val
-  }
-}
-
-fn r_string(data: Bytes, pos: Int) -> (String, Int) = {
-  let len = r_u64(data, pos)
-  let raw = bytes.to_list(bytes.slice(data, pos + 8, pos + 8 + len))
-  (string.from_bytes(raw), pos + 8 + len)
-}
-
-fn skip_string(data: Bytes, pos: Int) -> Int =
-  pos + 8 + r_u64(data, pos)
-
-// GGUF value types: 0=u8 1=i8 2=u16 3=i16 4=u32 5=i32 6=f32 7=bool
-//                   8=string 9=array 10=u64 11=i64 12=f64
-fn scalar_size(vtype: Int) -> Int =
-  match vtype {
-    0 => 1, 1 => 1, 7 => 1,
-    2 => 2, 3 => 2,
-    4 => 4, 5 => 4, 6 => 4,
-    10 => 8, 11 => 8, 12 => 8,
-    _ => 0,
-  }
-
-// Skip one value of `vtype` at `pos`, return the next position.
-//
-// var/while instead of fold or recursion, deliberately: recursion over a
-// 152k-string array blows the native stack, and a fold lambda that captures
-// `data` clones the whole multi-GB buffer at closure creation (codegen
-// demotes captured Bytes to by-value — measured at 84% of load wall-time).
-fn skip_value(data: Bytes, pos: Int, vtype: Int) -> Int =
-  if vtype == 8 then skip_string(data, pos)
-  else if vtype == 9 then {
-    let elem_type = r_u32(data, pos)
-    let count = r_u64(data, pos + 4)
-    let body = pos + 12
-    if elem_type == 8 then {
-      var p = body
-      var k = 0
-      while k < count {
-        p = skip_string(data, p)
-        k = k + 1
-      }
-      p
-    }
-    else
-      body + count * scalar_size(elem_type)
-  }
-  else pos + scalar_size(vtype)
-
-// Read a numeric value (int-like or f32/f64) as Int / Float; 0 for others.
-fn value_as_int(data: Bytes, pos: Int, vtype: Int) -> Int =
-  match vtype {
-    0 => r_u8(data, pos),
-    4 => r_u32(data, pos),
-    5 => r_u32(data, pos),
-    10 => r_u64(data, pos),
-    11 => r_u64(data, pos),
-    _ => 0,
-  }
-
-fn value_as_float(data: Bytes, pos: Int, vtype: Int) -> Float =
-  if vtype == 6 then r_f32(data, pos)
-  else int.to_float(value_as_int(data, pos, vtype))
+import self.gguf_prims
 
 // ── Flat metadata table (no variant types — see header comment) ──
 
@@ -145,14 +54,14 @@ fn default_meta() -> MetaTable = {
 
 fn absorb_meta(m: MetaTable, key: String, data: Bytes, pos: Int, vtype: Int) -> MetaTable =
   match key {
-    "qwen3.block_count" => { block_count: value_as_int(data, pos, vtype), head_count: m.head_count, head_count_kv: m.head_count_kv, key_length: m.key_length, eos_id: m.eos_id, alignment: m.alignment, freq_base: m.freq_base, rms_eps: m.rms_eps },
-    "qwen3.attention.head_count" => { block_count: m.block_count, head_count: value_as_int(data, pos, vtype), head_count_kv: m.head_count_kv, key_length: m.key_length, eos_id: m.eos_id, alignment: m.alignment, freq_base: m.freq_base, rms_eps: m.rms_eps },
-    "qwen3.attention.head_count_kv" => { block_count: m.block_count, head_count: m.head_count, head_count_kv: value_as_int(data, pos, vtype), key_length: m.key_length, eos_id: m.eos_id, alignment: m.alignment, freq_base: m.freq_base, rms_eps: m.rms_eps },
-    "qwen3.attention.key_length" => { block_count: m.block_count, head_count: m.head_count, head_count_kv: m.head_count_kv, key_length: value_as_int(data, pos, vtype), eos_id: m.eos_id, alignment: m.alignment, freq_base: m.freq_base, rms_eps: m.rms_eps },
-    "tokenizer.ggml.eos_token_id" => { block_count: m.block_count, head_count: m.head_count, head_count_kv: m.head_count_kv, key_length: m.key_length, eos_id: value_as_int(data, pos, vtype), alignment: m.alignment, freq_base: m.freq_base, rms_eps: m.rms_eps },
-    "general.alignment" => { block_count: m.block_count, head_count: m.head_count, head_count_kv: m.head_count_kv, key_length: m.key_length, eos_id: m.eos_id, alignment: value_as_int(data, pos, vtype), freq_base: m.freq_base, rms_eps: m.rms_eps },
-    "qwen3.rope.freq_base" => { block_count: m.block_count, head_count: m.head_count, head_count_kv: m.head_count_kv, key_length: m.key_length, eos_id: m.eos_id, alignment: m.alignment, freq_base: value_as_float(data, pos, vtype), rms_eps: m.rms_eps },
-    "qwen3.attention.layer_norm_rms_epsilon" => { block_count: m.block_count, head_count: m.head_count, head_count_kv: m.head_count_kv, key_length: m.key_length, eos_id: m.eos_id, alignment: m.alignment, freq_base: m.freq_base, rms_eps: value_as_float(data, pos, vtype) },
+    "qwen3.block_count" => { block_count: gguf_prims.value_as_int(data, pos, vtype), head_count: m.head_count, head_count_kv: m.head_count_kv, key_length: m.key_length, eos_id: m.eos_id, alignment: m.alignment, freq_base: m.freq_base, rms_eps: m.rms_eps },
+    "qwen3.attention.head_count" => { block_count: m.block_count, head_count: gguf_prims.value_as_int(data, pos, vtype), head_count_kv: m.head_count_kv, key_length: m.key_length, eos_id: m.eos_id, alignment: m.alignment, freq_base: m.freq_base, rms_eps: m.rms_eps },
+    "qwen3.attention.head_count_kv" => { block_count: m.block_count, head_count: m.head_count, head_count_kv: gguf_prims.value_as_int(data, pos, vtype), key_length: m.key_length, eos_id: m.eos_id, alignment: m.alignment, freq_base: m.freq_base, rms_eps: m.rms_eps },
+    "qwen3.attention.key_length" => { block_count: m.block_count, head_count: m.head_count, head_count_kv: m.head_count_kv, key_length: gguf_prims.value_as_int(data, pos, vtype), eos_id: m.eos_id, alignment: m.alignment, freq_base: m.freq_base, rms_eps: m.rms_eps },
+    "tokenizer.ggml.eos_token_id" => { block_count: m.block_count, head_count: m.head_count, head_count_kv: m.head_count_kv, key_length: m.key_length, eos_id: gguf_prims.value_as_int(data, pos, vtype), alignment: m.alignment, freq_base: m.freq_base, rms_eps: m.rms_eps },
+    "general.alignment" => { block_count: m.block_count, head_count: m.head_count, head_count_kv: m.head_count_kv, key_length: m.key_length, eos_id: m.eos_id, alignment: gguf_prims.value_as_int(data, pos, vtype), freq_base: m.freq_base, rms_eps: m.rms_eps },
+    "qwen3.rope.freq_base" => { block_count: m.block_count, head_count: m.head_count, head_count_kv: m.head_count_kv, key_length: m.key_length, eos_id: m.eos_id, alignment: m.alignment, freq_base: gguf_prims.value_as_float(data, pos, vtype), rms_eps: m.rms_eps },
+    "qwen3.attention.layer_norm_rms_epsilon" => { block_count: m.block_count, head_count: m.head_count, head_count_kv: m.head_count_kv, key_length: m.key_length, eos_id: m.eos_id, alignment: m.alignment, freq_base: m.freq_base, rms_eps: gguf_prims.value_as_float(data, pos, vtype) },
     _ => m,
   }
 
@@ -161,10 +70,10 @@ fn absorb_meta(m: MetaTable, key: String, data: Bytes, pos: Int, vtype: Int) -> 
 fn walk_metadata(data: Bytes, start: Int, count: Int) -> (MetaTable, Int) =
   list.fold(list.range(0, count), (default_meta(), start), (acc, _) => {
     let (m, pos) = acc
-    let (key, p1) = r_string(data, pos)
-    let vtype = r_u32(data, p1)
+    let (key, p1) = gguf_prims.r_string(data, pos)
+    let vtype = gguf_prims.r_u32(data, p1)
     let vpos = p1 + 4
-    (absorb_meta(m, key, data, vpos, vtype), skip_value(data, vpos, vtype))
+    (absorb_meta(m, key, data, vpos, vtype), gguf_prims.skip_value(data, vpos, vtype))
   })
 
 // ── Tensor table ──
@@ -184,16 +93,16 @@ fn missing_loc() -> TensorLoc =
 fn walk_tensors(data: Bytes, start: Int, count: Int) -> (List[TensorLoc], Int) =
   list.fold(list.range(0, count), ([], start), (acc, _) => {
     let (locs, pos) = acc
-    let (name, p1) = r_string(data, pos)
-    let n_dims = r_u32(data, p1)
+    let (name, p1) = gguf_prims.r_string(data, pos)
+    let n_dims = gguf_prims.r_u32(data, p1)
     // ne[0] / ne[1] read directly — a `dims` list.map lambda here captures
     // `data` and clones the 2.4 GB buffer once PER TENSOR (339×). All
     // qwen3 tensors are 1-D or 2-D; >2-D would need the full ne walk.
-    let cols = if n_dims >= 1 then r_u64(data, p1 + 4) else 0
-    let rows = if n_dims >= 2 then r_u64(data, p1 + 12) else 1
+    let cols = if n_dims >= 1 then gguf_prims.r_u64(data, p1 + 4) else 0
+    let rows = if n_dims >= 2 then gguf_prims.r_u64(data, p1 + 12) else 1
     let p2 = p1 + 4 + n_dims * 8
-    let dtype = r_u32(data, p2)
-    let offset = r_u64(data, p2 + 4)
+    let dtype = gguf_prims.r_u32(data, p2)
+    let offset = gguf_prims.r_u64(data, p2 + 4)
     (locs + [{ name: name, offset: offset, rows: rows, cols: cols, dtype: dtype, found: true }], p2 + 12)
   })
 
@@ -289,10 +198,10 @@ effect fn load(path: String) -> Result[(qwen.QwenModel, Int), String] =
   match fs.read_bytes_raw(path) {
     err(e) => err("failed to read " + path + ": " + e)
     ok(data) => {
-      if r_u32(data, 0) != 1179993927 then err(path + " is not a GGUF file")
+      if gguf_prims.r_u32(data, 0) != 1179993927 then err(path + " is not a GGUF file")
       else {
-        let tensor_count = r_u64(data, 8)
-        let metadata_count = r_u64(data, 16)
+        let tensor_count = gguf_prims.r_u64(data, 8)
+        let metadata_count = gguf_prims.r_u64(data, 16)
         let (meta, p1) = walk_metadata(data, 24, metadata_count)
         let (locs, p2) = walk_tensors(data, p1, tensor_count)
         let data_offset = align_to(p2, meta.alignment)
@@ -359,10 +268,10 @@ effect fn load_f32(path: String) -> Result[(Bytes, qwen.QwenF32Cfg, List[List[In
   match fs.read_bytes_raw(path) {
     err(e) => err("failed to read " + path + ": " + e)
     ok(data) => {
-      if r_u32(data, 0) != 1179993927 then err(path + " is not a GGUF file")
+      if gguf_prims.r_u32(data, 0) != 1179993927 then err(path + " is not a GGUF file")
       else {
-        let tensor_count = r_u64(data, 8)
-        let metadata_count = r_u64(data, 16)
+        let tensor_count = gguf_prims.r_u64(data, 8)
+        let metadata_count = gguf_prims.r_u64(data, 16)
         let (meta, p1) = walk_metadata(data, 24, metadata_count)
         let (locs, p2) = walk_tensors(data, p1, tensor_count)
         let data_offset = align_to(p2, meta.alignment)
@@ -462,25 +371,6 @@ test "rope_rotate_at start_pos 0 is identity" {
   let out = matrix.rope_rotate_at(m, 1, 4, 10000.0, 0)
   assert(approx(matrix.get(out, 0, 0), 1.0))
   assert(approx(matrix.get(out, 0, 3), 4.0))
-}
-
-test "binary readers decode little-endian" {
-  // bytes: u32 0x01020304 stored LE, then f32 1.0 (0x3F800000 LE)
-  let data = bytes.from_list([4, 3, 2, 1, 0, 0, 128, 63])
-  assert_eq(r_u32(data, 0), 16909060)
-  assert(approx(r_f32(data, 4), 1.0), "f32 decode")
-}
-
-test "skip_value over a string array walks every element" {
-  // array(vtype=8 string, count=2): "ab", "c"
-  // layout: u32 8, u64 2, (u64 2, 'a','b'), (u64 1, 'c')
-  let data = bytes.from_list([
-    8, 0, 0, 0,
-    2, 0, 0, 0, 0, 0, 0, 0,
-    2, 0, 0, 0, 0, 0, 0, 0, 97, 98,
-    1, 0, 0, 0, 0, 0, 0, 0, 99,
-  ])
-  assert_eq(skip_value(data, 0, 9), 31)
 }
 
 test "loc_of returns found=false for unknown names" {

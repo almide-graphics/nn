@@ -1,0 +1,116 @@
+// nn.gguf_prims — GGUF binary primitives (little-endian readers, value
+// skipping). Shared by qwen_loader (tensors) and qwen_tokenizer (vocab) so
+// the tokenizer's import graph stays free of the matrix Q8 intrinsics,
+// which have no WASM runtime — the tokenizer must compile for the browser.
+//
+// Same "primitive-flow" style as qwen_loader: no variant types, no
+// closures over Bytes (a captured Bytes is cloned whole at closure
+// creation), var/while instead of recursion over 152k-element arrays.
+
+// ── Binary readers (little-endian) ──
+
+fn r_u8(data: Bytes, pos: Int) -> Int =
+  int.band(bytes.get(data, pos) ?? 0, 255)
+
+fn r_u32(data: Bytes, pos: Int) -> Int =
+  r_u8(data, pos) + r_u8(data, pos + 1) * 256 +
+  r_u8(data, pos + 2) * 65536 + r_u8(data, pos + 3) * 16777216
+
+fn r_u64(data: Bytes, pos: Int) -> Int =
+  r_u32(data, pos) + r_u32(data, pos + 4) * 4294967296
+
+// Arithmetic IEEE-754 decode (sign/exponent/mantissa) instead of
+// int.bits_to_float — that intrinsic's 32-bit semantics differ across
+// compiler versions, and this fn only feeds small metadata scalars.
+fn r_f32(data: Bytes, pos: Int) -> Float = {
+  let raw = r_u32(data, pos)
+  let sign = int.band(int.bshr(raw, 31), 1)
+  let exponent = int.band(int.bshr(raw, 23), 255)
+  let mantissa = int.band(raw, 8388607)
+  if exponent == 0 then {
+    let val = int.to_float(mantissa) / 8388608.0 * math.fpow(2.0, -126.0)
+    if sign == 1 then 0.0 - val else val
+  } else if exponent == 255 then {
+    if sign == 1 then -99999999.0 else 99999999.0
+  } else {
+    let val = (1.0 + int.to_float(mantissa) / 8388608.0) * math.fpow(2.0, int.to_float(exponent) - 127.0)
+    if sign == 1 then 0.0 - val else val
+  }
+}
+
+fn r_string(data: Bytes, pos: Int) -> (String, Int) = {
+  let len = r_u64(data, pos)
+  let raw = bytes.to_list(bytes.slice(data, pos + 8, pos + 8 + len))
+  (string.from_bytes(raw), pos + 8 + len)
+}
+
+fn skip_string(data: Bytes, pos: Int) -> Int =
+  pos + 8 + r_u64(data, pos)
+
+// GGUF value types: 0=u8 1=i8 2=u16 3=i16 4=u32 5=i32 6=f32 7=bool
+//                   8=string 9=array 10=u64 11=i64 12=f64
+fn scalar_size(vtype: Int) -> Int =
+  match vtype {
+    0 => 1, 1 => 1, 7 => 1,
+    2 => 2, 3 => 2,
+    4 => 4, 5 => 4, 6 => 4,
+    10 => 8, 11 => 8, 12 => 8,
+    _ => 0,
+  }
+
+// Skip one value of `vtype` at `pos`, return the next position.
+fn skip_value(data: Bytes, pos: Int, vtype: Int) -> Int =
+  if vtype == 8 then skip_string(data, pos)
+  else if vtype == 9 then {
+    let elem_type = r_u32(data, pos)
+    let count = r_u64(data, pos + 4)
+    let body = pos + 12
+    if elem_type == 8 then {
+      var p = body
+      var k = 0
+      while k < count {
+        p = skip_string(data, p)
+        k = k + 1
+      }
+      p
+    }
+    else
+      body + count * scalar_size(elem_type)
+  }
+  else pos + scalar_size(vtype)
+
+// Read a numeric value (int-like or f32/f64) as Int / Float; 0 for others.
+fn value_as_int(data: Bytes, pos: Int, vtype: Int) -> Int =
+  match vtype {
+    0 => r_u8(data, pos),
+    4 => r_u32(data, pos),
+    5 => r_u32(data, pos),
+    10 => r_u64(data, pos),
+    11 => r_u64(data, pos),
+    _ => 0,
+  }
+
+fn value_as_float(data: Bytes, pos: Int, vtype: Int) -> Float =
+  if vtype == 6 then r_f32(data, pos)
+  else int.to_float(value_as_int(data, pos, vtype))
+
+// ── Tests ──
+
+test "binary readers decode little-endian" {
+  // bytes: u32 0x01020304 stored LE, then f32 1.0 (0x3F800000 LE)
+  let data = bytes.from_list([4, 3, 2, 1, 0, 0, 128, 63])
+  assert_eq(r_u32(data, 0), 16909060)
+  assert(float.abs(r_f32(data, 4) - 1.0) < 0.0001, "f32 decode")
+}
+
+test "skip_value over a string array walks every element" {
+  // array(vtype=8 string, count=2): "ab", "c"
+  // layout: u32 8, u64 2, (u64 2, 'a','b'), (u64 1, 'c')
+  let data = bytes.from_list([
+    8, 0, 0, 0,
+    2, 0, 0, 0, 0, 0, 0, 0,
+    2, 0, 0, 0, 0, 0, 0, 0, 97, 98,
+    1, 0, 0, 0, 0, 0, 0, 0, 99,
+  ])
+  assert_eq(skip_value(data, 0, 9), 31)
+}
