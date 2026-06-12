@@ -104,6 +104,8 @@ struct State {
     // KV cache pool: [layer][pos*kv_hidden + i]
     k_cache: Vec<Vec<f32>>,
     v_cache: Vec<Vec<f32>>,
+    // per-token rope table: head_dim/2 × (sin, cos)
+    rope_tab: Vec<f32>,
     // per-thread reduction scratch
     red: Vec<f32>,
     arg_v: Vec<f32>,
@@ -213,6 +215,7 @@ pub fn load_model(
         logits: vec![0.0; vocab_u],
         xq_s: vec![0.0; hidden_u.max(ffn) / Q8B],
         xq: vec![0; hidden_u.max(ffn)],
+        rope_tab: vec![0.0; head_dim_u],
         k_cache: (0..n_layers_u).map(|_| vec![0.0; MAX_SEQ * kv_hidden]).collect(),
         v_cache: (0..n_layers_u).map(|_| vec![0.0; MAX_SEQ * kv_hidden]).collect(),
         red: vec![0.0; n_threads],
@@ -419,6 +422,150 @@ fn q8_group_dot_scalar(xs: &[f32], xq: &[i8], group: &[u8], n_blocks: usize) -> 
     acc
 }
 
+/// f32 dot, 8-wide FMA with 2 accumulators (attention score kernel).
+#[cfg(target_arch = "x86_64")]
+#[target_feature(enable = "avx2,fma")]
+unsafe fn f32_dot_avx2(a: &[f32], b: &[f32], n: usize) -> f32 {
+    use std::arch::x86_64::*;
+    let mut acc0 = _mm256_setzero_ps();
+    let mut acc1 = _mm256_setzero_ps();
+    let mut i = 0;
+    while i + 16 <= n {
+        let a0 = _mm256_loadu_ps(a.as_ptr().add(i));
+        let b0 = _mm256_loadu_ps(b.as_ptr().add(i));
+        let a1 = _mm256_loadu_ps(a.as_ptr().add(i + 8));
+        let b1 = _mm256_loadu_ps(b.as_ptr().add(i + 8));
+        acc0 = _mm256_fmadd_ps(a0, b0, acc0);
+        acc1 = _mm256_fmadd_ps(a1, b1, acc1);
+        i += 16;
+    }
+    let acc = _mm256_add_ps(acc0, acc1);
+    let hi = _mm256_extractf128_ps(acc, 1);
+    let lo = _mm256_castps256_ps128(acc);
+    let s4 = _mm_add_ps(hi, lo);
+    let s2 = _mm_add_ps(s4, _mm_movehl_ps(s4, s4));
+    let s1 = _mm_add_ss(s2, _mm_shuffle_ps(s2, s2, 0b0000_0001));
+    let mut r = _mm_cvtss_f32(s1);
+    while i < n {
+        r += a[i] * b[i];
+        i += 1;
+    }
+    r
+}
+
+/// out += w * v, 8-wide (attention weighted-V accumulate).
+#[cfg(target_arch = "x86_64")]
+#[target_feature(enable = "avx2,fma")]
+unsafe fn f32_axpy_avx2(out: &mut [f32], v: &[f32], w: f32, n: usize) {
+    use std::arch::x86_64::*;
+    let wv = _mm256_set1_ps(w);
+    let mut i = 0;
+    while i + 8 <= n {
+        let o = _mm256_loadu_ps(out.as_ptr().add(i));
+        let x = _mm256_loadu_ps(v.as_ptr().add(i));
+        _mm256_storeu_ps(out.as_mut_ptr().add(i), _mm256_fmadd_ps(wv, x, o));
+        i += 8;
+    }
+    while i < n {
+        out[i] += w * v[i];
+        i += 1;
+    }
+}
+
+/// Vectorized Q8 activation quantization for one 32-value block
+/// (llama.cpp's quantize_row_q8_0 recipe): abs-max via AVX, round, pack.
+#[cfg(target_arch = "x86_64")]
+#[target_feature(enable = "avx2,fma")]
+unsafe fn quant_block_avx2(vals: &[f32], out_q: &mut [i8]) -> f32 {
+    use std::arch::x86_64::*;
+    let v0 = _mm256_loadu_ps(vals.as_ptr());
+    let v1 = _mm256_loadu_ps(vals.as_ptr().add(8));
+    let v2 = _mm256_loadu_ps(vals.as_ptr().add(16));
+    let v3 = _mm256_loadu_ps(vals.as_ptr().add(24));
+    let signbit = _mm256_set1_ps(-0.0);
+    let mut maxabs = _mm256_andnot_ps(signbit, v0);
+    maxabs = _mm256_max_ps(maxabs, _mm256_andnot_ps(signbit, v1));
+    maxabs = _mm256_max_ps(maxabs, _mm256_andnot_ps(signbit, v2));
+    maxabs = _mm256_max_ps(maxabs, _mm256_andnot_ps(signbit, v3));
+    let m4 = _mm_max_ps(_mm256_extractf128_ps(maxabs, 1), _mm256_castps256_ps128(maxabs));
+    let m2 = _mm_max_ps(m4, _mm_movehl_ps(m4, m4));
+    let m1 = _mm_max_ss(m2, _mm_shuffle_ps(m2, m2, 0b0000_0001));
+    let amax = _mm_cvtss_f32(m1);
+    let d = amax / 127.0;
+    let inv = if d > 0.0 { 1.0 / d } else { 0.0 };
+    let mul = _mm256_set1_ps(inv);
+    let i0 = _mm256_cvtps_epi32(_mm256_round_ps(_mm256_mul_ps(v0, mul), _MM_FROUND_TO_NEAREST_INT | _MM_FROUND_NO_EXC));
+    let i1 = _mm256_cvtps_epi32(_mm256_round_ps(_mm256_mul_ps(v1, mul), _MM_FROUND_TO_NEAREST_INT | _MM_FROUND_NO_EXC));
+    let i2 = _mm256_cvtps_epi32(_mm256_round_ps(_mm256_mul_ps(v2, mul), _MM_FROUND_TO_NEAREST_INT | _MM_FROUND_NO_EXC));
+    let i3 = _mm256_cvtps_epi32(_mm256_round_ps(_mm256_mul_ps(v3, mul), _MM_FROUND_TO_NEAREST_INT | _MM_FROUND_NO_EXC));
+    let p01 = _mm256_packs_epi32(i0, i1); // 16 × i16, lane-interleaved
+    let p23 = _mm256_packs_epi32(i2, i3);
+    let packed = _mm256_packs_epi16(p01, p23); // 32 × i8, lane-interleaved
+    // undo the 128-bit lane interleave of packs: order [0,4,1,5,2,6,3,7] dwords
+    let fixed = _mm256_permutevar8x32_epi32(packed, _mm256_setr_epi32(0, 4, 1, 5, 2, 6, 3, 7));
+    _mm256_storeu_si256(out_q.as_mut_ptr() as *mut __m256i, fixed);
+    d
+}
+
+/// 8-lane exp approximation (Cephes polynomial, ~1 ulp on the silu/softmax
+/// range) — scalar libm expf measured ~145k calls/token across silu+softmax.
+#[cfg(target_arch = "x86_64")]
+#[target_feature(enable = "avx2,fma")]
+unsafe fn exp8_avx2(x: std::arch::x86_64::__m256) -> std::arch::x86_64::__m256 {
+    use std::arch::x86_64::*;
+    let max_in = _mm256_set1_ps(88.376_26);
+    let min_in = _mm256_set1_ps(-87.336_54);
+    let x = _mm256_min_ps(_mm256_max_ps(x, min_in), max_in);
+    let log2e = _mm256_set1_ps(std::f32::consts::LOG2_E);
+    let n = _mm256_round_ps(_mm256_mul_ps(x, log2e), _MM_FROUND_TO_NEAREST_INT | _MM_FROUND_NO_EXC);
+    let ln2_hi = _mm256_set1_ps(0.693_359_4);
+    let ln2_lo = _mm256_set1_ps(-2.121_944_4e-4);
+    let mut r = _mm256_fnmadd_ps(n, ln2_hi, x);
+    r = _mm256_fnmadd_ps(n, ln2_lo, r);
+    // exp(r) on [-ln2/2, ln2/2], degree-5 polynomial
+    let c5 = _mm256_set1_ps(1.987_569_1e-4);
+    let c4 = _mm256_set1_ps(1.398_199_9e-3);
+    let c3 = _mm256_set1_ps(8.333_452e-3);
+    let c2 = _mm256_set1_ps(4.166_579_5e-2);
+    let c1 = _mm256_set1_ps(1.666_666_6e-1);
+    let c0 = _mm256_set1_ps(5.0e-1);
+    let mut p = c5;
+    p = _mm256_fmadd_ps(p, r, c4);
+    p = _mm256_fmadd_ps(p, r, c3);
+    p = _mm256_fmadd_ps(p, r, c2);
+    p = _mm256_fmadd_ps(p, r, c1);
+    p = _mm256_fmadd_ps(p, r, c0);
+    let r2 = _mm256_mul_ps(r, r);
+    let mut e = _mm256_fmadd_ps(p, r2, r);
+    e = _mm256_add_ps(e, _mm256_set1_ps(1.0));
+    // scale by 2^n
+    let ni = _mm256_cvtps_epi32(n);
+    let pow2n = _mm256_castsi256_ps(_mm256_slli_epi32(_mm256_add_epi32(ni, _mm256_set1_epi32(127)), 23));
+    _mm256_mul_ps(e, pow2n)
+}
+
+/// silu(gate)*up over n values, 8-wide.
+#[cfg(target_arch = "x86_64")]
+#[target_feature(enable = "avx2,fma")]
+unsafe fn silu_mul_avx2(gate: &[f32], up: &[f32], out: &mut [f32], n: usize) {
+    use std::arch::x86_64::*;
+    let one = _mm256_set1_ps(1.0);
+    let mut i = 0;
+    while i + 8 <= n {
+        let g = _mm256_loadu_ps(gate.as_ptr().add(i));
+        let u = _mm256_loadu_ps(up.as_ptr().add(i));
+        let e = exp8_avx2(_mm256_sub_ps(_mm256_setzero_ps(), g));
+        let s = _mm256_div_ps(g, _mm256_add_ps(one, e));
+        _mm256_storeu_ps(out.as_mut_ptr().add(i), _mm256_mul_ps(s, u));
+        i += 8;
+    }
+    while i < n {
+        let g = gate[i];
+        out[i] = g / (1.0 + (-g).exp()) * up[i];
+        i += 1;
+    }
+}
+
 #[inline]
 fn q8_row_dot(xs: &[f32], xq: &[i8], row: &[u8]) -> f32 {
     #[cfg(target_arch = "x86_64")]
@@ -464,6 +611,7 @@ fn token_pass(st: &mut State, raw: &[u8], token: usize, pos: usize, nt: usize) {
     let logits_p = Shared(st.logits.as_mut_ptr());
     let xqs_p = Shared(st.xq_s.as_mut_ptr());
     let xq_p = Shared(st.xq.as_mut_ptr());
+    let rope_p = Shared(st.rope_tab.as_mut_ptr());
     let red_p = Shared(st.red.as_mut_ptr());
     let argv_p = Shared(st.arg_v.as_mut_ptr());
     let argi_p = Shared(st.arg_i.as_mut_ptr());
@@ -501,6 +649,7 @@ fn token_pass(st: &mut State, raw: &[u8], token: usize, pos: usize, nt: usize) {
                 let logits = std::slice::from_raw_parts_mut(logits_p.ptr(), vocab);
                 let xqs = std::slice::from_raw_parts_mut(xqs_p.ptr(), hidden.max(ffn) / Q8B);
                 let xq = std::slice::from_raw_parts_mut(xq_p.ptr(), hidden.max(ffn));
+                let rope_tab = std::slice::from_raw_parts_mut(rope_p.ptr(), dh);
                 let red = std::slice::from_raw_parts_mut(red_p.ptr(), nt);
                 let argv = std::slice::from_raw_parts_mut(argv_p.ptr(), nt);
                 let argi = std::slice::from_raw_parts_mut(argi_p.ptr(), nt);
@@ -516,6 +665,17 @@ fn token_pass(st: &mut State, raw: &[u8], token: usize, pos: usize, nt: usize) {
                         for k in 0..Q8B {
                             h[b * Q8B + k] = d * (blk[2 + k] as i8) as f32;
                         }
+                    }
+                }
+                // rope angle table: identical for every head and layer at
+                // this position — was 24 heads × 64 sincos per LAYER.
+                {
+                    let half = dh / 2;
+                    let (j0, j1) = split(half, nt, tid);
+                    for j in j0..j1 {
+                        let (sn, cs) = (pos as f32 * inv_freq[j]).sin_cos();
+                        rope_tab[j * 2] = sn;
+                        rope_tab[j * 2 + 1] = cs;
                     }
                 }
                 bar.wait();
@@ -548,19 +708,30 @@ fn token_pass(st: &mut State, raw: &[u8], token: usize, pos: usize, nt: usize) {
                     let nb = n / Q8B;
                     let (b0, b1) = split(nb, nt, tid);
                     for b in b0..b1 {
-                        let mut amax = 0.0f32;
                         let base = b * Q8B;
                         let mut tmp = [0.0f32; Q8B];
                         for k in 0..Q8B {
-                            let v = vals(base + k);
-                            tmp[k] = v;
-                            amax = amax.max(v.abs());
+                            tmp[k] = vals(base + k);
                         }
-                        let d = amax / 127.0;
-                        let inv = if d > 0.0 { 1.0 / d } else { 0.0 };
-                        xqs[b] = d;
-                        for k in 0..Q8B {
-                            xq[base + k] = (tmp[k] * inv).round().clamp(-127.0, 127.0) as i8;
+                        #[cfg(target_arch = "x86_64")]
+                        {
+                            if avx2() {
+                                xqs[b] = unsafe { quant_block_avx2(&tmp, &mut xq[base..base + Q8B]) };
+                                continue;
+                            }
+                        }
+                        #[allow(unreachable_code)]
+                        {
+                            let mut amax = 0.0f32;
+                            for k in 0..Q8B {
+                                amax = amax.max(tmp[k].abs());
+                            }
+                            let d = amax / 127.0;
+                            let inv = if d > 0.0 { 1.0 / d } else { 0.0 };
+                            xqs[b] = d;
+                            for k in 0..Q8B {
+                                xq[base + k] = (tmp[k] * inv).round().clamp(-127.0, 127.0) as i8;
+                            }
                         }
                     }
                     bar.wait();
@@ -611,18 +782,29 @@ fn token_pass(st: &mut State, raw: &[u8], token: usize, pos: usize, nt: usize) {
                     let b1 = s1 / Q8B;
                     for b in b0..b1 {
                         let base = b * Q8B;
-                        let mut amax = 0.0f32;
                         let mut tmp = [0.0f32; Q8B];
                         for k in 0..Q8B {
-                            let v = src[base + k] * inv * gammas[g + base + k];
-                            tmp[k] = v;
-                            amax = amax.max(v.abs());
+                            tmp[k] = src[base + k] * inv * gammas[g + base + k];
                         }
-                        let d = amax / 127.0;
-                        let qi = if d > 0.0 { 1.0 / d } else { 0.0 };
-                        xqs[b] = d;
-                        for k in 0..Q8B {
-                            xq[base + k] = (tmp[k] * qi).round().clamp(-127.0, 127.0) as i8;
+                        #[cfg(target_arch = "x86_64")]
+                        {
+                            if avx2() {
+                                xqs[b] = unsafe { quant_block_avx2(&tmp, &mut xq[base..base + Q8B]) };
+                                continue;
+                            }
+                        }
+                        #[allow(unreachable_code)]
+                        {
+                            let mut amax = 0.0f32;
+                            for k in 0..Q8B {
+                                amax = amax.max(tmp[k].abs());
+                            }
+                            let d = amax / 127.0;
+                            let qi = if d > 0.0 { 1.0 / d } else { 0.0 };
+                            xqs[b] = d;
+                            for k in 0..Q8B {
+                                xq[base + k] = (tmp[k] * qi).round().clamp(-127.0, 127.0) as i8;
+                            }
                         }
                     }
                     bar.wait();
@@ -668,8 +850,8 @@ fn token_pass(st: &mut State, raw: &[u8], token: usize, pos: usize, nt: usize) {
                             }
                             let half = dh / 2;
                             for j in 0..half {
-                                let angle = pos as f32 * inv_freq[j];
-                                let (sn, cs) = angle.sin_cos();
+                                let sn = rope_tab[j * 2];
+                                let cs = rope_tab[j * 2 + 1];
                                 let x0 = qkv[base + j];
                                 let x1 = qkv[base + half + j];
                                 qkv[base + j] = x0 * cs - x1 * sn;
@@ -698,30 +880,91 @@ fn token_pass(st: &mut State, raw: &[u8], token: usize, pos: usize, nt: usize) {
                             let kvb = (hh / group) * dh;
                             let scale = 1.0 / (dh as f32).sqrt();
                             let mut m = f32::NEG_INFINITY;
+                            let qrow = &qkv[qb..qb + dh];
                             for j in 0..seq {
                                 let kb = j * kv_hidden + kvb;
-                                let mut sdot = 0.0f32;
-                                for k in 0..dh {
-                                    sdot += qkv[qb + k] * kcache[kb + k];
+                                let sv;
+                                #[cfg(target_arch = "x86_64")]
+                                {
+                                    sv = if avx2() {
+                                        unsafe { f32_dot_avx2(qrow, &kcache[kb..kb + dh], dh) * scale }
+                                    } else {
+                                        let mut sdot = 0.0f32;
+                                        for k in 0..dh {
+                                            sdot += qrow[k] * kcache[kb + k];
+                                        }
+                                        sdot * scale
+                                    };
                                 }
-                                let sv = sdot * scale;
+                                #[cfg(not(target_arch = "x86_64"))]
+                                {
+                                    let mut sdot = 0.0f32;
+                                    for k in 0..dh {
+                                        sdot += qrow[k] * kcache[kb + k];
+                                    }
+                                    sv = sdot * scale;
+                                }
                                 scores[j] = sv;
                                 m = m.max(sv);
                             }
                             let mut sum = 0.0f32;
+                            #[cfg(target_arch = "x86_64")]
+                            {
+                                if avx2() {
+                                    unsafe {
+                                        use std::arch::x86_64::*;
+                                        let mv = _mm256_set1_ps(m);
+                                        let mut sv = _mm256_setzero_ps();
+                                        let mut j = 0;
+                                        while j + 8 <= seq {
+                                            let s8 = _mm256_loadu_ps(scores.as_ptr().add(j));
+                                            let e = exp8_avx2(_mm256_sub_ps(s8, mv));
+                                            _mm256_storeu_ps(scores.as_mut_ptr().add(j), e);
+                                            sv = _mm256_add_ps(sv, e);
+                                            j += 8;
+                                        }
+                                        let hi = _mm256_extractf128_ps(sv, 1);
+                                        let lo = _mm256_castps256_ps128(sv);
+                                        let s4 = _mm_add_ps(hi, lo);
+                                        let s2 = _mm_add_ps(s4, _mm_movehl_ps(s4, s4));
+                                        sum = _mm_cvtss_f32(_mm_add_ss(s2, _mm_shuffle_ps(s2, s2, 0b0000_0001)));
+                                        while j < seq {
+                                            let e = (scores[j] - m).exp();
+                                            scores[j] = e;
+                                            sum += e;
+                                            j += 1;
+                                        }
+                                    }
+                                } else {
+                                    for sj in scores.iter_mut().take(seq) {
+                                        *sj = (*sj - m).exp();
+                                        sum += *sj;
+                                    }
+                                }
+                            }
+                            #[cfg(not(target_arch = "x86_64"))]
                             for sj in scores.iter_mut().take(seq) {
                                 *sj = (*sj - m).exp();
                                 sum += *sj;
                             }
                             let invs = 1.0 / sum;
-                            for k in 0..dh {
-                                attn_out[qb + k] = 0.0;
+                            let orow = &mut attn_out[qb..qb + dh];
+                            for o in orow.iter_mut() {
+                                *o = 0.0;
                             }
                             for j in 0..seq {
                                 let w = scores[j] * invs;
                                 let vb = j * kv_hidden + kvb;
+                                #[cfg(target_arch = "x86_64")]
+                                {
+                                    if avx2() {
+                                        unsafe { f32_axpy_avx2(orow, &vcache[vb..vb + dh], w, dh) };
+                                        continue;
+                                    }
+                                }
+                                #[allow(unreachable_code)]
                                 for k in 0..dh {
-                                    attn_out[qb + k] += w * vcache[vb + k];
+                                    orow[k] += w * vcache[vb + k];
                                 }
                             }
                         }
@@ -737,10 +980,33 @@ fn token_pass(st: &mut State, raw: &[u8], token: usize, pos: usize, nt: usize) {
                     gemv_nb(wo[4], ffn, hidden, gate, false, xqs, xq);
                     gemv_nb(wo[5], ffn, hidden, up, false, xqs, xq);
                     bar.wait();
-                    quantize(&|i| {
-                        let g = gate[i];
-                        g / (1.0 + (-g).exp()) * up[i]
-                    }, ffn, xqs, xq, bar);
+                    {
+                        // silu(gate)*up into `gate` in place (8-wide exp),
+                        // then the SIMD block quantizer
+                        let (i0, i1) = split(ffn, nt, tid);
+                        #[cfg(target_arch = "x86_64")]
+                        {
+                            if avx2() {
+                                let g_in: &[f32] = std::slice::from_raw_parts(gate.as_ptr(), ffn);
+                                unsafe {
+                                    silu_mul_avx2(&g_in[i0..i1], &up[i0..i1],
+                                        &mut gate[i0..i1], i1 - i0)
+                                };
+                            } else {
+                                for i in i0..i1 {
+                                    let g = gate[i];
+                                    gate[i] = g / (1.0 + (-g).exp()) * up[i];
+                                }
+                            }
+                        }
+                        #[cfg(not(target_arch = "x86_64"))]
+                        for i in i0..i1 {
+                            let g = gate[i];
+                            gate[i] = g / (1.0 + (-g).exp()) * up[i];
+                        }
+                    }
+                    bar.wait();
+                    quantize(&|i| gate[i], ffn, xqs, xq, bar);
                     gemv(wo[6], hidden, ffn, h, true, xqs, xq, bar);
                 }
 
