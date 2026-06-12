@@ -158,6 +158,15 @@ fn storage_entry(binding: u32, read_only: bool) -> wgpu::BindGroupLayoutEntry {
     }
 }
 
+pub fn fp16_to_f32_pub(raw: u16) -> f32 {
+    fp16_to_f32(raw)
+}
+
+/// Shared device/queue accessor for sibling native modules (gpu_model).
+pub fn device_queue() -> Option<(&'static wgpu::Device, &'static wgpu::Queue)> {
+    gpu().as_ref().map(|g| (&g.device, &g.queue))
+}
+
 /// 1 if a device is available, 0 otherwise.
 pub fn init() -> i64 {
     if gpu().is_some() { 1 } else { 0 }
