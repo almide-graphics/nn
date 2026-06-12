@@ -78,47 +78,44 @@ function fp16ToF32(h) {
   return s * Math.pow(2, e - 15) * (1 + f / 1024);
 }
 
-class Packer {
-  // names: every Q8 tensor that will be packed, so the buffer is one
-  // preallocated Uint32Array (the real model is ~170M words — growing a
-  // JS number array would triple the memory)
-  constructor(gguf, names) {
-    this.gguf = gguf;
-    let total = 0;
-    for (const name of names) {
-      const t = gguf.tensors[name];
-      if (!t) throw new Error("missing tensor " + name);
-      total += (t.ne[0] / 32) * t.ne[1] * 9;
-    }
-    this.words = new Uint32Array(total);
-    this.cursor = 0;
+// Repack a GROUP of Q8 tensors into one Uint32Array (preallocated — the
+// real model is ~170M words). One group per layer + one for the
+// embedding: per-layer buffers keep every binding under iGPU
+// maxStorageBufferBindingSize limits (layers ~23 MiB, embedding
+// ~167 MiB), where one monolithic 650 MiB buffer would not bind.
+function packGroup(gguf, names) {
+  let total = 0;
+  for (const name of names) {
+    const t = gguf.tensors[name];
+    if (!t) throw new Error("missing tensor " + name);
+    total += (t.ne[0] / 32) * t.ne[1] * 9;
   }
-  // returns the word offset of the repacked tensor
-  pack(name) {
-    const t = this.gguf.tensors[name];
+  const words = new Uint32Array(total);
+  const offs = {};
+  const bytes = new Uint8Array(gguf.buf);
+  const dv = new DataView(gguf.buf);
+  const sf = new Float32Array(1);
+  const su = new Uint32Array(sf.buffer);
+  let w = 0;
+  for (const name of names) {
+    const t = gguf.tensors[name];
     const [cols, rows] = t.ne; // GGUF ne = [in, out]
     const bpr = cols / 32;
-    const base = this.gguf.dataOff + t.off;
-    const bytes = new Uint8Array(this.gguf.buf);
-    const dv = new DataView(this.gguf.buf);
-    const start = this.cursor;
-    const sf = new Float32Array(1);
-    const su = new Uint32Array(sf.buffer);
-    let w = this.cursor;
+    const base = gguf.dataOff + t.off;
+    offs[name] = w;
     for (let r = 0; r < rows; r++) {
       const rb = base + r * bpr * 34;
       for (let b = 0; b < bpr; b++) {
         const bb = rb + b * 34;
         sf[0] = fp16ToF32(bytes[bb] | (bytes[bb + 1] << 8));
-        this.words[w++] = su[0];
+        words[w++] = su[0];
         for (let k = 0; k < 8; k++) {
-          this.words[w++] = dv.getUint32(bb + 2 + k * 4, true);
+          words[w++] = dv.getUint32(bb + 2 + k * 4, true);
         }
       }
     }
-    this.cursor = w;
-    return start;
   }
+  return { words, offs };
 }
 
 class GammaPacker {
@@ -170,40 +167,36 @@ export async function loadModel(device, wgslText, ggufBuf, report = () => {}) {
   const kvHidden = nKv * headDim;
   report(`model: ${nLayers}L hidden=${hidden} heads=${nHeads}/${nKv} ffn=${ffn} vocab=${vocab}`);
 
-  // repack weights + gammas (same order as native: emb, then per layer)
-  const wNames = ["token_embd.weight"];
-  for (let l = 0; l < nLayers; l++) {
-    for (const s of ["attn_q", "attn_k", "attn_v", "attn_output", "ffn_gate", "ffn_up", "ffn_down"]) {
-      wNames.push(`blk.${l}.${s}.weight`);
-    }
-  }
-  const pk = new Packer(g, wNames);
-  const gk = new GammaPacker(g);
-  const embW = pk.pack("token_embd.weight");
-  const layerW = [];
-  const layerG = [];
-  for (let l = 0; l < nLayers; l++) {
-    const p = `blk.${l}.`;
-    layerW.push([
-      pk.pack(p + "attn_q.weight"), pk.pack(p + "attn_k.weight"),
-      pk.pack(p + "attn_v.weight"), pk.pack(p + "attn_output.weight"),
-      pk.pack(p + "ffn_gate.weight"), pk.pack(p + "ffn_up.weight"),
-      pk.pack(p + "ffn_down.weight"),
-    ]);
-    layerG.push([
-      gk.pack(p + "attn_norm.weight"), gk.pack(p + "attn_q_norm.weight"),
-      gk.pack(p + "attn_k_norm.weight"), gk.pack(p + "ffn_norm.weight"),
-    ]);
-  }
-  const outNormG = gk.pack("output_norm.weight");
-
   const mkInit = (data, usage) => {
     const buf = device.createBuffer({ size: data.byteLength, usage, mappedAtCreation: true });
     new data.constructor(buf.getMappedRange()).set(data);
     buf.unmap();
     return buf;
   };
-  const wbuf = mkInit(pk.words, GPUBufferUsage.STORAGE);
+
+  // repack weights per group (embedding + one group per layer) and
+  // upload each group as its own buffer — see packGroup
+  const LAYER_TENSORS = ["attn_q", "attn_k", "attn_v", "attn_output", "ffn_gate", "ffn_up", "ffn_down"];
+  const embGroup = packGroup(g, ["token_embd.weight"]);
+  const embBuf = mkInit(embGroup.words, GPUBufferUsage.STORAGE);
+  const embW = embGroup.offs["token_embd.weight"]; // 0
+
+  const gk = new GammaPacker(g);
+  const layerBufs = [];
+  const layerW = [];
+  const layerG = [];
+  for (let l = 0; l < nLayers; l++) {
+    const p = `blk.${l}.`;
+    const names = LAYER_TENSORS.map((s) => p + s + ".weight");
+    const grp = packGroup(g, names);
+    layerBufs.push(mkInit(grp.words, GPUBufferUsage.STORAGE));
+    layerW.push(names.map((n) => grp.offs[n]));
+    layerG.push([
+      gk.pack(p + "attn_norm.weight"), gk.pack(p + "attn_q_norm.weight"),
+      gk.pack(p + "attn_k_norm.weight"), gk.pack(p + "ffn_norm.weight"),
+    ]);
+  }
+  const outNormG = gk.pack("output_norm.weight");
   const gammasBuf = mkInit(new Float32Array(gk.vals), GPUBufferUsage.STORAGE);
 
   // pipelines with explicit layouts (mirrors Builder::new)
@@ -255,9 +248,9 @@ export async function loadModel(device, wgslText, ggufBuf, report = () => {}) {
     });
   const f32bits = (v) => new Uint32Array(new Float32Array([v]).buffer)[0];
 
-  const gemvOp = (x, y, rows, cols, wOff) => ({
+  const gemvOp = (wb, x, y, rows, cols, wOff) => ({
     pipeline: P_GEMV,
-    bind: bind(P_GEMV, [wbuf, x, y, uniform([rows, cols, cols / 32, wOff])]),
+    bind: bind(P_GEMV, [wb, x, y, uniform([rows, cols, cols / 32, wOff])]),
     groups: [Math.min(rows, 32768), Math.ceil(rows / 32768), 1],
   });
   const rmsOp = (xi, xo, n, gOff) => ({
@@ -283,18 +276,18 @@ export async function loadModel(device, wgslText, ggufBuf, report = () => {}) {
 
   const preOps = [{
     pipeline: P_EMBED,
-    bind: bind(P_EMBED, [wbuf, h, uniform([vocab, hidden, hidden / 32, embW]), stepUniform]),
+    bind: bind(P_EMBED, [embBuf, h, uniform([vocab, hidden, hidden / 32, embW]), stepUniform]),
     groups: [1, 1, 1],
   }];
 
   const layers = [];
   for (let l = 0; l < nLayers; l++) {
-    const wo = layerW[l], go = layerG[l];
+    const wo = layerW[l], go = layerG[l], wb = layerBufs[l];
     const ops = [
       rmsOp(h, xn, hidden, go[0]),
-      gemvOp(xn, q, qHidden, hidden, wo[0]),
-      gemvOp(xn, kCur, kvHidden, hidden, wo[1]),
-      gemvOp(xn, vCur, kvHidden, hidden, wo[2]),
+      gemvOp(wb, xn, q, qHidden, hidden, wo[0]),
+      gemvOp(wb, xn, kCur, kvHidden, hidden, wo[1]),
+      gemvOp(wb, xn, vCur, kvHidden, hidden, wo[2]),
       rmsIpOp(q, go[1], nHeads),
       rmsIpOp(kCur, go[2], nKv),
       ropeOp(q, nHeads),
@@ -306,20 +299,20 @@ export async function loadModel(device, wgslText, ggufBuf, report = () => {}) {
           uniform([nHeads, nKv, headDim, 0]), stepUniform]),
         groups: [nHeads, 1, 1],
       },
-      gemvOp(attnOut, proj, hidden, qHidden, wo[3]),
+      gemvOp(wb, attnOut, proj, hidden, qHidden, wo[3]),
       ewOp(P_ADD, h, proj, h2, hidden),
       rmsOp(h2, xn, hidden, go[3]),
-      gemvOp(xn, gate, ffn, hidden, wo[4]),
-      gemvOp(xn, up, ffn, hidden, wo[5]),
+      gemvOp(wb, xn, gate, ffn, hidden, wo[4]),
+      gemvOp(wb, xn, up, ffn, hidden, wo[5]),
       ewOp(P_SILU, gate, up, gated, ffn),
-      gemvOp(gated, proj, hidden, ffn, wo[6]),
+      gemvOp(wb, gated, proj, hidden, ffn, wo[6]),
       ewOp(P_ADD, h2, proj, h, hidden),
     ];
     layers.push(ops);
   }
   const postOps = [
     rmsOp(h, xn, hidden, outNormG),
-    gemvOp(xn, logits, vocab, hidden, embW), // tied embeddings
+    gemvOp(embBuf, xn, logits, vocab, hidden, embW), // tied embeddings
   ];
 
   const kvRowBytes = kvHidden * 4;

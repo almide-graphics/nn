@@ -25,10 +25,13 @@ if (!adapter) {
 }
 const lim = adapter.limits;
 console.log(`adapter maxStorageBufferBindingSize=${(lim.maxStorageBufferBindingSize / 1048576) | 0} MiB`);
+// per-layer weight buffers: the biggest binding is the embedding
+// (~167 MiB), so the iGPU-class 256 MiB profile is enough — request
+// exactly that to PROVE portability, not just run.
 const device = await adapter.requestDevice({
   requiredLimits: {
-    maxStorageBufferBindingSize: Math.min(lim.maxStorageBufferBindingSize, 1 << 30),
-    maxBufferSize: Math.min(lim.maxBufferSize, 1 << 30),
+    maxStorageBufferBindingSize: Math.min(lim.maxStorageBufferBindingSize, 256 << 20),
+    maxBufferSize: Math.min(lim.maxBufferSize, 256 << 20),
   },
 });
 
