@@ -239,6 +239,7 @@ type QwenF32Cfg = {
   emb_off: Int,
   out_norm_off: Int,
   eos_id: Int,
+  wtype: Int,  // GGML dtype of the weight tensors: 0 = f32, 8 = Q8_0
 }
 
 // Run all layers over `x0`. Empty cache lists = prefill from scratch.
@@ -257,10 +258,17 @@ fn forward_layers_f32(
     let w = list.get(weights, i) ?? []
     let k_c = list.get(cache_ks, i) ?? matrix.zeros(0, 1)
     let v_c = list.get(cache_vs, i) ?? matrix.zeros(0, 1)
-    let (x2, k2, v2) = matrix.qwen3_block_f32_kv(
-      x, k_c, v_c, raw, g, w, pos,
-      cfg.n_heads, cfg.n_kv_heads, cfg.head_dim, cfg.ffn_hidden,
-      cfg.rope_theta, cfg.eps)
+    let (x2, k2, v2) =
+      if cfg.wtype == 8 then
+        matrix.qwen3_block_q8_0_kv(
+          x, k_c, v_c, raw, g, w, pos,
+          cfg.n_heads, cfg.n_kv_heads, cfg.head_dim, cfg.ffn_hidden,
+          cfg.rope_theta, cfg.eps)
+      else
+        matrix.qwen3_block_f32_kv(
+          x, k_c, v_c, raw, g, w, pos,
+          cfg.n_heads, cfg.n_kv_heads, cfg.head_dim, cfg.ffn_hidden,
+          cfg.rope_theta, cfg.eps)
     x = x2
     ks = ks + [k2]
     vs = vs + [v2]
@@ -269,10 +277,16 @@ fn forward_layers_f32(
   (x, ks, vs)
 }
 
+fn embed_rows(raw: Bytes, cfg: QwenF32Cfg, ids: List[Int]) -> Matrix =
+  if cfg.wtype == 8 then matrix.select_rows_q8_0_dq(raw, cfg.emb_off, cfg.hidden, ids)
+  else matrix.select_rows_f32(raw, cfg.emb_off, cfg.hidden, ids)
+
 fn logits_last_f32(hidden: Matrix, raw: Bytes, cfg: QwenF32Cfg) -> List[Float] = {
   let n = matrix.rows(hidden)
   let last = matrix.slice_rows(hidden, n - 1, n)
-  let lg = matrix.linear_f32_row_no_bias(last, raw, cfg.emb_off, cfg.vocab, cfg.hidden)
+  let lg =
+    if cfg.wtype == 8 then matrix.linear_q8_0_row_no_bias(last, raw, cfg.emb_off, cfg.vocab, cfg.hidden)
+    else matrix.linear_f32_row_no_bias(last, raw, cfg.emb_off, cfg.vocab, cfg.hidden)
   let rows = matrix.to_lists(lg)
   list.get(rows, 0) ?? []
 }
@@ -281,7 +295,7 @@ fn prefill_f32(
   tokens: List[Int], raw: Bytes,
   gammas: List[List[Int]], weights: List[List[Int]], cfg: QwenF32Cfg,
 ) -> (Matrix, List[Matrix], List[Matrix]) = {
-  let x0 = matrix.select_rows_f32(raw, cfg.emb_off, cfg.hidden, tokens)
+  let x0 = embed_rows(raw, cfg, tokens)
   let (h, ks, vs) = forward_layers_f32(x0, raw, gammas, weights, [], [], cfg, 0)
   let gamma_out = bytes.read_f32_le_array(raw, cfg.out_norm_off, cfg.hidden)
   (matrix.rms_norm_rows(h, gamma_out, cfg.eps), ks, vs)
@@ -292,7 +306,7 @@ fn decode_step_f32(
   gammas: List[List[Int]], weights: List[List[Int]],
   cache_ks: List[Matrix], cache_vs: List[Matrix], cfg: QwenF32Cfg,
 ) -> (List[Float], List[Matrix], List[Matrix]) = {
-  let x0 = matrix.select_rows_f32(raw, cfg.emb_off, cfg.hidden, [token])
+  let x0 = embed_rows(raw, cfg, [token])
   let (h, ks, vs) = forward_layers_f32(x0, raw, gammas, weights, cache_ks, cache_vs, cfg, pos)
   let gamma_out = bytes.read_f32_le_array(raw, cfg.out_norm_off, cfg.hidden)
   let hidden = matrix.rms_norm_rows(h, gamma_out, cfg.eps)

@@ -367,11 +367,18 @@ effect fn load_f32(path: String) -> Result[(Bytes, qwen.QwenF32Cfg, List[List[In
         let (locs, p2) = walk_tensors(data, p1, tensor_count)
         let data_offset = align_to(p2, meta.alignment)
         let missing = validate(locs, meta.block_count)
-        let non_f32 = locs |> list.filter((l) => l.dtype != 0) |> list.len
+        // Weights (2-D, rows > 1) may be f32 (0) or Q8_0 (8) but must be
+        // uniform; norm gammas (1-D) must stay f32.
+        let wtype = loc_of(locs, "blk.0.attn_q.weight").dtype
+        let bad_norms = locs |> list.filter((l) => l.rows == 1 and l.dtype != 0) |> list.len
+        let bad_weights = locs |> list.filter((l) => l.rows > 1 and l.dtype != wtype) |> list.len
         if list.len(missing) > 0 then
           err("missing tensors: " + list.join(missing, ", "))
-        else if non_f32 > 0 then
-          err("load_f32 requires an all-f32 GGUF (" + int.to_string(non_f32) + " other-dtype tensors)")
+        else if wtype != 0 and wtype != 8 then
+          err("unsupported weight dtype " + int.to_string(wtype) + " (need f32 or Q8_0)")
+        else if bad_norms > 0 or bad_weights > 0 then
+          err("mixed dtypes: " + int.to_string(bad_norms) + " non-f32 norms, "
+            + int.to_string(bad_weights) + " weights not dtype " + int.to_string(wtype))
         else {
           let emb = loc_of(locs, "token_embd.weight")
           let cfg = {
@@ -387,6 +394,7 @@ effect fn load_f32(path: String) -> Result[(Bytes, qwen.QwenF32Cfg, List[List[In
             emb_off: data_offset + emb.offset,
             out_norm_off: abs_off(data_offset, locs, "output_norm.weight"),
             eos_id: meta.eos_id,
+            wtype: wtype,
           }
           let gammas = list.range(0, meta.block_count)
             |> list.map((i) => layer_gamma_offs(data_offset, locs, i))

@@ -21,6 +21,8 @@ def main() -> None:
     ap = argparse.ArgumentParser()
     ap.add_argument("--model", default=DEFAULT_MODEL)
     ap.add_argument("--out", default="parity/qwen3-0.6b-f32.gguf")
+    ap.add_argument("--quant", choices=["f32", "q8_0"], default="f32",
+                    help="q8_0 quantizes 2-D weight tensors (norm gammas stay f32)")
     args = ap.parse_args()
 
     cfg = AutoConfig.from_pretrained(args.model)
@@ -47,7 +49,16 @@ def main() -> None:
     w.add_eos_token_id(getattr(cfg, "eos_token_id", 151645) or 151645)
 
     def put(name: str, key: str) -> None:
-        w.add_tensor(name, sd[key].float().numpy())
+        data = sd[key].float().numpy()
+        if args.quant == "q8_0" and data.ndim == 2:
+            from gguf import GGMLQuantizationType
+            from gguf.quants import quantize
+            q = quantize(data, GGMLQuantizationType.Q8_0)
+            # No raw_shape: gguf derives the logical shape from the quantized
+            # byte shape (last dim / 34 * 32).
+            w.add_tensor(name, q, raw_dtype=GGMLQuantizationType.Q8_0)
+        else:
+            w.add_tensor(name, data)
 
     put("token_embd.weight", "model.embed_tokens.weight")
     for i in range(cfg.num_hidden_layers):
