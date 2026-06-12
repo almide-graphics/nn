@@ -1,0 +1,71 @@
+// L3-1 spike: one Q8 GEMV on the GPU, numerically checked against the CPU
+// path and timed. Uses the logits projection (vocab x hidden — the biggest
+// single GEMV in the model) over the tied Q8 embedding.
+//
+//   almide build examples/_spike_gpu.almd -o /tmp/spike_gpu && /tmp/spike_gpu
+
+import datetime
+import self.qwen
+import self.qwen_loader
+
+// native externs (root-level: @extern is dropped inside linked modules)
+@extern(rs, "gpu", "init")
+fn gpu_init() -> Int
+
+@extern(rs, "gpu", "upload_q8")
+fn gpu_upload_q8(data: Bytes, off: Int, rows: Int, cols: Int) -> Int
+
+@extern(rs, "gpu", "gemv_q8")
+fn gpu_gemv_q8(buf: Int, rows: Int, cols: Int, x: List[Float]) -> List[Float]
+
+fn approx_rel(a: Float, b: Float, scale: Float) -> Bool =
+  float.abs(a - b) / scale < 0.001
+
+effect fn main() -> () = {
+  let (raw, cfg, gammas, weights) = qwen_loader.load_f32("parity/qwen3-0.6b-q8_0.gguf")!
+  if gpu_init() != 1 then {
+    println("NO GPU ADAPTER")
+  } else {
+    // deterministic pseudo-random activation
+    let x = list.range(0, cfg.hidden) |> list.map((i) => math.sin(int.to_float(i) * 0.37) * 0.5)
+
+    // CPU reference
+    let xm = matrix.from_lists([x])
+    let cpu = matrix.linear_q8_0_row_no_bias(xm, raw, cfg.emb_off, cfg.vocab, cfg.hidden)
+    let cpu_row = list.get(matrix.to_lists(cpu), 0) ?? []
+
+    // GPU: upload (timed) + dispatch (timed)
+    let t0 = datetime.monotonic_ns()
+    let buf = gpu_upload_q8(raw, cfg.emb_off, cfg.vocab, cfg.hidden)
+    let t1 = datetime.monotonic_ns()
+    println("upload: " + float.to_string(int.to_float(t1 - t0) / 1000000.0) + " ms (handle " + int.to_string(buf) + ")")
+
+    let gpu_row = gpu_gemv_q8(buf, cfg.vocab, cfg.hidden, x)
+    println("gpu len: " + int.to_string(list.len(gpu_row)))
+
+    // compare
+    let cpu_top = qwen.argmax(cpu_row)
+    let gpu_top = qwen.argmax(gpu_row)
+    let scale = float.abs(list.get(cpu_row, cpu_top) ?? 1.0)
+    var max_diff = 0.0
+    var i = 0
+    while i < list.len(cpu_row) {
+      let d = float.abs((list.get(cpu_row, i) ?? 0.0) - (list.get(gpu_row, i) ?? 0.0))
+      if d > max_diff then { max_diff = d }
+      i = i + 1
+    }
+    println("cpu argmax " + int.to_string(cpu_top) + " / gpu argmax " + int.to_string(gpu_top)
+      + " / max abs diff " + float.to_string(max_diff) + " (scale " + float.to_string(scale) + ")")
+
+    // timing: 20 dispatches
+    let t2 = datetime.monotonic_ns()
+    var k = 0
+    while k < 20 {
+      let _ = gpu_gemv_q8(buf, cfg.vocab, cfg.hidden, x)
+      k = k + 1
+    }
+    let t3 = datetime.monotonic_ns()
+    println("gemv x20: " + float.to_string(int.to_float(t3 - t2) / 1000000.0) + " ms → "
+      + float.to_string(int.to_float(t3 - t2) / 20000000.0) + " ms/dispatch")
+  }
+}
