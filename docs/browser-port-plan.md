@@ -52,22 +52,25 @@ op-list design — all can land first.
 
 ## Milestones
 
-1. **M0 scaffold**: `web/` dir — index.html (chat shell), worker.js
-   (device init, limits probe, WGSL fetch+compile, dummy gemv smoke
-   test). No wasm yet. Verifiable on any WebGPU browser.
-2. **M1 kernels-from-JS**: parse a TINY GGUF (test_weight model from
-   qwen.almd's make_test_model, exported by a 20-line python script) in
-   JS temporarily, run the full layer stack from worker.js, compare
-   logits against native gpu_model for the same tiny model. Proves the
-   browser GPU path end-to-end without wasm.
-3. **M2 wasm orchestration** (needs #643+#681): nn.wasm owns gguf parse,
-   tokenizer, op-list, sampling; worker.js degrades to a dumb executor.
-   Acceptance: token_ids parity 20/20 IN THE BROWSER + the ids canary
-   on the real 0.6B.
-4. **M3 product**: OPFS caching, streaming UI, mobile Safari check
-   (storage-buffer limits likely force f16/smaller model there — out of
-   scope for v1), publish demo URL (GitHub Pages + Cloudflare R2 or HF
-   for the GGUF).
+1. **M0 scaffold** ✅ (2026-06-13): `web/` — index.html chat shell,
+   worker.js, m0.js (device init + WGSL compile + gemv smoke).
+   NB: headless-Chrome automation on macOS cannot run WebGPU compute
+   (renderer dies after device creation) — automated verification goes
+   through **Deno's WebGPU** (same wgpu as native) instead; browser
+   pages remain for human click-testing.
+2. **M1 kernels-from-JS** ✅ (2026-06-13): web/m1.js — full GGUF parse,
+   Q8 repack, 8 pipelines, 17-op layer list, KV copies.
+   `deno run --unstable-webgpu --allow-read web/_m1_test.deno.js`
+   → **bit-exact vs native GPU** on the tiny model (max_abs = 0.0), and
+   `web/_real_test.deno.js` → real Qwen3-0.6B greedy ids **32/32
+   identical** to native, 4.9 tok/s on the 2016 Radeon Pro 560.
+   The browser engine is proven; only the wasm side remains.
+3. **M2 wasm orchestration** (needs #643 fixed; #681 for loader reuse):
+   nn.wasm owns tokenizer, chat template, sampling, op-list; m1.js's
+   executor half stays. Acceptance: tokenizer parity 20/20 IN WASM +
+   the ids canary on the real 0.6B.
+4. **M3 product**: per-layer weight buffers (iGPU limits), OPFS caching,
+   streaming UI, publish demo URL (GitHub Pages + R2/HF for the GGUF).
 
 ## Risks
 
