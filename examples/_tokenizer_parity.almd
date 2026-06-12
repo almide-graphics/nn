@@ -1,0 +1,66 @@
+// Tokenizer acceptance gate: encode the 20 parity prompts and require an
+// exact match with the HF tokenization (parity/token_ids_N.txt, written by
+// tools/dump_logits.py), plus a decode round-trip back to the source text.
+//
+// Run (from the repo root):
+//   almide build examples/_tokenizer_parity.almd -o /tmp/tok_parity && /tmp/tok_parity
+
+import fs
+import process
+import self.qwen_tokenizer
+
+// Mirror of tools/dump_logits.py PROMPTS — keep in sync.
+fn prompts() -> List[String] = [
+  "The capital of France is",
+  "1 + 1 =",
+  "def fibonacci(n):",
+  "Once upon a time, there was a",
+  "The quick brown fox jumps over the lazy dog.",
+  "Q: What is the speed of light?\nA:",
+  "import numpy as np\n",
+  "こんにちは。今日は",
+  "日本で一番高い山は",
+  "人工知能とは、",
+  "メロスは激怒した。",
+  "東京の天気は",
+  "SELECT * FROM users WHERE",
+  "fn main() {",
+  "# How to install\n\nRun the following command:",
+  "3.14159 is the value of",
+  "A",
+  "The answer to life, the universe, and everything is",
+  "猫が好きです。犬も",
+  "Translate to English: 吾輩は猫である。",
+]
+
+effect fn main() -> () = {
+  let args = process.args()
+  let gguf = list.get(args, 1) ?? "parity/qwen3-0.6b-q8_0.gguf"
+  let tok = qwen_tokenizer.load(gguf)!
+  println("tokenizer: " + int.to_string(list.len(tok.vocab)) + " tokens, "
+    + int.to_string(list.len(tok.sorted_merges)) + " merges, eos="
+    + int.to_string(tok.eos_id))
+  var pass = 0
+  var fail = 0
+  let ps = prompts()
+  for i in list.range(0, list.len(ps)) {
+    let text = list.get(ps, i) ?? ""
+    let ids = qwen_tokenizer.encode(tok, text)
+    let got = ids |> list.map((id) => int.to_string(id)) |> list.join(",")
+    let want = string.trim(fs.read_text("parity/token_ids_" + int.to_string(i) + ".txt")!)
+    let ids_match = got == want
+    let rt_match = qwen_tokenizer.decode(tok, ids) == text
+    if ids_match and rt_match then {
+      pass = pass + 1
+      println("[" + int.to_string(i) + "] OK (" + int.to_string(list.len(ids)) + " tokens)")
+    } else {
+      fail = fail + 1
+      let why = (if ids_match then "" else " ids") + (if rt_match then "" else " roundtrip")
+      println("[" + int.to_string(i) + "] MISMATCH:" + why)
+      println("  want: " + want)
+      println("  got : " + got)
+    }
+  }
+  println(int.to_string(pass) + "/" + int.to_string(pass + fail)
+    + " prompts match the HF tokenization")
+}

@@ -1,26 +1,136 @@
-// Greedy E2E generation with Qwen3-0.6B on Almide (L1-5 soft check).
+// Qwen3 chat on the cpu_fast engine — text in, streaming text out.
 //
-// L1 scope: token IDs in, token IDs out — the tokenizer lands in L2, so
-// prompts come from a token-ID file produced by tools/dump_logits.py.
-// Compare against tools/greedy_ref.py output.
+// The first real text-to-text path: tokenizer (pure Almide) + lockstep
+// AVX2 engine (native module), greedy decode, Qwen3 chat template with
+// an empty <think> block (non-thinking mode).
 //
-// Run (from the repo root, after the parity prereqs):
-//   almide build examples/qwen_chat.almd -o /tmp/qwen_chat && /tmp/qwen_chat
+//   almide build examples/qwen_chat.almd -o /tmp/qwen_chat
+//   /tmp/qwen_chat "好きな食べ物は？" [model.gguf]
+//
+// The GGUF must carry tokenizer.ggml.tokens/merges (tools/export_gguf.py
+// writes them; any official llama.cpp Qwen3 GGUF works too).
 
-import fs
-import self.qwen
+import io
+import process
 import self.qwen_loader
+import self.qwen_tokenizer
 
-fn parse_ids(text: String) -> List[Int] =
-  string.split(text, ",")
-    |> list.filter_map((s) => int.parse(string.trim(s))?)
+@extern(rs, "cpu_fast", "load_model")
+fn cpu_load_model(
+  raw: Bytes, n_layers: Int, n_heads: Int, n_kv_heads: Int, head_dim: Int,
+  ffn_hidden: Int, hidden: Int, vocab: Int, rope_theta: Float, eps: Float,
+  emb_off: Int, out_norm_off: Int, gammas: List[Int], weights: List[Int],
+) -> Int
+
+@extern(rs, "cpu_fast", "decode_argmax")
+fn cpu_decode_argmax(raw: Bytes, token: Int, pos: Int) -> Int
+
+// Vocab id of an exact token string (special tokens never pass through
+// BPE). Clones the dictionary — startup use only.
+fn tok_id(t: qwen_tokenizer.QwenTokenizer, s: String) -> Int = {
+  let i = qwen_tokenizer.bsearch(t.sorted_tokens, s)
+  if i < 0 then -1 else list.get(t.sorted_ids, i) ?? -1
+}
+
+// Length of the longest prefix of bs that is complete UTF-8 sequences —
+// BPE tokens can split a multi-byte character, so streaming output must
+// hold back the incomplete tail.
+fn utf8_complete_len(bs: List[Int]) -> Int = {
+  let n = list.len(bs)
+  var cut = n
+  var i = n - 1
+  var scanned = 0
+  var done = false
+  while i >= 0 and scanned < 4 and not done {
+    let b = list.get(bs, i) ?? 0
+    if b < 128 then {
+      done = true
+    } else if b >= 192 then {
+      let need = if b >= 240 then 4 else if b >= 224 then 3 else 2
+      if n - i < need then {
+        cut = i
+      }
+      done = true
+    } else {
+      i = i - 1
+      scanned = scanned + 1
+    }
+  }
+  cut
+}
 
 effect fn main() -> () = {
-  let (model, eos) = qwen_loader.load("parity/qwen3-0.6b-f32.gguf")!
-  let prompt = parse_ids(fs.read_text("parity/token_ids_0.txt")!)
-  println("prompt ids: " + (prompt |> list.map((t) => int.to_string(t)) |> list.join(",")))
+  let args = process.args()
+  let prompt = list.get(args, 1) ?? "自己紹介してください。"
+  let gguf = list.get(args, 2) ?? "parity/qwen3-0.6b-q8_0.gguf"
+  let max_new = 256
 
-  let out = qwen.greedy_generate(prompt, model, eos, 16)
-  let generated = list.slice(out, list.len(prompt), list.len(out))
-  println("greedy ids: " + (generated |> list.map((t) => int.to_string(t)) |> list.join(",")))
+  let (raw, cfg, gammas, weights) = qwen_loader.load_f32(gguf)!
+  let t = qwen_tokenizer.load(gguf)!
+  let loaded = cpu_load_model(raw, cfg.n_layers, cfg.n_heads, cfg.n_kv_heads, cfg.head_dim,
+    cfg.ffn_hidden, cfg.hidden, cfg.vocab, cfg.rope_theta, cfg.eps,
+    cfg.emb_off, cfg.out_norm_off,
+    gammas |> list.flat_map((g) => g), weights |> list.flat_map((w) => w))
+  if loaded != 1 then {
+    println("engine init failed")
+  } else {
+    // Qwen3 chat template, thinking disabled via an empty think block:
+    // <|im_start|>user\n{prompt}<|im_end|>\n<|im_start|>assistant\n<think>\n\n</think>\n\n
+    let im_start = tok_id(t, "<|im_start|>")
+    let im_end = tok_id(t, "<|im_end|>")
+    let think_open = tok_id(t, "<think>")
+    let think_close = tok_id(t, "</think>")
+    var ids: List[Int] = [im_start]
+    for id in qwen_tokenizer.encode(t, "user\n" + prompt) { list.push(ids, id) }
+    list.push(ids, im_end)
+    for id in qwen_tokenizer.encode(t, "\n") { list.push(ids, id) }
+    list.push(ids, im_start)
+    for id in qwen_tokenizer.encode(t, "assistant\n") { list.push(ids, id) }
+    if think_open >= 0 and think_close >= 0 then {
+      list.push(ids, think_open)
+      for id in qwen_tokenizer.encode(t, "\n\n") { list.push(ids, id) }
+      list.push(ids, think_close)
+      for id in qwen_tokenizer.encode(t, "\n\n") { list.push(ids, id) }
+    }
+
+    // prefill all but the last template token
+    var pos = 0
+    var next = 0
+    for tk in ids {
+      next = cpu_decode_argmax(raw, tk, pos)
+      pos = pos + 1
+    }
+
+    // greedy decode, streaming. All dictionary reads stay inline on `t`
+    // (a helper call would clone the whole tokenizer per token).
+    var pending: List[Int] = []
+    var k = 0
+    var stop = false
+    while k < max_new and not stop {
+      if next == im_end or next == cfg.eos_id then {
+        stop = true
+      } else {
+        let piece = list.get(t.vocab, next) ?? ""
+        for c in string.chars(piece) {
+          let cp = string.codepoint(c) ?? 0
+          let b = if cp < 512 then list.get(t.char_to_byte, cp) ?? -1 else -1
+          if b >= 0 then {
+            list.push(pending, b)
+          }
+        }
+        let cut = utf8_complete_len(pending)
+        if cut > 0 then {
+          io.print(string.from_bytes(list.slice(pending, 0, cut)))
+          pending = list.slice(pending, cut, list.len(pending))
+        }
+        next = cpu_decode_argmax(raw, next, pos)
+        pos = pos + 1
+        k = k + 1
+      }
+    }
+    if list.len(pending) > 0 then {
+      io.print(string.from_bytes(pending))
+    }
+    println("")
+  }
 }

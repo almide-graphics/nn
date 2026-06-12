@@ -1,0 +1,440 @@
+// nn.qwen_tokenizer — byte-level BPE (GPT-2 family) for Qwen3, loaded from
+// GGUF metadata (tokenizer.ggml.tokens / tokenizer.ggml.merges).
+//
+// Pure Almide on purpose: the tokenizer must run on BOTH targets (native
+// engine and the browser WASM port) — native Rust modules exist only on
+// the Rust target. Dictionary lookups use sorted parallel lists + binary
+// search (the stdlib map is insertion-ordered linear — unusable at 152k
+// entries).
+//
+// The pretokenizer hand-codes Qwen2/3's split regex, alternation order
+// preserved:
+//   (?i:'s|'t|'re|'ve|'m|'ll|'d) | [^\r\n\p{L}\p{N}]?\p{L}+ | \p{N}{1,3}
+//   |  ?[^\s\p{L}\p{N}]+[\r\n]* | \s*[\r\n]+ | \s+(?!\S) | \s+
+// Validated against the HF tokenization of the 20 parity prompts
+// (examples/_tokenizer_parity.almd).
+
+import fs
+import self.qwen_loader
+
+type QwenTokenizer = {
+  vocab: List[String],         // id → token string (byte-mapped alphabet)
+  sorted_tokens: List[String], // token strings, sorted
+  sorted_ids: List[Int],       // parallel ids
+  sorted_merges: List[String], // "left right" keys, sorted
+  merge_ranks: List[Int],      // parallel ranks (lower merges first)
+  byte_to_char: List[String],  // 256 entries
+  char_to_byte: List[Int],     // indexed by codepoint (< 0x144), -1 = none
+  eos_id: Int,
+}
+
+// ── GPT-2 byte ↔ unicode alphabet ──
+//
+// Printable latin-1 bytes map to themselves; the rest get 0x100+counter.
+
+fn printable_byte(b: Int) -> Bool =
+  (b >= 33 and b <= 126) or (b >= 161 and b <= 172) or (b >= 174 and b <= 255)
+
+fn build_byte_maps() -> (List[String], List[Int]) = {
+  var b2c: List[String] = []
+  var c2b = list.repeat(-1, 512)
+  var extra = 0
+  var b = 0
+  while b < 256 {
+    let cp = if printable_byte(b) then b else {
+      let v = 256 + extra
+      extra = extra + 1
+      v
+    }
+    list.push(b2c, string.from_codepoint(cp))
+    c2b = list.set(c2b, cp, b)
+    b = b + 1
+  }
+  (b2c, c2b)
+}
+
+// ── sorted-list dictionary ──
+//
+// Reference algorithm + unit-test subject. Do NOT call this from a hot
+// path with a dictionary-sized list: the by-value parameter clones every
+// element per call. encode() inlines this search against t's fields.
+
+fn bsearch(keys: List[String], target: String) -> Int = {
+  var lo = 0
+  var hi = list.len(keys) - 1
+  var found = -1
+  while lo <= hi {
+    let mid = (lo + hi) / 2
+    let k = list.get(keys, mid) ?? ""
+    if k == target then {
+      found = mid
+      lo = hi + 1
+    } else if k < target then {
+      lo = mid + 1
+    } else {
+      hi = mid - 1
+    }
+  }
+  found
+}
+
+// ── Pretokenizer ──
+//
+// char_at returns "" out of range; the predicates treat "" as no-match
+// (string.is_* are all-chars predicates, so they return true on "").
+
+fn char_at(cs: List[String], i: Int) -> String =
+  list.get(cs, i) ?? ""
+
+fn is_letter(c: String) -> Bool =
+  c != "" and string.is_alpha(c)
+
+fn is_number(c: String) -> Bool =
+  c != "" and string.is_digit(c)
+
+fn is_space_char(c: String) -> Bool =
+  c != "" and string.is_whitespace(c)
+
+fn is_newline(c: String) -> Bool =
+  c == "\n" or c == "\r"
+
+fn is_punct(c: String) -> Bool =
+  c != "" and not is_space_char(c) and not is_letter(c) and not is_number(c)
+
+fn join_range(cs: List[String], a: Int, b: Int) -> String =
+  list.slice(cs, a, b) |> list.join("")
+
+// English contraction group at an apostrophe; returns matched length
+// (including the apostrophe) or 0.
+fn contraction_len(cs: List[String], i: Int) -> Int = {
+  let c1 = string.to_lower(char_at(cs, i + 1))
+  let c2 = string.to_lower(char_at(cs, i + 2))
+  if (c1 == "r" and c2 == "e") or (c1 == "v" and c2 == "e") or (c1 == "l" and c2 == "l") then 3
+  else if c1 == "s" or c1 == "t" or c1 == "m" or c1 == "d" then 2
+  else 0
+}
+
+fn pretokenize(text: String) -> List[String] = {
+  let cs = string.chars(text)
+  let n = list.len(cs)
+  var out: List[String] = []
+  var i = 0
+  while i < n {
+    let c = char_at(cs, i)
+    let nx = char_at(cs, i + 1)
+    // 1. contraction: (?i:'s|'t|'re|'ve|'m|'ll|'d)
+    if c == "'" and contraction_len(cs, i) > 0 then {
+      let l = contraction_len(cs, i)
+      list.push(out, join_range(cs, i, i + l))
+      i = i + l
+    }
+    // 2. [^\r\n\p{L}\p{N}]?\p{L}+ — the optional prefix may be ANY
+    //    non-letter/number/newline char, including a space.
+    else if is_letter(c) or
+            (not is_letter(c) and not is_number(c) and not is_newline(c) and is_letter(nx)) then {
+      var k = if is_letter(c) then i else i + 1
+      while k < n and is_letter(char_at(cs, k)) {
+        k = k + 1
+      }
+      list.push(out, join_range(cs, i, k))
+      i = k
+    }
+    // 3. \p{N}{1,3}
+    else if is_number(c) then {
+      var k = i
+      while k < n and k < i + 3 and is_number(char_at(cs, k)) {
+        k = k + 1
+      }
+      list.push(out, join_range(cs, i, k))
+      i = k
+    }
+    // 4.  ?[^\s\p{L}\p{N}]+[\r\n]*
+    else if is_punct(c) or (c == " " and is_punct(nx)) then {
+      var k = if is_punct(c) then i else i + 1
+      while k < n and is_punct(char_at(cs, k)) {
+        k = k + 1
+      }
+      while k < n and is_newline(char_at(cs, k)) {
+        k = k + 1
+      }
+      list.push(out, join_range(cs, i, k))
+      i = k
+    }
+    // 5/6/7. whitespace families
+    else {
+      var e = i
+      var last_nl = -1
+      while e < n and is_space_char(char_at(cs, e)) {
+        if is_newline(char_at(cs, e)) then {
+          last_nl = e
+        }
+        e = e + 1
+      }
+      if e == i then {
+        // defensive: unclassifiable char — emit alone, never stall
+        list.push(out, c)
+        i = i + 1
+      } else if last_nl >= 0 then {
+        // \s*[\r\n]+ — up to and including the last newline of the run
+        list.push(out, join_range(cs, i, last_nl + 1))
+        i = last_nl + 1
+      } else if e >= n then {
+        // \s+(?!\S) — trailing whitespace keeps everything
+        list.push(out, join_range(cs, i, e))
+        i = e
+      } else if e - i > 1 then {
+        // \s+(?!\S) backtracks: leave the last space for the next token
+        list.push(out, join_range(cs, i, e - 1))
+        i = e - 1
+      } else {
+        // single whitespace before a non-space the later groups reject
+        // (e.g. a digit): plain \s+
+        list.push(out, c)
+        i = i + 1
+      }
+    }
+  }
+  out
+}
+
+// ── BPE ──
+//
+// One flat function on purpose: a user-fn boundary or closure capture
+// passes values BY VALUE, so routing the dictionaries through vocab_id/
+// merge_rank-style helpers clones all ~600k strings per lookup (measured:
+// 71s for 20 prompts). Intrinsics like list.get borrow, so keeping every
+// lookup inline against t's fields makes encode allocation-free apart
+// from the pieces themselves.
+
+fn encode(t: QwenTokenizer, text: String) -> List[Int] = {
+  var out: List[Int] = []
+  for pre in pretokenize(text) {
+    // bytes → mapped alphabet chars
+    var pieces: List[String] = []
+    for b in string.to_bytes(pre) {
+      list.push(pieces, list.get(t.byte_to_char, b) ?? "")
+    }
+    // merge loop: lowest-rank adjacent pair, all its occurrences, repeat
+    var go = list.len(pieces) > 1
+    while go {
+      var best_rank = 2147483647
+      var best_i = -1
+      var i = 0
+      while i < list.len(pieces) - 1 {
+        let key = (list.get(pieces, i) ?? "") + " " + (list.get(pieces, i + 1) ?? "")
+        var lo = 0
+        var hi = list.len(t.sorted_merges) - 1
+        while lo <= hi {
+          let mid = (lo + hi) / 2
+          let k = list.get(t.sorted_merges, mid) ?? ""
+          if k == key then {
+            let r = list.get(t.merge_ranks, mid) ?? 2147483647
+            if r < best_rank then {
+              best_rank = r
+              best_i = i
+            }
+            lo = hi + 1
+          } else if k < key then {
+            lo = mid + 1
+          } else {
+            hi = mid - 1
+          }
+        }
+        i = i + 1
+      }
+      if best_i < 0 then {
+        go = false
+      } else {
+        let a = list.get(pieces, best_i) ?? ""
+        let b = list.get(pieces, best_i + 1) ?? ""
+        let merged = a + b
+        var np: List[String] = []
+        var j = 0
+        while j < list.len(pieces) {
+          if j < list.len(pieces) - 1
+             and (list.get(pieces, j) ?? "") == a
+             and (list.get(pieces, j + 1) ?? "") == b then {
+            list.push(np, merged)
+            j = j + 2
+          } else {
+            list.push(np, list.get(pieces, j) ?? "")
+            j = j + 1
+          }
+        }
+        pieces = np
+        go = list.len(pieces) > 1
+      }
+    }
+    // vocab lookup
+    for p in pieces {
+      var lo = 0
+      var hi = list.len(t.sorted_tokens) - 1
+      var id = -1
+      while lo <= hi {
+        let mid = (lo + hi) / 2
+        let k = list.get(t.sorted_tokens, mid) ?? ""
+        if k == p then {
+          id = list.get(t.sorted_ids, mid) ?? -1
+          lo = hi + 1
+        } else if k < p then {
+          lo = mid + 1
+        } else {
+          hi = mid - 1
+        }
+      }
+      if id >= 0 then {
+        list.push(out, id)
+      }
+    }
+  }
+  out
+}
+
+fn decode(t: QwenTokenizer, ids: List[Int]) -> String = {
+  var bytes_out: List[Int] = []
+  for id in ids {
+    let piece = list.get(t.vocab, id) ?? ""
+    for c in string.chars(piece) {
+      let cp = string.codepoint(c) ?? 0
+      let b = if cp < 512 then list.get(t.char_to_byte, cp) ?? -1 else -1
+      if b >= 0 then {
+        list.push(bytes_out, b)
+      }
+      // control/special tokens map to no bytes (e.g. <|im_end|>)
+    }
+  }
+  string.from_bytes(bytes_out)
+}
+
+// ── GGUF loading ──
+//
+// Walks the metadata section with qwen_loader's primitive readers and
+// materializes the two string arrays (the model loaders skip them).
+
+fn read_string_array(data: Bytes, pos: Int) -> List[String] = {
+  // at pos: elem_type u32 (8 = string), count u64, then strings
+  let count = qwen_loader.r_u64(data, pos + 4)
+  var out: List[String] = []
+  var p = pos + 12
+  var i = 0
+  while i < count {
+    let (s, np) = qwen_loader.r_string(data, p)
+    list.push(out, s)
+    p = np
+    i = i + 1
+  }
+  out
+}
+
+effect fn load(path: String) -> Result[QwenTokenizer, String] =
+  match fs.read_bytes_raw(path) {
+    err(e) => err("failed to read " + path + ": " + e)
+    ok(data) => {
+      if qwen_loader.r_u32(data, 0) != 1179993927 then err(path + " is not a GGUF file")
+      else {
+        let metadata_count = qwen_loader.r_u64(data, 16)
+        var tokens: List[String] = []
+        var merges: List[String] = []
+        var eos = 151645
+        var p = 24
+        var i = 0
+        while i < metadata_count {
+          let (key, p1) = qwen_loader.r_string(data, p)
+          let vtype = qwen_loader.r_u32(data, p1)
+          let vpos = p1 + 4
+          if key == "tokenizer.ggml.tokens" and vtype == 9 then {
+            tokens = read_string_array(data, vpos)
+          }
+          if key == "tokenizer.ggml.merges" and vtype == 9 then {
+            merges = read_string_array(data, vpos)
+          }
+          if key == "tokenizer.ggml.eos_token_id" then {
+            eos = qwen_loader.value_as_int(data, vpos, vtype)
+          }
+          p = qwen_loader.skip_value(data, vpos, vtype)
+          i = i + 1
+        }
+        if list.len(tokens) == 0 then err("no tokenizer.ggml.tokens in " + path)
+        else {
+          let (b2c, c2b) = build_byte_maps()
+          let pairs = list.enumerate(tokens)
+            |> list.map((e) => (e.1, e.0))
+            |> list.sort_by((pr) => pr.0)
+          let merge_pairs = list.enumerate(merges)
+            |> list.map((e) => (e.1, e.0))
+            |> list.sort_by((pr) => pr.0)
+          ok({
+            vocab: tokens,
+            sorted_tokens: pairs |> list.map((pr) => pr.0),
+            sorted_ids: pairs |> list.map((pr) => pr.1),
+            sorted_merges: merge_pairs |> list.map((pr) => pr.0),
+            merge_ranks: merge_pairs |> list.map((pr) => pr.1),
+            byte_to_char: b2c,
+            char_to_byte: c2b,
+            eos_id: eos,
+          })
+        }
+      }
+    }
+  }
+
+// ── Tests (dictionary mechanics — full parity runs in examples/) ──
+
+test "byte maps round-trip every byte" {
+  let (b2c, c2b) = build_byte_maps()
+  assert_eq(list.len(b2c), 256)
+  var good = 0
+  var b = 0
+  while b < 256 {
+    let c = list.get(b2c, b) ?? ""
+    let cp = string.codepoint(c) ?? -1
+    if (list.get(c2b, cp) ?? -1) == b then {
+      good = good + 1
+    }
+    b = b + 1
+  }
+  assert_eq(good, 256)
+}
+
+test "bsearch finds and misses" {
+  let keys = ["apple", "banana", "cherry"]
+  assert_eq(bsearch(keys, "banana"), 1)
+  assert_eq(bsearch(keys, "apple"), 0)
+  assert_eq(bsearch(keys, "cherry"), 2)
+  assert_eq(bsearch(keys, "durian"), -1)
+}
+
+test "pretokenize splits words with leading spaces" {
+  let parts = pretokenize("The capital of France is")
+  assert_eq(list.len(parts), 5)
+  assert_eq(list.get(parts, 0) ?? "", "The")
+  assert_eq(list.get(parts, 1) ?? "", " capital")
+  assert_eq(list.get(parts, 4) ?? "", " is")
+}
+
+test "pretokenize: digit chunks, contractions, punct" {
+  let parts = pretokenize("12345 it's here!")
+  // 123 | 45 | " it" | 's | " here" | !
+  assert_eq(list.len(parts), 6)
+  assert_eq(list.get(parts, 0) ?? "", "123")
+  assert_eq(list.get(parts, 1) ?? "", "45")
+  assert_eq(list.get(parts, 2) ?? "", " it")
+  assert_eq(list.get(parts, 3) ?? "", "'s")
+  assert_eq(list.get(parts, 4) ?? "", " here")
+  assert_eq(list.get(parts, 5) ?? "", "!")
+}
+
+test "pretokenize: newlines bind preceding spaces" {
+  let parts = pretokenize("a \n\nb")
+  // "a" | " \n\n" | "b"
+  assert_eq(list.len(parts), 3)
+  assert_eq(list.get(parts, 1) ?? "", " \n\n")
+}
+
+test "pretokenize: multi-space leaves one for the next word" {
+  let parts = pretokenize("a   b")
+  // "a" | "  " | " b"
+  assert_eq(list.len(parts), 3)
+  assert_eq(list.get(parts, 1) ?? "", "  ")
+  assert_eq(list.get(parts, 2) ?? "", " b")
+}

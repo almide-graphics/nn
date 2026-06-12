@@ -9,12 +9,31 @@ Usage:
     tools/.venv/bin/python tools/export_gguf.py --out parity/qwen3-0.6b-f32.gguf
 """
 import argparse
+import json
 
 import gguf
 import torch
-from transformers import AutoConfig, AutoModelForCausalLM
+from transformers import AutoConfig, AutoModelForCausalLM, AutoTokenizer
 
 DEFAULT_MODEL = "Qwen/Qwen3-0.6B"
+
+
+def write_tokenizer(w: gguf.GGUFWriter, model_id: str, vocab_size: int) -> None:
+    """tokenizer.ggml.{tokens,merges} so nn.qwen_tokenizer can load from
+    this file directly (the browser demo fetches a single GGUF)."""
+    tok = AutoTokenizer.from_pretrained(model_id)
+    vocab = tok.get_vocab()  # byte-mapped strings -> id
+    tokens = [f"[PAD{i}]" for i in range(vocab_size)]
+    for s, i in vocab.items():
+        if i < vocab_size:
+            tokens[i] = s
+    # merges via the serialized model (newer tokenizers store pairs as lists)
+    merges = json.loads(tok.backend_tokenizer.to_str())["model"]["merges"]
+    merges = [m if isinstance(m, str) else " ".join(m) for m in merges]
+    w.add_tokenizer_model("gpt2")
+    w.add_tokenizer_pre("qwen2")
+    w.add_token_list(tokens)
+    w.add_token_merges(merges)
 
 
 def main() -> None:
@@ -44,9 +63,8 @@ def main() -> None:
     w.add_rope_freq_base(cfg.rope_theta)
     w.add_layer_norm_rms_eps(cfg.rms_norm_eps)
     w.add_vocab_size(cfg.vocab_size)
-    # eos/bos as plain metadata so the Almide side can read them without
-    # a full tokenizer section
     w.add_eos_token_id(getattr(cfg, "eos_token_id", 151645) or 151645)
+    write_tokenizer(w, args.model, cfg.vocab_size)
 
     def put(name: str, key: str) -> None:
         data = sd[key].float().numpy()
