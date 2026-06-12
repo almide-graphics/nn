@@ -1,0 +1,68 @@
+// L3-2: full Qwen3 decode on GPU — greedy generation, tok/s, ids check.
+//
+//   almide build examples/_bench_gpu.almd -o /tmp/bench_gpu && /tmp/bench_gpu
+
+import datetime
+import fs
+import self.qwen
+import self.qwen_loader
+
+@extern(rs, "cpu_fast", "load_model")
+fn cpu_load_model(
+  raw: Bytes, n_layers: Int, n_heads: Int, n_kv_heads: Int, head_dim: Int,
+  ffn_hidden: Int, hidden: Int, vocab: Int, rope_theta: Float, eps: Float,
+  emb_off: Int, out_norm_off: Int, gammas: List[Int], weights: List[Int],
+) -> Int
+
+@extern(rs, "cpu_fast", "decode_argmax")
+fn cpu_decode_argmax(raw: Bytes, token: Int, pos: Int) -> Int
+
+fn parse_ids(text: String) -> List[Int] =
+  string.split(text, ",")
+    |> list.filter_map((s) => int.parse(string.trim(s))?)
+
+effect fn main() -> () = {
+  let (raw, cfg, gammas, weights) = qwen_loader.load_f32("parity/qwen3-0.6b-q8_0.gguf")!
+  {
+    let gflat = gammas |> list.flat_map((g) => g)
+    let wflat = weights |> list.flat_map((w) => w)
+    let t0 = datetime.monotonic_ns()
+    let loaded = cpu_load_model(raw, cfg.n_layers, cfg.n_heads, cfg.n_kv_heads, cfg.head_dim,
+      cfg.ffn_hidden, cfg.hidden, cfg.vocab, cfg.rope_theta, cfg.eps,
+      cfg.emb_off, cfg.out_norm_off, gflat, wflat)
+    let t1 = datetime.monotonic_ns()
+    println("cpu_fast load: " + float.to_string(int.to_float(t1 - t0) / 1000000.0) + " ms (ok=" + int.to_string(loaded) + ")")
+
+    let prompt = parse_ids(fs.read_text("parity/token_ids_0.txt")!)
+    let n_new = 64
+
+    // prefill: feed prompt tokens sequentially (decode path, positions 0..n-1)
+    let t2 = datetime.monotonic_ns()
+    var pos = 0
+    var next = 0
+    for tok in prompt {
+      next = cpu_decode_argmax(raw, tok, pos)
+      pos = pos + 1
+    }
+    let t3 = datetime.monotonic_ns()
+    println("prefill (" + int.to_string(list.len(prompt)) + " tokens): "
+      + float.to_string(int.to_float(t3 - t2) / 1000000.0) + " ms")
+
+    // greedy decode
+    var out: List[Int] = [next]
+    let t4 = datetime.monotonic_ns()
+    var k = 1
+    while k < n_new and next != cfg.eos_id {
+      next = cpu_decode_argmax(raw, next, pos)
+      pos = pos + 1
+      out = out + [next]
+      k = k + 1
+    }
+    let t5 = datetime.monotonic_ns()
+    let ms = int.to_float(t5 - t4) / 1000000.0
+    let n_gen = list.len(out) - 1
+    println("cpu_fast decode: " + int.to_string(n_gen) + " tokens in " + float.to_string(ms)
+      + " ms → " + float.to_string(int.to_float(n_gen) / (ms / 1000.0)) + " tok/s")
+    println("ids: " + (out |> list.map((t) => int.to_string(t)) |> list.join(",")))
+  }
+}
