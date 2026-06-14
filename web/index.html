@@ -68,7 +68,7 @@ function setReady(on) {
   if (on) input.focus();
 }
 
-const BUILD = "3"; // ?v bump busts the browser's aggressive module cache
+const BUILD = "4"; // ?v bump busts the browser's aggressive module cache
 const worker = new Worker("./worker.js?v=" + BUILD, { type: "module" });
 let current = null;
 

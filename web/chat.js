@@ -74,8 +74,9 @@ export class Chat {
     let rng = seed;
     for (let k = 0; k < maxNew; k++) {
       if (next === this.imEnd || next === this.eos || next < 0) break;
-      // decode this one token to bytes via the wasm decoder, stream UTF-8-safe
-      for (const b of bytesOf(t, next)) pending.push(b);
+      // raw bytes of this token (no per-token string decode — that corrupts
+      // a multibyte char split across tokens), stream UTF-8-safe
+      for (const b of t.tokenBytes(next)) pending.push(b);
       const cut = utf8CompleteLen(pending);
       if (cut > 0) {
         const chunk = new TextDecoder().decode(new Uint8Array(pending.splice(0, cut)));
@@ -94,11 +95,6 @@ export class Chat {
     }
     return full;
   }
-}
-
-// One token's decoded bytes = tokenizer.decode([id]) re-encoded to UTF-8.
-function bytesOf(tok, id) {
-  return Array.from(new TextEncoder().encode(tok.decode([id])));
 }
 
 // Longest prefix of bs that is complete UTF-8 (hold back a split tail).

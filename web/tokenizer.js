@@ -73,7 +73,12 @@ export class Tokenizer {
   decode(ids) {
     return this._readString(this.ex.tok_decode(this.handle, this._writeListInt(ids)));
   }
-  // raw bytes of a single token (for UTF-8-safe streaming): decode([id]) as bytes
+  // raw decoded bytes of one token (UTF-8-safe streaming: accumulate these
+  // across tokens and flush at character boundaries — a token may split a
+  // multibyte char, which decode([id]) would corrupt into U+FFFD)
+  tokenBytes(id) {
+    return this._readListInt(this.ex.tok_token_bytes(this.handle, BigInt(id)));
+  }
   special(str) {
     return Number(this.ex.tok_special(this.handle, this._writeString(str)));
   }

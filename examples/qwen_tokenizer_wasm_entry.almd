@@ -31,3 +31,9 @@ fn tok_special(t: tok.QwenTokenizer, s: String) -> Int =
 
 fn tok_eos(t: tok.QwenTokenizer) -> Int =
   t.eos_id
+
+// Raw decoded bytes of ONE token (no lossy string round-trip), so the host
+// can accumulate across tokens and flush at UTF-8 boundaries — a token may
+// hold a partial multibyte character.
+fn tok_token_bytes(t: tok.QwenTokenizer, id: Int) -> List[Int] =
+  tok.token_bytes(t, id)

@@ -29,10 +29,13 @@ async function boot(modelUrl) {
     const adapter = await navigator.gpu.requestAdapter({ powerPreference: "high-performance" });
     if (!adapter) throw new Error("WebGPU adapter が取れません");
     const lim = adapter.limits;
+    // request the adapter's full storage-buffer capacity so the GPU itself
+    // (not an arbitrary cap) gates how big a model fits — 0.6B needs 167 MB,
+    // 1.7B's embedding is 334 MB, 4B's is 417 MB
     const device = await adapter.requestDevice({
       requiredLimits: {
-        maxStorageBufferBindingSize: Math.min(lim.maxStorageBufferBindingSize, 256 << 20),
-        maxBufferSize: Math.min(lim.maxBufferSize, 256 << 20),
+        maxStorageBufferBindingSize: lim.maxStorageBufferBindingSize,
+        maxBufferSize: lim.maxBufferSize,
       },
     });
     device.lost.then((i) => post({ type: "error", text: "GPU device lost: " + i.message }));
