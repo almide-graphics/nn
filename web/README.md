@@ -1,9 +1,11 @@
 # nn — Qwen3 chat in the browser, 100% local
 
-**Live (code shell): https://almide-graphics.github.io/nn/web/**
-The page, kernels, and wasm tokenizer are hosted; the 640 MB model is not
-(yet). To actually chat, run locally (below) or append a CORS-enabled GGUF
-URL: `…/nn/web/?model=https://…/qwen3-0.6b-q8_0.gguf`.
+**Live demo: https://almide-graphics.github.io/nn/web/**
+Open it in a WebGPU browser (Chrome/Edge). The 640 MB Q8_0 model streams
+from HuggingFace (`O6lvl4/qwen3-0.6b-q8-gguf`) on first load — everything
+after that runs locally on your GPU. Override the model with
+`…/nn/web/?model=<gguf-url>` (CORS-enabled host). Local dev: serve the repo
+root and pass `?model=../parity/qwen3-0.6b-q8_0.gguf`.
 
 The whole inference stack is Almide: the Qwen3-0.6B engine runs on WebGPU
 (8 WGSL compute kernels, one command buffer per token) and the byte-level
