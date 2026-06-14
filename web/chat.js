@@ -21,6 +21,7 @@ export class Chat {
     this.thinkOpen = tok.special("<think>");
     this.thinkClose = tok.special("</think>");
     this.eos = tok.eos;
+    this.system = "あなたは親切で正確な日本語アシスタントです。質問には日本語で、簡潔に、わかりやすく答えてください。";
   }
 
   static async load({ device, wgsl, gguf, tokWasm, makeWasi, onStatus = () => {} }) {
@@ -42,6 +43,10 @@ export class Chat {
     const ids = [];
     if (this.pos > 0) {
       ids.push(this.imEnd, ...t.encode("\n"));
+    } else if (this.system) {
+      // anchor a conversational Japanese persona on the very first turn —
+      // without it a small model tends to "explain" the input in English
+      ids.push(this.imStart, ...t.encode("system\n" + this.system), this.imEnd, ...t.encode("\n"));
     }
     ids.push(this.imStart, ...t.encode("user\n" + userText), this.imEnd);
     ids.push(...t.encode("\n"), this.imStart, ...t.encode("assistant\n"));

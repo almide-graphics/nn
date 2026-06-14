@@ -103,7 +103,9 @@ self.onmessage = async (e) => {
     if (!chat) { post({ type: "error", text: "まだ読み込み中です" }); return; }
     try {
       await chat.generate(m.text, {
-        temp: m.temp ?? 0.7, topP: m.topP ?? 0.9, maxNew: m.maxNew ?? 256,
+        // low temp: a 1.7B model gets noticeably more coherent / less
+        // hallucinatory than the usual 0.7 chat default
+        temp: m.temp ?? 0.35, topP: m.topP ?? 0.9, maxNew: m.maxNew ?? 256,
         seed: (Math.random() * 2 ** 31) | 0,
         onToken: (chunk) => post({ type: "token", text: chunk }),
       });
