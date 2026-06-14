@@ -1,5 +1,10 @@
 # nn — Qwen3 chat in the browser, 100% local
 
+**Live (code shell): https://almide-graphics.github.io/nn/web/**
+The page, kernels, and wasm tokenizer are hosted; the 640 MB model is not
+(yet). To actually chat, run locally (below) or append a CORS-enabled GGUF
+URL: `…/nn/web/?model=https://…/qwen3-0.6b-q8_0.gguf`.
+
 The whole inference stack is Almide: the Qwen3-0.6B engine runs on WebGPU
 (8 WGSL compute kernels, one command buffer per token) and the byte-level
 BPE tokenizer runs as a wasm module. JS only owns the WebGPU device, the
