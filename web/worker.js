@@ -44,7 +44,8 @@ async function boot(modelUrl) {
     const [wgsl, tokWasm, gguf] = await Promise.all([
       fetch(new URL("../native/wgsl/qwen3.wgsl", import.meta.url)).then((r) => r.text()),
       fetch(new URL("./qwen_tokenizer.wasm", import.meta.url)).then((r) => r.arrayBuffer()).then((b) => new Uint8Array(b)),
-      fetchProgress(modelUrl, (pct) => post({ type: "progress", pct })),
+      loadModelBytes(modelUrl, (pct) => post({ type: "progress", pct }),
+        (s) => post({ type: "status", text: s })),
     ]);
 
     chat = await Chat.load({
@@ -55,6 +56,35 @@ async function boot(modelUrl) {
   } catch (e) {
     post({ type: "error", text: String(e.message || e) });
   }
+}
+
+// Model bytes via the Cache API: download once, persist to disk, serve from
+// cache on every later load (localStorage can't hold a 640 MB–1.8 GB binary;
+// the Cache API can). Cached per model URL, so the picker's two models cache
+// independently. Eviction under storage pressure just re-downloads.
+const MODEL_CACHE = "nn-models-v1";
+async function loadModelBytes(url, onPct, onStatus) {
+  let cache = null;
+  try {
+    cache = await caches.open(MODEL_CACHE);
+    const hit = await cache.match(url);
+    if (hit) {
+      onStatus("キャッシュから読込中…");
+      const bytes = new Uint8Array(await hit.arrayBuffer());
+      onPct(100);
+      return bytes;
+    }
+  } catch (_) { /* Cache API unavailable (e.g. file://) — fall through */ }
+
+  onStatus("モデルをダウンロード中…（初回のみ）");
+  const bytes = await fetchProgress(url, onPct);
+  // persist for next time; don't block first load on the disk write
+  if (cache) {
+    cache.put(url, new Response(bytes, {
+      headers: { "Content-Type": "application/octet-stream", "Content-Length": String(bytes.length) },
+    })).catch(() => { /* quota exceeded etc. — just skip caching */ });
+  }
+  return bytes;
 }
 
 // fetch with a progress callback (the GGUF is large)

@@ -89,7 +89,7 @@ modelSel.addEventListener("change", () => {
   location.search = "?model=" + encodeURIComponent(modelSel.value);
 });
 
-const BUILD = "6"; // ?v bump busts the browser's aggressive module cache
+const BUILD = "7"; // ?v bump busts the browser's aggressive module cache
 const worker = new Worker("./worker.js?v=" + BUILD, { type: "module" });
 let current = null;
 
