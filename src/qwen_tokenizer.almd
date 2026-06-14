@@ -326,56 +326,61 @@ fn read_string_array(data: Bytes, pos: Int) -> List[String] = {
   out
 }
 
+// Build a tokenizer from GGUF bytes already in memory. Pure (no fs) so it
+// runs on the wasm target — the browser fetches the GGUF and hands the
+// bytes straight in. The native `load(path)` is a thin file-reading
+// wrapper around this.
+fn load_from_bytes(data: Bytes) -> Result[QwenTokenizer, String] =
+  if gguf_prims.r_u32(data, 0) != 1179993927 then err("not a GGUF file")
+  else {
+    let metadata_count = gguf_prims.r_u64(data, 16)
+    var tokens: List[String] = []
+    var merges: List[String] = []
+    var eos = 151645
+    var p = 24
+    var i = 0
+    while i < metadata_count {
+      let (key, p1) = gguf_prims.r_string(data, p)
+      let vtype = gguf_prims.r_u32(data, p1)
+      let vpos = p1 + 4
+      if key == "tokenizer.ggml.tokens" and vtype == 9 then {
+        tokens = read_string_array(data, vpos)
+      }
+      if key == "tokenizer.ggml.merges" and vtype == 9 then {
+        merges = read_string_array(data, vpos)
+      }
+      if key == "tokenizer.ggml.eos_token_id" then {
+        eos = gguf_prims.value_as_int(data, vpos, vtype)
+      }
+      p = gguf_prims.skip_value(data, vpos, vtype)
+      i = i + 1
+    }
+    if list.len(tokens) == 0 then err("no tokenizer.ggml.tokens")
+    else {
+      let (b2c, c2b) = build_byte_maps()
+      let pairs = list.enumerate(tokens)
+        |> list.map((e) => (e.1, e.0))
+        |> list.sort_by((pr) => pr.0)
+      let merge_pairs = list.enumerate(merges)
+        |> list.map((e) => (e.1, e.0))
+        |> list.sort_by((pr) => pr.0)
+      ok({
+        vocab: tokens,
+        sorted_tokens: pairs |> list.map((pr) => pr.0),
+        sorted_ids: pairs |> list.map((pr) => pr.1),
+        sorted_merges: merge_pairs |> list.map((pr) => pr.0),
+        merge_ranks: merge_pairs |> list.map((pr) => pr.1),
+        byte_to_char: b2c,
+        char_to_byte: c2b,
+        eos_id: eos,
+      })
+    }
+  }
+
 effect fn load(path: String) -> Result[QwenTokenizer, String] =
   match fs.read_bytes_raw(path) {
     err(e) => err("failed to read " + path + ": " + e)
-    ok(data) => {
-      if gguf_prims.r_u32(data, 0) != 1179993927 then err(path + " is not a GGUF file")
-      else {
-        let metadata_count = gguf_prims.r_u64(data, 16)
-        var tokens: List[String] = []
-        var merges: List[String] = []
-        var eos = 151645
-        var p = 24
-        var i = 0
-        while i < metadata_count {
-          let (key, p1) = gguf_prims.r_string(data, p)
-          let vtype = gguf_prims.r_u32(data, p1)
-          let vpos = p1 + 4
-          if key == "tokenizer.ggml.tokens" and vtype == 9 then {
-            tokens = read_string_array(data, vpos)
-          }
-          if key == "tokenizer.ggml.merges" and vtype == 9 then {
-            merges = read_string_array(data, vpos)
-          }
-          if key == "tokenizer.ggml.eos_token_id" then {
-            eos = gguf_prims.value_as_int(data, vpos, vtype)
-          }
-          p = gguf_prims.skip_value(data, vpos, vtype)
-          i = i + 1
-        }
-        if list.len(tokens) == 0 then err("no tokenizer.ggml.tokens in " + path)
-        else {
-          let (b2c, c2b) = build_byte_maps()
-          let pairs = list.enumerate(tokens)
-            |> list.map((e) => (e.1, e.0))
-            |> list.sort_by((pr) => pr.0)
-          let merge_pairs = list.enumerate(merges)
-            |> list.map((e) => (e.1, e.0))
-            |> list.sort_by((pr) => pr.0)
-          ok({
-            vocab: tokens,
-            sorted_tokens: pairs |> list.map((pr) => pr.0),
-            sorted_ids: pairs |> list.map((pr) => pr.1),
-            sorted_merges: merge_pairs |> list.map((pr) => pr.0),
-            merge_ranks: merge_pairs |> list.map((pr) => pr.1),
-            byte_to_char: b2c,
-            char_to_byte: c2b,
-            eos_id: eos,
-          })
-        }
-      }
-    }
+    ok(data) => load_from_bytes(data),
   }
 
 // ── Tests (dictionary mechanics — full parity runs in examples/) ──
