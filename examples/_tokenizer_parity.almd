@@ -37,8 +37,8 @@ effect fn main() -> () = {
   let args = process.args()
   let gguf = list.get(args, 1) ?? "parity/qwen3-0.6b-q8_0.gguf"
   let tok = qwen_tokenizer.load(gguf)!
-  println("tokenizer: " + int.to_string(list.len(tok.vocab)) + " tokens, "
-    + int.to_string(list.len(tok.sorted_merges)) + " merges, eos="
+  println("tokenizer: " + int.to_string(list.len(tok.vocab_off) - 1) + " tokens, "
+    + int.to_string(list.len(tok.merge_off) - 1) + " merges, eos="
     + int.to_string(tok.eos_id))
   var pass = 0
   var fail = 0

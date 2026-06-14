@@ -30,12 +30,9 @@ fn cpu_load_model(
 @extern(rs, "cpu_fast", "decode_sample")
 fn cpu_decode_sample(raw: Bytes, token: Int, pos: Int, temp: Float, top_p: Float, seed: Int) -> Int
 
-// Vocab id of an exact token string (special tokens never pass through
-// BPE). Clones the dictionary — startup use only.
-fn tok_id(t: qwen_tokenizer.QwenTokenizer, s: String) -> Int = {
-  let i = qwen_tokenizer.bsearch(t.sorted_tokens, s)
-  if i < 0 then -1 else list.get(t.sorted_ids, i) ?? -1
-}
+// Vocab id of an exact token string (special tokens never pass through BPE).
+fn tok_id(t: qwen_tokenizer.QwenTokenizer, s: String) -> Int =
+  qwen_tokenizer.token_to_id(t, s)
 
 // Length of the longest prefix of bs that is complete UTF-8 sequences —
 // BPE tokens can split a multi-byte character, so streaming output must
@@ -163,13 +160,8 @@ effect fn main() -> () = {
           if next == im_end or next == cfg.eos_id or next < 0 then {
             stop = true
           } else {
-            let piece = list.get(t.vocab, next) ?? ""
-            for c in string.chars(piece) {
-              let cp = string.codepoint(c) ?? 0
-              let b = if cp < 512 then list.get(t.char_to_byte, cp) ?? -1 else -1
-              if b >= 0 then {
-                list.push(pending, b)
-              }
+            for b in qwen_tokenizer.token_bytes(t, next) {
+              list.push(pending, b)
             }
             let cut = utf8_complete_len(pending)
             if cut > 0 then {

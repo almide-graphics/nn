@@ -35,6 +35,26 @@ def write_tokenizer(w: gguf.GGUFWriter, model_id: str, vocab_size: int) -> None:
     w.add_token_list(tokens)
     w.add_token_merges(merges)
 
+    # Precomputed sort permutations: nn.qwen_tokenizer binary-searches the
+    # vocab/merges by byte content, which needs them sorted. Building that
+    # order in-engine means a 152k merge sort — fine natively but it traps
+    # on the wasm backend at scale (almide#696), and the alternative
+    # List[String] sort is O(n²) there (almide#695). Shipping the
+    # permutation as i32 arrays lets the engine just *read* it (List[Int],
+    # O(n)) on both targets. Key = the token/merge UTF-8 bytes, matching
+    # Almide's bytewise String ordering.
+    import numpy as np
+    tok_sort = np.array(
+        sorted(range(len(tokens)), key=lambda i: tokens[i].encode("utf-8")),
+        dtype=np.int32,
+    )
+    merge_sort = np.array(
+        sorted(range(len(merges)), key=lambda i: merges[i].encode("utf-8")),
+        dtype=np.int32,
+    )
+    w.add_array("tokenizer.ggml.token_sort", tok_sort.tolist())
+    w.add_array("tokenizer.ggml.merge_sort", merge_sort.tolist())
+
 
 def main() -> None:
     ap = argparse.ArgumentParser()

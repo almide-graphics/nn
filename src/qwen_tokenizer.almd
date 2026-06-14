@@ -17,14 +17,27 @@
 import fs
 import self.gguf_prims
 
+// Dictionaries are stored as a packed byte blob + Int offset table, NOT
+// List[String]: building a 152k-element List[String] is O(n²) on the wasm
+// target (heap-element list grow deep-clones per push — almide#695), which
+// made the browser load take >5 min. A Bytes blob + List[Int] offsets
+// builds in O(n) (List[Int] push is O(1)), is more cache-local at runtime,
+// and sorts via direct byte-range comparison — no String materialization.
+//
+// `String <` in Almide is Rust's bytewise UTF-8 ordering, so comparing the
+// raw token bytes reproduces the exact order the old String sort produced.
+// Merge rank = original GGUF index (merges are stored highest-priority
+// first), so a sorted index doubles as the rank.
+
 type QwenTokenizer = {
-  vocab: List[String],         // id → token string (byte-mapped alphabet)
-  sorted_tokens: List[String], // token strings, sorted
-  sorted_ids: List[Int],       // parallel ids
-  sorted_merges: List[String], // "left right" keys, sorted
-  merge_ranks: List[Int],      // parallel ranks (lower merges first)
-  byte_to_char: List[String],  // 256 entries
-  char_to_byte: List[Int],     // indexed by codepoint (< 0x144), -1 = none
+  vocab_blob: Bytes,             // token i bytes = blob[off[i] .. off[i+1]]
+  vocab_off: List[Int],          // n_vocab + 1 offsets (id order)
+  sorted_token_idx: List[Int],   // token ids, sorted by byte content
+  merge_blob: Bytes,             // merge i "left right" key bytes
+  merge_off: List[Int],          // n_merge + 1 offsets (rank order)
+  sorted_merge_idx: List[Int],   // merge indices, sorted by byte content
+  byte_to_char: List[String],    // 256 entries
+  char_to_byte: List[Int],       // indexed by codepoint (< 0x200), -1 = none
   eos_id: Int,
 }
 
@@ -53,29 +66,85 @@ fn build_byte_maps() -> (List[String], List[Int]) = {
   (b2c, c2b)
 }
 
-// ── sorted-list dictionary ──
+// ── packed-blob dictionary ──
 //
-// Reference algorithm + unit-test subject. Do NOT call this from a hot
-// path with a dictionary-sized list: the by-value parameter clones every
-// element per call. encode() inlines this search against t's fields.
-
-fn bsearch(keys: List[String], target: String) -> Int = {
-  var lo = 0
-  var hi = list.len(keys) - 1
-  var found = -1
-  while lo <= hi {
-    let mid = (lo + hi) / 2
-    let k = list.get(keys, mid) ?? ""
-    if k == target then {
-      found = mid
-      lo = hi + 1
-    } else if k < target then {
-      lo = mid + 1
-    } else {
-      hi = mid - 1
-    }
+// Compare a target byte list against blob[b0 .. b1) lexicographically.
+// Returns -1 / 0 / 1 (target <, ==, > the blob range). Byte order matches
+// Almide String Ord (bytewise UTF-8), so this reproduces the String sort.
+fn cmp_target_range(target: List[Int], blob: Bytes, b0: Int, b1: Int) -> Int = {
+  var i = 0
+  var j = b0
+  var r = 0
+  let la = list.len(target)
+  while r == 0 and i < la and j < b1 {
+    let x = list.get(target, i) ?? 0
+    let y = bytes.get(blob, j) ?? 0
+    if x < y then { r = -1 } else if x > y then { r = 1 }
+    i = i + 1
+    j = j + 1
   }
-  found
+  if r != 0 then r
+  else {
+    let lb = b1 - b0
+    if la < lb then -1 else if la > lb then 1 else 0
+  }
+}
+
+// Compare two blob ranges (used by the load-time sort). Same blob.
+fn cmp_ranges(blob: Bytes, a0: Int, a1: Int, b0: Int, b1: Int) -> Int = {
+  var i = a0
+  var j = b0
+  var r = 0
+  while r == 0 and i < a1 and j < b1 {
+    let x = bytes.get(blob, i) ?? 0
+    let y = bytes.get(blob, j) ?? 0
+    if x < y then { r = -1 } else if x > y then { r = 1 }
+    i = i + 1
+    j = j + 1
+  }
+  if r != 0 then r
+  else {
+    let la = a1 - a0
+    let lb = b1 - b0
+    if la < lb then -1 else if la > lb then 1 else 0
+  }
+}
+
+// Bottom-up merge sort of `idx` (entry indices) by the byte content of
+// blob[off[e] .. off[e+1]]. Flat function, no closures (a closure capturing
+// `blob` would clone the whole buffer), List[Int] intermediates only → O(n
+// log n) with O(1) pushes, zero String allocation.
+fn sort_by_blob(idx: List[Int], blob: Bytes, off: List[Int]) -> List[Int] = {
+  let n = list.len(idx)
+  // owned copy: binding a borrowed-slice param straight to `var` mis-lowers
+  // to a reference clone (Vec vs &[i64])
+  var cur = list.slice(idx, 0, n)
+  var width = 1
+  while width < n {
+    var merged: List[Int] = []
+    var lo = 0
+    while lo < n {
+      let mid = if lo + width < n then lo + width else n
+      let hi = if lo + 2 * width < n then lo + 2 * width else n
+      var i = lo
+      var j = mid
+      while i < mid and j < hi {
+        let ea = list.get(cur, i) ?? 0
+        let eb = list.get(cur, j) ?? 0
+        let c = cmp_ranges(blob,
+          list.get(off, ea) ?? 0, list.get(off, ea + 1) ?? 0,
+          list.get(off, eb) ?? 0, list.get(off, eb + 1) ?? 0)
+        if c <= 0 then { list.push(merged, ea); i = i + 1 }
+        else { list.push(merged, eb); j = j + 1 }
+      }
+      while i < mid { list.push(merged, list.get(cur, i) ?? 0); i = i + 1 }
+      while j < hi { list.push(merged, list.get(cur, j) ?? 0); j = j + 1 }
+      lo = lo + 2 * width
+    }
+    cur = merged
+    width = width * 2
+  }
+  cur
 }
 
 // ── Pretokenizer ──
@@ -206,6 +275,26 @@ fn pretokenize(text: String) -> List[String] = {
 // lookup inline against t's fields makes encode allocation-free apart
 // from the pieces themselves.
 
+// Exact-match id of a whole token string (e.g. a special token like
+// "<|im_start|>" that never goes through BPE). -1 if absent. Clones the
+// record by value — startup/setup use only, not a hot path.
+fn token_to_id(t: QwenTokenizer, s: String) -> Int = {
+  let target = string.to_bytes(s)
+  var lo = 0
+  var hi = list.len(t.sorted_token_idx) - 1
+  var id = -1
+  while lo <= hi {
+    let mid = (lo + hi) / 2
+    let tid = list.get(t.sorted_token_idx, mid) ?? 0
+    let c = cmp_target_range(target, t.vocab_blob,
+      list.get(t.vocab_off, tid) ?? 0, list.get(t.vocab_off, tid + 1) ?? 0)
+    if c == 0 then { id = tid; lo = hi + 1 }
+    else if c > 0 then { lo = mid + 1 }
+    else { hi = mid - 1 }
+  }
+  id
+}
+
 fn encode(t: QwenTokenizer, text: String) -> List[Int] = {
   var out: List[Int] = []
   for pre in pretokenize(text) {
@@ -214,27 +303,33 @@ fn encode(t: QwenTokenizer, text: String) -> List[Int] = {
     for b in string.to_bytes(pre) {
       list.push(pieces, list.get(t.byte_to_char, b) ?? "")
     }
-    // merge loop: lowest-rank adjacent pair, all its occurrences, repeat
+    // merge loop: lowest-rank adjacent pair, all its occurrences, repeat.
+    // Merge rank = the sorted entry's original index (merges stored
+    // highest-priority first), so a hit at sorted position mid has rank
+    // sorted_merge_idx[mid]; pick the smallest such across all pairs.
     var go = list.len(pieces) > 1
     while go {
       var best_rank = 2147483647
       var best_i = -1
       var i = 0
       while i < list.len(pieces) - 1 {
-        let key = (list.get(pieces, i) ?? "") + " " + (list.get(pieces, i + 1) ?? "")
+        // target bytes = bytes(a) ++ ' ' ++ bytes(b)
+        let target = string.to_bytes(list.get(pieces, i) ?? "")
+          + [32] + string.to_bytes(list.get(pieces, i + 1) ?? "")
         var lo = 0
-        var hi = list.len(t.sorted_merges) - 1
+        var hi = list.len(t.sorted_merge_idx) - 1
         while lo <= hi {
           let mid = (lo + hi) / 2
-          let k = list.get(t.sorted_merges, mid) ?? ""
-          if k == key then {
-            let r = list.get(t.merge_ranks, mid) ?? 2147483647
-            if r < best_rank then {
-              best_rank = r
+          let idx = list.get(t.sorted_merge_idx, mid) ?? 0
+          let c = cmp_target_range(target, t.merge_blob,
+            list.get(t.merge_off, idx) ?? 0, list.get(t.merge_off, idx + 1) ?? 0)
+          if c == 0 then {
+            if idx < best_rank then {
+              best_rank = idx
               best_i = i
             }
             lo = hi + 1
-          } else if k < key then {
+          } else if c > 0 then {
             lo = mid + 1
           } else {
             hi = mid - 1
@@ -265,18 +360,21 @@ fn encode(t: QwenTokenizer, text: String) -> List[Int] = {
         go = list.len(pieces) > 1
       }
     }
-    // vocab lookup
+    // vocab lookup: compare piece bytes against the sorted blob ranges
     for p in pieces {
+      let target = string.to_bytes(p)
       var lo = 0
-      var hi = list.len(t.sorted_tokens) - 1
+      var hi = list.len(t.sorted_token_idx) - 1
       var id = -1
       while lo <= hi {
         let mid = (lo + hi) / 2
-        let k = list.get(t.sorted_tokens, mid) ?? ""
-        if k == p then {
-          id = list.get(t.sorted_ids, mid) ?? -1
+        let tid = list.get(t.sorted_token_idx, mid) ?? 0
+        let c = cmp_target_range(target, t.vocab_blob,
+          list.get(t.vocab_off, tid) ?? 0, list.get(t.vocab_off, tid + 1) ?? 0)
+        if c == 0 then {
+          id = tid
           lo = hi + 1
-        } else if k < p then {
+        } else if c > 0 then {
           lo = mid + 1
         } else {
           hi = mid - 1
@@ -290,17 +388,34 @@ fn encode(t: QwenTokenizer, text: String) -> List[Int] = {
   out
 }
 
+// Decoded UTF-8 bytes of a single token id (inverse byte map applied).
+// For streaming: append to a buffer and flush at UTF-8 boundaries.
+// Control/special tokens (e.g. <|im_end|>) decode to no bytes.
+fn token_bytes(t: QwenTokenizer, id: Int) -> List[Int] = {
+  let s = list.get(t.vocab_off, id) ?? 0
+  let e = list.get(t.vocab_off, id + 1) ?? 0
+  var tb: List[Int] = []
+  var bi = s
+  while bi < e {
+    list.push(tb, bytes.get(t.vocab_blob, bi) ?? 0)
+    bi = bi + 1
+  }
+  var out: List[Int] = []
+  for c in string.chars(string.from_bytes(tb)) {
+    let cp = string.codepoint(c) ?? 0
+    let b = if cp < 512 then list.get(t.char_to_byte, cp) ?? -1 else -1
+    if b >= 0 then {
+      list.push(out, b)
+    }
+  }
+  out
+}
+
 fn decode(t: QwenTokenizer, ids: List[Int]) -> String = {
   var bytes_out: List[Int] = []
   for id in ids {
-    let piece = list.get(t.vocab, id) ?? ""
-    for c in string.chars(piece) {
-      let cp = string.codepoint(c) ?? 0
-      let b = if cp < 512 then list.get(t.char_to_byte, cp) ?? -1 else -1
-      if b >= 0 then {
-        list.push(bytes_out, b)
-      }
-      // control/special tokens map to no bytes (e.g. <|im_end|>)
+    for b in token_bytes(t, id) {
+      list.push(bytes_out, b)
     }
   }
   string.from_bytes(bytes_out)
@@ -308,19 +423,45 @@ fn decode(t: QwenTokenizer, ids: List[Int]) -> String = {
 
 // ── GGUF loading ──
 //
-// Walks the metadata section with qwen_loader's primitive readers and
-// materializes the two string arrays (the model loaders skip them).
-
-fn read_string_array(data: Bytes, pos: Int) -> List[String] = {
-  // at pos: elem_type u32 (8 = string), count u64, then strings
+// Read a GGUF string array (elem_type u32 = 8, count u64, then
+// length-prefixed strings) into a packed byte blob + an offset table.
+// Returns (blob, off): entry i bytes = blob[off[i] .. off[i+1]], with
+// off having count+1 entries. Pushes raw bytes into a List[Int] (O(1)
+// push) then converts once — never builds a List[String] (almide#695).
+fn read_blob(data: Bytes, pos: Int) -> (Bytes, List[Int]) = {
   let count = gguf_prims.r_u64(data, pos + 4)
-  var out: List[String] = []
+  var blob: List[Int] = []
+  var off: List[Int] = [0]
+  var p = pos + 12
+  var run = 0
+  var i = 0
+  while i < count {
+    let len = gguf_prims.r_u64(data, p)
+    var k = 0
+    while k < len {
+      list.push(blob, bytes.get(data, p + 8 + k) ?? 0)
+      k = k + 1
+    }
+    run = run + len
+    list.push(off, run)
+    p = p + 8 + len
+    i = i + 1
+  }
+  (bytes.from_list(blob), off)
+}
+
+// Read a GGUF scalar array of ints (u32/i32/u64/i64) into a List[Int].
+// O(n) push, no String/sort — used for the precomputed sort permutations.
+fn read_int_array(data: Bytes, pos: Int) -> List[Int] = {
+  let elem_type = gguf_prims.r_u32(data, pos)
+  let count = gguf_prims.r_u64(data, pos + 4)
+  let esz = gguf_prims.scalar_size(elem_type)
+  var out: List[Int] = []
   var p = pos + 12
   var i = 0
   while i < count {
-    let (s, np) = gguf_prims.r_string(data, p)
-    list.push(out, s)
-    p = np
+    list.push(out, gguf_prims.value_as_int(data, p, elem_type))
+    p = p + esz
     i = i + 1
   }
   out
@@ -334,8 +475,13 @@ fn load_from_bytes(data: Bytes) -> Result[QwenTokenizer, String] =
   if gguf_prims.r_u32(data, 0) != 1179993927 then err("not a GGUF file")
   else {
     let metadata_count = gguf_prims.r_u64(data, 16)
-    var tokens: List[String] = []
-    var merges: List[String] = []
+    var vocab_blob = bytes.from_list([])
+    var vocab_off: List[Int] = []
+    var merge_blob = bytes.from_list([])
+    var merge_off: List[Int] = []
+    // precomputed sort permutations (tools/export_gguf.py); empty = absent
+    var tok_sort: List[Int] = []
+    var merge_sort: List[Int] = []
     var eos = 151645
     var p = 24
     var i = 0
@@ -344,10 +490,20 @@ fn load_from_bytes(data: Bytes) -> Result[QwenTokenizer, String] =
       let vtype = gguf_prims.r_u32(data, p1)
       let vpos = p1 + 4
       if key == "tokenizer.ggml.tokens" and vtype == 9 then {
-        tokens = read_string_array(data, vpos)
+        let (b, o) = read_blob(data, vpos)
+        vocab_blob = b
+        vocab_off = o
       }
       if key == "tokenizer.ggml.merges" and vtype == 9 then {
-        merges = read_string_array(data, vpos)
+        let (b, o) = read_blob(data, vpos)
+        merge_blob = b
+        merge_off = o
+      }
+      if key == "tokenizer.ggml.token_sort" and vtype == 9 then {
+        tok_sort = read_int_array(data, vpos)
+      }
+      if key == "tokenizer.ggml.merge_sort" and vtype == 9 then {
+        merge_sort = read_int_array(data, vpos)
       }
       if key == "tokenizer.ggml.eos_token_id" then {
         eos = gguf_prims.value_as_int(data, vpos, vtype)
@@ -355,21 +511,25 @@ fn load_from_bytes(data: Bytes) -> Result[QwenTokenizer, String] =
       p = gguf_prims.skip_value(data, vpos, vtype)
       i = i + 1
     }
-    if list.len(tokens) == 0 then err("no tokenizer.ggml.tokens")
+    let n_vocab = list.len(vocab_off) - 1
+    if n_vocab <= 0 then err("no tokenizer.ggml.tokens")
     else {
       let (b2c, c2b) = build_byte_maps()
-      let pairs = list.enumerate(tokens)
-        |> list.map((e) => (e.1, e.0))
-        |> list.sort_by((pr) => pr.0)
-      let merge_pairs = list.enumerate(merges)
-        |> list.map((e) => (e.1, e.0))
-        |> list.sort_by((pr) => pr.0)
+      let n_merge = list.len(merge_off) - 1
+      // Use the shipped permutation when present (O(n) read, works on wasm);
+      // otherwise sort in-engine (native only — the merge sort traps on the
+      // wasm backend at this scale, almide#696).
+      let st = if list.len(tok_sort) == n_vocab then tok_sort
+               else sort_by_blob(list.range(0, n_vocab), vocab_blob, vocab_off)
+      let sm = if list.len(merge_sort) == n_merge then merge_sort
+               else sort_by_blob(list.range(0, n_merge), merge_blob, merge_off)
       ok({
-        vocab: tokens,
-        sorted_tokens: pairs |> list.map((pr) => pr.0),
-        sorted_ids: pairs |> list.map((pr) => pr.1),
-        sorted_merges: merge_pairs |> list.map((pr) => pr.0),
-        merge_ranks: merge_pairs |> list.map((pr) => pr.1),
+        vocab_blob: vocab_blob,
+        vocab_off: vocab_off,
+        sorted_token_idx: st,
+        merge_blob: merge_blob,
+        merge_off: merge_off,
+        sorted_merge_idx: sm,
         byte_to_char: b2c,
         char_to_byte: c2b,
         eos_id: eos,
@@ -401,12 +561,20 @@ test "byte maps round-trip every byte" {
   assert_eq(good, 256)
 }
 
-test "bsearch finds and misses" {
-  let keys = ["apple", "banana", "cherry"]
-  assert_eq(bsearch(keys, "banana"), 1)
-  assert_eq(bsearch(keys, "apple"), 0)
-  assert_eq(bsearch(keys, "cherry"), 2)
-  assert_eq(bsearch(keys, "durian"), -1)
+test "sort_by_blob orders entries by byte content" {
+  // three entries "cherry","apple","banana" in a blob; sorted idx = a,b,c
+  let blob = bytes.from_list(string.to_bytes("cherryapplebanana"))
+  let off = [0, 6, 11, 17]
+  let sorted = sort_by_blob([0, 1, 2], blob, off)
+  assert_eq(sorted, [1, 2, 0]) // apple(1), banana(2), cherry(0)
+}
+
+test "cmp_target_range matches, prefixes, and orders" {
+  let blob = bytes.from_list(string.to_bytes("banana"))
+  assert_eq(cmp_target_range(string.to_bytes("banana"), blob, 0, 6), 0)
+  assert_eq(cmp_target_range(string.to_bytes("ban"), blob, 0, 6), -1)   // shorter
+  assert_eq(cmp_target_range(string.to_bytes("apple"), blob, 0, 6), -1) // a < b
+  assert_eq(cmp_target_range(string.to_bytes("cherry"), blob, 0, 6), 1) // c > b
 }
 
 test "pretokenize splits words with leading spaces" {

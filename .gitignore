@@ -1,3 +1,5 @@
 .almide/cache/
 parity/
 tools/.venv/
+examples/*.wasm
+examples/*.wasm
