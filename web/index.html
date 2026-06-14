@@ -71,7 +71,9 @@ function add(cls, text) {
   return d;
 }
 
-const worker = new Worker("./worker.js", { type: "module" });
+// ?v bump busts the browser's aggressive module cache on each deploy
+const BUILD = "2";
+const worker = new Worker("./worker.js?v=" + BUILD, { type: "module" });
 let current = null;
 
 // kick off model load; ?model=<url> overrides the (large) local GGUF
