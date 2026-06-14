@@ -31,16 +31,18 @@ def main() -> None:
     repo_id = args.repo or f"{user}/{DEFAULT_NAME}"
     print(f"repo: {repo_id}")
 
+    import os
+    fname = os.path.basename(args.file)
     create_repo(repo_id, repo_type="model", exist_ok=True)
-    print("uploading (640 MB, may take a few minutes)…")
+    print(f"uploading {fname} (may take a few minutes)…")
     upload_file(
         path_or_fileobj=args.file,
-        path_in_repo="qwen3-0.6b-q8_0.gguf",
+        path_in_repo=fname,
         repo_id=repo_id,
         repo_type="model",
-        commit_message="Qwen3-0.6B Q8_0 GGUF for the nn in-browser demo",
+        commit_message=f"{fname} for the nn in-browser demo",
     )
-    url = f"https://huggingface.co/{repo_id}/resolve/main/qwen3-0.6b-q8_0.gguf"
+    url = f"https://huggingface.co/{repo_id}/resolve/main/{fname}"
     print("\nDONE. Model URL (download=true for the raw asset):")
     print(url)
     print(url + "?download=true")

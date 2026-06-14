@@ -15,9 +15,11 @@
 <body class="flex h-[100dvh] flex-col bg-gray-950 font-sans text-gray-100 antialiased">
 
   <header class="border-b border-white/10">
-    <div class="mx-auto flex w-full max-w-2xl items-baseline gap-3 px-4 py-3">
+    <div class="mx-auto flex w-full max-w-2xl items-center gap-3 px-4 py-3">
       <h1 class="text-sm font-semibold tracking-tight">nn chat</h1>
-      <span class="text-xs text-gray-500">Qwen3-0.6B Q8_0 · Almide engine · 100% local</span>
+      <span class="hidden text-xs text-gray-500 sm:inline">Almide engine · 100% local</span>
+      <select id="model" title="モデルを選択（切替で再読み込み）"
+        class="rounded-lg border border-white/10 bg-gray-900 px-2 py-1 text-xs text-gray-300 outline-none focus:border-blue-500"></select>
       <span id="status" class="ml-auto truncate text-xs text-gray-500">初期化中…</span>
     </div>
     <div class="h-0.5 w-full bg-transparent">
@@ -68,7 +70,26 @@ function setReady(on) {
   if (on) input.focus();
 }
 
-const BUILD = "4"; // ?v bump busts the browser's aggressive module cache
+// model picker — switching reloads with ?model= (the worker boots one model)
+const MODELS = [
+  { id: "0.6b", label: "Qwen3-0.6B · 軽量 640MB",
+    url: "https://huggingface.co/O6lvl4/qwen3-0.6b-q8-gguf/resolve/main/qwen3-0.6b-q8_0.gguf" },
+  { id: "1.7b", label: "Qwen3-1.7B · 高品質 1.8GB",
+    url: "https://huggingface.co/O6lvl4/qwen3-1.7b-q8-gguf/resolve/main/qwen3-1.7b-q8_0.gguf" },
+];
+const askedModel = new URLSearchParams(location.search).get("model") || MODELS[0].url;
+const modelSel = document.getElementById("model");
+for (const m of MODELS) {
+  const o = document.createElement("option");
+  o.value = m.url; o.textContent = m.label;
+  if (m.url === askedModel) o.selected = true;
+  modelSel.appendChild(o);
+}
+modelSel.addEventListener("change", () => {
+  location.search = "?model=" + encodeURIComponent(modelSel.value);
+});
+
+const BUILD = "5"; // ?v bump busts the browser's aggressive module cache
 const worker = new Worker("./worker.js?v=" + BUILD, { type: "module" });
 let current = null;
 
@@ -92,8 +113,7 @@ worker.onmessage = (e) => {
   if (m.type === "error") { status.textContent = "error"; add("sys", "エラー: " + m.text); setReady(false); }
 };
 
-const modelUrl = new URLSearchParams(location.search).get("model") || undefined;
-worker.postMessage({ type: "config", modelUrl });
+worker.postMessage({ type: "config", modelUrl: askedModel });
 
 document.getElementById("f").addEventListener("submit", (ev) => {
   ev.preventDefault();
