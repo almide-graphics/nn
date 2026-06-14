@@ -15,6 +15,13 @@ import { Chat } from "./chat.js";
 const post = (m) => self.postMessage(m);
 let chat = null;
 
+// 640 MB Q8_0 GGUF (weights + tokenizer + sort permutation). Default is the
+// same-origin local copy (works under `http.server` from the repo root);
+// for a hosted demo pass ?model=<url> pointing at a CORS-enabled host
+// (HuggingFace / R2 — GitHub release assets send NO CORS headers and can't
+// be fetched cross-origin).
+const DEFAULT_MODEL_URL = new URL("../parity/qwen3-0.6b-q8_0.gguf", import.meta.url).href;
+
 async function boot(modelUrl) {
   try {
     if (!navigator.gpu) throw new Error("WebGPU がこのブラウザにありません");
@@ -72,7 +79,7 @@ async function fetchProgress(url, onPct) {
 self.onmessage = async (e) => {
   const m = e.data;
   if (m.type === "config") {
-    boot(m.modelUrl || new URL("../parity/qwen3-0.6b-q8_0.gguf", import.meta.url).href);
+    boot(m.modelUrl || DEFAULT_MODEL_URL);
   } else if (m.type === "chat") {
     if (!chat) { post({ type: "error", text: "まだ読み込み中です" }); return; }
     try {
