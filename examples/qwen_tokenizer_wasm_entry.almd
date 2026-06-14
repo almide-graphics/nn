@@ -23,3 +23,11 @@ fn tok_encode(t: tok.QwenTokenizer, text: String) -> List[Int] =
 
 fn tok_decode(t: tok.QwenTokenizer, ids: List[Int]) -> String =
   tok.decode(t, ids)
+
+// Exact id of a whole token string (special tokens: <|im_start|> etc.),
+// for building the chat template host-side. -1 if absent.
+fn tok_special(t: tok.QwenTokenizer, s: String) -> Int =
+  tok.token_to_id(t, s)
+
+fn tok_eos(t: tok.QwenTokenizer) -> Int =
+  t.eos_id

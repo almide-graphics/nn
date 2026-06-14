@@ -1,28 +1,92 @@
-// nn browser worker — M0: device init + kernel compile + gemv smoke test
-// via the shared module (web/m0.js).
+// nn browser worker — the production pipeline: WebGPU engine (m1.js) +
+// wasm tokenizer (tokenizer.js) wired by chat.js. One GGUF feeds both.
+// Verified end-to-end via Deno (web/_chat_test.deno.js): the browser stack
+// reproduces the native qwen_chat reply.
 //
-// Serve from the REPO ROOT so the WGSL fetch resolves:
-//   python3 -m http.server 8080      # then open http://localhost:8080/web/
-//
-// Milestones (docs/browser-port-plan.md):
-//   M0 (now): prove the browser GPU path compiles our kernels and computes.
-//   M1: tiny-model full layer stack from JS, logits vs native gpu_model.
-//   M2: nn.wasm (Almide) owns gguf/tokenizer/op-list; this file degrades
-//       to a dumb executor. Blocked on almide#643/#681.
+// Serve the repo root so the relative fetches resolve, e.g.
+//   python3 -m http.server 8080   →   http://localhost:8080/web/
+// Override the GGUF location with ?model=<url> on the page URL (passed in
+// via the "config" message) for a hosted demo (R2/HF) instead of the
+// 640 MB file in parity/.
 
-import { initM0 } from "./m0.js";
+import { makeWasi } from "./wasi.js";
+import { Chat } from "./chat.js";
 
 const post = (m) => self.postMessage(m);
+let chat = null;
 
-initM0((text) => post({ type: "status", text }))
-  .then(() => post({ type: "ready", text: "M0 ok — kernels compile, gemv matches CPU" }))
-  .catch((e) => post({ type: "error", text: String(e.message || e) }));
+async function boot(modelUrl) {
+  try {
+    if (!navigator.gpu) throw new Error("WebGPU がこのブラウザにありません");
+    post({ type: "status", text: "GPUアダプタ取得中…" });
+    const adapter = await navigator.gpu.requestAdapter({ powerPreference: "high-performance" });
+    if (!adapter) throw new Error("WebGPU adapter が取れません");
+    const lim = adapter.limits;
+    const device = await adapter.requestDevice({
+      requiredLimits: {
+        maxStorageBufferBindingSize: Math.min(lim.maxStorageBufferBindingSize, 256 << 20),
+        maxBufferSize: Math.min(lim.maxBufferSize, 256 << 20),
+      },
+    });
+    device.lost.then((i) => post({ type: "error", text: "GPU device lost: " + i.message }));
 
-self.onmessage = (e) => {
-  if (e.data.type === "chat") {
-    // M2 wires this to nn.wasm. Until then, be honest about it.
-    post({ type: "token", text: "（エンジン未接続 — M0スキャフォールドです。" });
-    post({ type: "token", text: " カーネルのコンパイルとgemv検証は通っています）" });
-    post({ type: "done" });
+    post({ type: "status", text: "カーネルとモデルを取得中…" });
+    const [wgsl, tokWasm, gguf] = await Promise.all([
+      fetch(new URL("../native/wgsl/qwen3.wgsl", import.meta.url)).then((r) => r.text()),
+      fetch(new URL("./qwen_tokenizer.wasm", import.meta.url)).then((r) => r.arrayBuffer()).then((b) => new Uint8Array(b)),
+      fetchProgress(modelUrl, (pct) => post({ type: "progress", pct })),
+    ]);
+
+    chat = await Chat.load({
+      device, wgsl, gguf: gguf.buffer, tokWasm, makeWasi,
+      onStatus: (s) => post({ type: "status", text: s }),
+    });
+    post({ type: "ready", text: "準備完了（100%ローカル）" });
+  } catch (e) {
+    post({ type: "error", text: String(e.message || e) });
+  }
+}
+
+// fetch with a progress callback (the GGUF is large)
+async function fetchProgress(url, onPct) {
+  const res = await fetch(url);
+  if (!res.ok) throw new Error(`model fetch ${res.status} (${url})`);
+  const total = Number(res.headers.get("content-length")) || 0;
+  if (!total || !res.body) return new Uint8Array(await res.arrayBuffer());
+  const reader = res.body.getReader();
+  const chunks = [];
+  let got = 0;
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    chunks.push(value);
+    got += value.length;
+    onPct((got / total) * 100);
+  }
+  const out = new Uint8Array(got);
+  let off = 0;
+  for (const c of chunks) { out.set(c, off); off += c.length; }
+  return out;
+}
+
+self.onmessage = async (e) => {
+  const m = e.data;
+  if (m.type === "config") {
+    boot(m.modelUrl || new URL("../parity/qwen3-0.6b-q8_0.gguf", import.meta.url).href);
+  } else if (m.type === "chat") {
+    if (!chat) { post({ type: "error", text: "まだ読み込み中です" }); return; }
+    try {
+      await chat.generate(m.text, {
+        temp: m.temp ?? 0.7, topP: m.topP ?? 0.9, maxNew: m.maxNew ?? 256,
+        seed: (Math.random() * 2 ** 31) | 0,
+        onToken: (chunk) => post({ type: "token", text: chunk }),
+      });
+      post({ type: "done" });
+    } catch (err) {
+      post({ type: "error", text: String(err.message || err) });
+    }
+  } else if (m.type === "reset") {
+    chat?.reset();
+    post({ type: "status", text: "文脈をクリアしました" });
   }
 };

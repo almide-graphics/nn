@@ -74,6 +74,10 @@ function add(cls, text) {
 const worker = new Worker("./worker.js", { type: "module" });
 let current = null;
 
+// kick off model load; ?model=<url> overrides the (large) local GGUF
+const modelUrl = new URLSearchParams(location.search).get("model") || undefined;
+worker.postMessage({ type: "config", modelUrl });
+
 worker.onmessage = (e) => {
   const m = e.data;
   if (m.type === "status") { status.textContent = m.text; }
