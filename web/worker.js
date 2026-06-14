@@ -56,8 +56,24 @@ async function boot(modelUrl) {
 
 // fetch with a progress callback (the GGUF is large)
 async function fetchProgress(url, onPct) {
-  const res = await fetch(url);
-  if (!res.ok) throw new Error(`model fetch ${res.status} (${url})`);
+  let res;
+  try {
+    res = await fetch(url);
+  } catch (e) {
+    // CORS / network — almost always a hosted page with no reachable model
+    throw new Error(
+      "モデル(GGUF)を取得できませんでした。この公開ページはコードのみをホストしています。" +
+      "ローカルで動かす（リポジトリを http.server で配信して /web/ を開く）か、" +
+      "CORS対応URLを ?model=<gguf-url> で指定してください。 (" + e.message + ")");
+  }
+  if (!res.ok) {
+    if (res.status === 404) {
+      throw new Error(
+        "モデル(GGUF)が見つかりません (404)。この公開ページはコードのみをホストしています。" +
+        "ローカルで動かすか、CORS対応URLを ?model=<gguf-url> で指定してください。");
+    }
+    throw new Error(`model fetch ${res.status} (${url})`);
+  }
   const total = Number(res.headers.get("content-length")) || 0;
   if (!total || !res.body) return new Uint8Array(await res.arrayBuffer());
   const reader = res.body.getReader();
