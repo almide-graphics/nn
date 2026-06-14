@@ -1,0 +1,25 @@
+// WASM entry point for the Qwen3 tokenizer (browser port, M2).
+//
+// The browser/JS host fetches the GGUF, writes its bytes into WASM memory,
+// then:
+//   1. handle = tok_load(gguf_ptr)        — parses vocab+merges ONCE,
+//      returns a Result whose Ok payload is the tokenizer handle (a heap
+//      pointer; the bump heap never frees, so it stays valid all session)
+//   2. ids = tok_encode(handle, text_ptr) — encode as many strings as you
+//      like against the one handle (no re-parse, no leak)
+//   3. text = tok_decode(handle, ids_ptr) — inverse
+//
+// load_from_bytes / encode / decode are pure (no fs), so this whole path
+// runs on the wasm target. See src/qwen_tokenizer.almd.
+
+import self.qwen_tokenizer as tok
+
+// Ok payload is the QwenTokenizer record pointer = the JS-side handle.
+fn tok_load(gguf: Bytes) -> Result[tok.QwenTokenizer, String] =
+  tok.load_from_bytes(gguf)
+
+fn tok_encode(t: tok.QwenTokenizer, text: String) -> List[Int] =
+  tok.encode(t, text)
+
+fn tok_decode(t: tok.QwenTokenizer, ids: List[Int]) -> String =
+  tok.decode(t, ids)
