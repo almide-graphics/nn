@@ -15,12 +15,12 @@ import { Chat } from "./chat.js";
 const post = (m) => self.postMessage(m);
 let chat = null;
 
-// 640 MB Q8_0 GGUF (weights + tokenizer + sort permutation). Default is the
-// same-origin local copy (works under `http.server` from the repo root);
-// for a hosted demo pass ?model=<url> pointing at a CORS-enabled host
-// (HuggingFace / R2 — GitHub release assets send NO CORS headers and can't
-// be fetched cross-origin).
-const DEFAULT_MODEL_URL = new URL("../parity/qwen3-0.6b-q8_0.gguf", import.meta.url).href;
+// 640 MB Q8_0 GGUF (weights + tokenizer + sort permutation), hosted on
+// HuggingFace (CORS *, Range). Override with ?model=<url>; a local run
+// (http.server from the repo root) can point ?model=../parity/qwen3-0.6b-q8_0.gguf
+// at the same-origin copy.
+const DEFAULT_MODEL_URL =
+  "https://huggingface.co/O6lvl4/qwen3-0.6b-q8-gguf/resolve/main/qwen3-0.6b-q8_0.gguf";
 
 async function boot(modelUrl) {
   try {
