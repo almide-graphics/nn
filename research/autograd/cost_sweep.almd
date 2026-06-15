@@ -1,0 +1,286 @@
+// T2 in Almide: does a differentiable gate-count penalty move the accuracy-
+// vs-circuit-size Pareto? A 1-layer DLGN of N gate-neurons with a fixed
+// soft-OR readout learns 2-bit XOR; loss = MSE + lambda * expected_gate_count
+// (trivial gates FALSE/A/B/TRUE/notA/notB cost 0, real gates cost 1).
+//
+// Sweeping lambda should shrink the hardened circuit (4 real gates -> 1)
+// while holding 100% accuracy, then collapse — matching research/autograd/
+// oracle_cost.py (PyTorch). Full backward (relax vjp + softmax vjp + OR-readout
+// vjp + cost-penalty grad) is hand-derived; Adam optimizer; per-lambda best of
+// several random seeds (non-convex circuit search).
+//
+//   almide run research/autograd/cost_sweep.almd
+
+fn relax(g: Int, a: Float, b: Float) -> Float =
+  if g == 0 then 0.0
+  else if g == 1 then a * b
+  else if g == 2 then a - a * b
+  else if g == 3 then a
+  else if g == 4 then b - a * b
+  else if g == 5 then b
+  else if g == 6 then a + b - 2.0 * a * b
+  else if g == 7 then a + b - a * b
+  else if g == 8 then 1.0 - (a + b - a * b)
+  else if g == 9 then 1.0 - (a + b - 2.0 * a * b)
+  else if g == 10 then 1.0 - b
+  else if g == 11 then 1.0 - b + a * b
+  else if g == 12 then 1.0 - a
+  else if g == 13 then 1.0 - a + a * b
+  else if g == 14 then 1.0 - a * b
+  else 1.0
+
+// cost per gate: trivial wire/const = 0, real 2-input gate = 1
+fn gate_cost(g: Int) -> Float =
+  if g == 0 or g == 3 or g == 5 or g == 15 or g == 12 or g == 10 then 0.0 else 1.0
+
+fn is_trivial(g: Int) -> Bool = gate_cost(g) == 0.0
+
+fn softmax16(logits: List[Float]) -> List[Float] = {
+  var mx = list.get(logits, 0) ?? 0.0
+  var g = 1
+  while g < 16 {
+    let v = list.get(logits, g) ?? 0.0
+    if v > mx then { mx = v }
+    g = g + 1
+  }
+  var es: List[Float] = []
+  var s = 0.0
+  g = 0
+  while g < 16 {
+    let e = math.exp((list.get(logits, g) ?? 0.0) - mx)
+    list.push(es, e)
+    s = s + e
+    g = g + 1
+  }
+  es |> list.map((e) => e / s)
+}
+
+fn argmax16(xs: List[Float]) -> Int = {
+  var bi = 0
+  var bv = list.get(xs, 0) ?? 0.0
+  var g = 1
+  while g < 16 {
+    let v = list.get(xs, g) ?? 0.0
+    if v > bv then { bv = v; bi = g }
+    g = g + 1
+  }
+  bi
+}
+
+// xorshift32 PRNG → Float in roughly [-1,1], for symmetry-breaking init
+fn rng_next(s: Int) -> Int = {
+  var x = int.band(s, 2147483647)
+  x = int.band(int.bxor(x, int.bshl(x, 13)), 2147483647)
+  x = int.bxor(x, int.bshr(x, 17))
+  x = int.band(int.bxor(x, int.bshl(x, 5)), 2147483647)
+  x
+}
+fn rng_float(s: Int) -> Float =
+  (int.to_float(int.band(s, 65535)) / 32768.0) - 1.0
+
+// inputs: 2-bit, target XOR
+fn xa() -> List[Float] = [0.0, 0.0, 1.0, 1.0]
+fn xb() -> List[Float] = [0.0, 1.0, 0.0, 1.0]
+fn xt() -> List[Float] = [0.0, 1.0, 1.0, 0.0]
+
+let NN = 4
+let MM = 4   // examples
+
+// train one layer for a given lambda + seed, return (hard_acc, real_gates, picks)
+fn train(lam: Float, seed: Int) -> (Float, Int, List[Int]) = {
+  // logits: NN × 16, flat (n*16 + g). random init.
+  var logits: List[Float] = []
+  var rs = if seed == 0 then 12345 else seed * 2654435761
+  var k = 0
+  while k < NN * 16 {
+    rs = rng_next(rs)
+    list.push(logits, rng_float(rs))
+    k = k + 1
+  }
+  // Adam state
+  var mAd = list.repeat(0.0, NN * 16)
+  var vAd = list.repeat(0.0, NN * 16)
+  let lr = 0.05
+  let beta1 = 0.9
+  let beta2 = 0.999
+  let eps = 0.00000001
+
+  let av = xa()
+  let bv = xb()
+  let tv = xt()
+
+  var step = 0
+  while step < 3000 {
+    // per-neuron softmax probs
+    var probs: List[List[Float]] = []
+    var n = 0
+    while n < NN {
+      var lg: List[Float] = []
+      var g = 0
+      while g < 16 {
+        list.push(lg, list.get(logits, n * 16 + g) ?? 0.0)
+        g = g + 1
+      }
+      list.push(probs, softmax16(lg))
+      n = n + 1
+    }
+
+    // grad accumulator over logits
+    var grad = list.repeat(0.0, NN * 16)
+
+    // forward per example + backward of MSE through OR-readout
+    var i = 0
+    while i < MM {
+      let a = list.get(av, i) ?? 0.0
+      let b = list.get(bv, i) ?? 0.0
+      // neuron outputs o_n = sum_g p[n,g]*relax_g
+      var on: List[Float] = []
+      n = 0
+      while n < NN {
+        var s = 0.0
+        var g = 0
+        while g < 16 {
+          s = s + (list.get(list.get(probs, n) ?? [], g) ?? 0.0) * relax(g, a, b)
+          g = g + 1
+        }
+        list.push(on, s)
+        n = n + 1
+      }
+      // soft-OR readout: y = 1 - prod(1 - o_n) ; prod term pr
+      var pr = 1.0
+      n = 0
+      while n < NN {
+        pr = pr * (1.0 - (list.get(on, n) ?? 0.0))
+        n = n + 1
+      }
+      let y = 1.0 - pr
+      let t = list.get(tv, i) ?? 0.0
+      let dy = 2.0 * (y - t) / int.to_float(MM)   // dMSE/dy
+      // dy/do_n = prod_{m != n}(1 - o_m) = pr / (1 - o_n)  (guard div)
+      n = 0
+      while n < NN {
+        let onv = list.get(on, n) ?? 0.0
+        let denom = 1.0 - onv
+        let dydon = if denom > 0.0000001 or denom < 0.0 - 0.0000001 then pr / denom else 0.0
+        let go = dy * dydon                       // dL/do_n
+        // do_n/dp[n,g] = relax_g ; softmax vjp to logits
+        // first dL/dp[n,g] = go * relax_g
+        let pn = list.get(probs, n) ?? []
+        var dot = 0.0
+        var g = 0
+        while g < 16 {
+          dot = dot + (list.get(pn, g) ?? 0.0) * (go * relax(g, a, b))
+          g = g + 1
+        }
+        g = 0
+        while g < 16 {
+          let pg = list.get(pn, g) ?? 0.0
+          let dLdp = go * relax(g, a, b)
+          let dlogit = pg * (dLdp - dot)
+          grad = list.set(grad, n * 16 + g, (list.get(grad, n * 16 + g) ?? 0.0) + dlogit)
+          g = g + 1
+        }
+        n = n + 1
+      }
+      i = i + 1
+    }
+
+    // cost penalty grad: C = lam * sum_n sum_g p[n,g]*cost_g
+    // dC/dlogit[n,g] = lam * p[n,g] * (cost_g - sum_k p[n,k]*cost_k)
+    n = 0
+    while n < NN {
+      let pn = list.get(probs, n) ?? []
+      var ecost = 0.0
+      var g = 0
+      while g < 16 {
+        ecost = ecost + (list.get(pn, g) ?? 0.0) * gate_cost(g)
+        g = g + 1
+      }
+      g = 0
+      while g < 16 {
+        let pg = list.get(pn, g) ?? 0.0
+        let dc = lam * pg * (gate_cost(g) - ecost)
+        grad = list.set(grad, n * 16 + g, (list.get(grad, n * 16 + g) ?? 0.0) + dc)
+        g = g + 1
+      }
+      n = n + 1
+    }
+
+    // Adam update
+    let t1 = int.to_float(step + 1)
+    let bc1 = 1.0 - math.fpow(beta1, t1)
+    let bc2 = 1.0 - math.fpow(beta2, t1)
+    var j = 0
+    while j < NN * 16 {
+      let gj = list.get(grad, j) ?? 0.0
+      let mj = beta1 * (list.get(mAd, j) ?? 0.0) + (1.0 - beta1) * gj
+      let vj = beta2 * (list.get(vAd, j) ?? 0.0) + (1.0 - beta2) * gj * gj
+      mAd = list.set(mAd, j, mj)
+      vAd = list.set(vAd, j, vj)
+      let mh = mj / bc1
+      let vh = vj / bc2
+      logits = list.set(logits, j, (list.get(logits, j) ?? 0.0) - lr * mh / (math.sqrt(vh) + eps))
+      j = j + 1
+    }
+    step = step + 1
+  }
+
+  // harden: argmax gate per neuron, count real gates, eval OR-readout accuracy
+  var picks: List[Int] = []
+  var real_gates = 0
+  var n = 0
+  while n < NN {
+    var lg: List[Float] = []
+    var g = 0
+    while g < 16 {
+      list.push(lg, list.get(logits, n * 16 + g) ?? 0.0)
+      g = g + 1
+    }
+    let pk = argmax16(lg)
+    list.push(picks, pk)
+    if not is_trivial(pk) then { real_gates = real_gates + 1 }
+    n = n + 1
+  }
+  var correct = 0
+  var i = 0
+  while i < MM {
+    let a = list.get(av, i) ?? 0.0
+    let b = list.get(bv, i) ?? 0.0
+    var pr = 1.0
+    n = 0
+    while n < NN {
+      pr = pr * (1.0 - relax(list.get(picks, n) ?? 0, a, b))
+      n = n + 1
+    }
+    let y = 1.0 - pr
+    let t = list.get(tv, i) ?? 0.0
+    let pred = if y > 0.5 then 1.0 else 0.0
+    if pred == t then { correct = correct + 1 }
+    i = i + 1
+  }
+  (int.to_float(correct) / int.to_float(MM), real_gates, picks)
+}
+
+effect fn main() -> () = {
+  let lams = [0.0, 0.02, 0.05, 0.1, 0.2, 0.4]
+  println("lambda  hard_acc  real_gates  picks (best-of-6 seeds)")
+  for lam in lams {
+    // best of seeds: prefer higher acc, then fewer real gates
+    var best_acc = 0.0 - 1.0
+    var best_rg = 999
+    var best_picks: List[Int] = []
+    var s = 0
+    while s < 6 {
+      let (acc, rg, picks) = train(lam, s)
+      if acc > best_acc or (acc == best_acc and rg < best_rg) then {
+        best_acc = acc
+        best_rg = rg
+        best_picks = picks
+      }
+      s = s + 1
+    }
+    let ps = best_picks |> list.map((g) => int.to_string(g)) |> list.join(",")
+    println(float.to_string(lam) + "    " + float.to_string(best_acc)
+      + "    " + int.to_string(best_rg) + "    [" + ps + "]")
+  }
+}
