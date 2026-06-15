@@ -1,0 +1,305 @@
+// Tensor reverse-mode autograd in Almide — the "torch-equivalent mechanism".
+//
+// Tensor = List[List[Float]] (row-major, f64). No matrix intrinsics, no GPU,
+// no shared-mutable objects: a node is an index into parallel tape lists, and
+// backward() is one reverse sweep accumulating tensor grads. Ops carry their
+// vjp (vector-Jacobian product). Verified against research/autograd/oracle_mlp.py
+// (PyTorch f64): a tiny MLP matmul→+bias→relu→matmul→+bias→softmax-CE.
+//
+//   almide run research/autograd/tensor.almd
+
+// ── tensor helpers (List[List[Float]]) ──
+fn trows(t: List[List[Float]]) -> Int = list.len(t)
+fn tcols(t: List[List[Float]]) -> Int = list.len(list.get(t, 0) ?? [])
+fn tg(t: List[List[Float]], i: Int, j: Int) -> Float =
+  list.get(list.get(t, i) ?? [], j) ?? 0.0
+
+fn tzeros(r: Int, c: Int) -> List[List[Float]] = {
+  var rows: List[List[Float]] = []
+  var i = 0
+  while i < r {
+    list.push(rows, list.repeat(0.0, c))
+    i = i + 1
+  }
+  rows
+}
+
+// elementwise add (same shape) — used for grad accumulation
+fn tadd(a: List[List[Float]], b: List[List[Float]]) -> List[List[Float]] = {
+  let r = trows(a)
+  let c = tcols(a)
+  var out: List[List[Float]] = []
+  var i = 0
+  while i < r {
+    var row: List[Float] = []
+    var j = 0
+    while j < c {
+      list.push(row, tg(a, i, j) + tg(b, i, j))
+      j = j + 1
+    }
+    list.push(out, row)
+    i = i + 1
+  }
+  out
+}
+
+fn tmatmul(a: List[List[Float]], b: List[List[Float]]) -> List[List[Float]] = {
+  let m = trows(a)
+  let k = tcols(a)
+  let n = tcols(b)
+  var out: List[List[Float]] = []
+  var i = 0
+  while i < m {
+    var row: List[Float] = []
+    var j = 0
+    while j < n {
+      var s = 0.0
+      var p = 0
+      while p < k {
+        s = s + tg(a, i, p) * tg(b, p, j)
+        p = p + 1
+      }
+      list.push(row, s)
+      j = j + 1
+    }
+    list.push(out, row)
+    i = i + 1
+  }
+  out
+}
+
+fn ttranspose(a: List[List[Float]]) -> List[List[Float]] = {
+  let r = trows(a)
+  let c = tcols(a)
+  var out: List[List[Float]] = []
+  var j = 0
+  while j < c {
+    var row: List[Float] = []
+    var i = 0
+    while i < r {
+      list.push(row, tg(a, i, j))
+      i = i + 1
+    }
+    list.push(out, row)
+    j = j + 1
+  }
+  out
+}
+
+// add a (1×n) bias row broadcast over all rows of h (m×n)
+fn taddbias(h: List[List[Float]], bias: List[List[Float]]) -> List[List[Float]] = {
+  let m = trows(h)
+  let n = tcols(h)
+  var out: List[List[Float]] = []
+  var i = 0
+  while i < m {
+    var row: List[Float] = []
+    var j = 0
+    while j < n {
+      list.push(row, tg(h, i, j) + tg(bias, 0, j))
+      j = j + 1
+    }
+    list.push(out, row)
+    i = i + 1
+  }
+  out
+}
+
+// sum over rows → (1×n) ; vjp of bias broadcast
+fn tsumrows(g: List[List[Float]]) -> List[List[Float]] = {
+  let m = trows(g)
+  let n = tcols(g)
+  var row: List[Float] = []
+  var j = 0
+  while j < n {
+    var s = 0.0
+    var i = 0
+    while i < m {
+      s = s + tg(g, i, j)
+      i = i + 1
+    }
+    list.push(row, s)
+    j = j + 1
+  }
+  [row]
+}
+
+fn trelu(h: List[List[Float]]) -> List[List[Float]] = {
+  let r = trows(h)
+  let c = tcols(h)
+  var out: List[List[Float]] = []
+  var i = 0
+  while i < r {
+    var row: List[Float] = []
+    var j = 0
+    while j < c {
+      let v = tg(h, i, j)
+      list.push(row, if v > 0.0 then v else 0.0)
+      j = j + 1
+    }
+    list.push(out, row)
+    i = i + 1
+  }
+  out
+}
+
+// dH = gi ⊙ (h > 0)
+fn trelu_back(gi: List[List[Float]], h: List[List[Float]]) -> List[List[Float]] = {
+  let r = trows(h)
+  let c = tcols(h)
+  var out: List[List[Float]] = []
+  var i = 0
+  while i < r {
+    var row: List[Float] = []
+    var j = 0
+    while j < c {
+      list.push(row, if tg(h, i, j) > 0.0 then tg(gi, i, j) else 0.0)
+      j = j + 1
+    }
+    list.push(out, row)
+    i = i + 1
+  }
+  out
+}
+
+// softmax over the single row of z (1×C); returns probabilities (1×C)
+fn softmax_row(z: List[List[Float]]) -> List[List[Float]] = {
+  let c = tcols(z)
+  var mx = tg(z, 0, 0)
+  var j = 1
+  while j < c {
+    let v = tg(z, 0, j)
+    if v > mx then { mx = v }
+    j = j + 1
+  }
+  var es: List[Float] = []
+  var s = 0.0
+  j = 0
+  while j < c {
+    let e = math.exp(tg(z, 0, j) - mx)
+    list.push(es, e)
+    s = s + e
+    j = j + 1
+  }
+  var p: List[Float] = []
+  j = 0
+  while j < c {
+    list.push(p, (list.get(es, j) ?? 0.0) / s)
+    j = j + 1
+  }
+  [p]
+}
+
+// ── tape ──
+// ops: 0 leaf, 1 matmul(a,b), 2 addbias(a, bias=b), 3 relu(a), 4 softmax_ce(z=a, target=aux)
+fn node(mut val: List[List[List[Float]]], mut op: List[Int], mut pa: List[Int],
+        mut pb: List[Int], mut aux: List[Int],
+        v: List[List[Float]], o: Int, ai: Int, bi: Int, ax: Int) -> Int = {
+  list.push(val, v)
+  list.push(op, o)
+  list.push(pa, ai)
+  list.push(pb, bi)
+  list.push(aux, ax)
+  list.len(val) - 1
+}
+
+fn tval(val: List[List[List[Float]]], i: Int) -> List[List[Float]] =
+  list.get(val, i) ?? []
+
+fn backward(val: List[List[List[Float]]], op: List[Int], pa: List[Int],
+            pb: List[Int], aux: List[Int], out: Int) -> List[List[List[Float]]] = {
+  let n = list.len(val)
+  // grad tensors, same shape as each node's value, init zeros
+  var grad: List[List[List[Float]]] = []
+  var t = 0
+  while t < n {
+    let vt = tval(val, t)
+    list.push(grad, tzeros(trows(vt), tcols(vt)))
+    t = t + 1
+  }
+  // seed: d(out)/d(out) = 1 (out is the 1×1 loss)
+  grad = list.set(grad, out, [[1.0]])
+  var i = n - 1
+  while i >= 0 {
+    let gi = list.get(grad, i) ?? []
+    let o = list.get(op, i) ?? 0
+    let ai = list.get(pa, i) ?? -1
+    let bi = list.get(pb, i) ?? -1
+    if o == 1 then {                  // matmul: dA = gi·Bᵀ ; dB = Aᵀ·gi
+      let av = tval(val, ai)
+      let bv = tval(val, bi)
+      grad = list.set(grad, ai, tadd(list.get(grad, ai) ?? [], tmatmul(gi, ttranspose(bv))))
+      grad = list.set(grad, bi, tadd(list.get(grad, bi) ?? [], tmatmul(ttranspose(av), gi)))
+    } else if o == 2 then {           // addbias: dA = gi ; dBias = sumrows(gi)
+      grad = list.set(grad, ai, tadd(list.get(grad, ai) ?? [], gi))
+      grad = list.set(grad, bi, tadd(list.get(grad, bi) ?? [], tsumrows(gi)))
+    } else if o == 3 then {           // relu
+      grad = list.set(grad, ai, tadd(list.get(grad, ai) ?? [], trelu_back(gi, tval(val, ai))))
+    } else if o == 4 then {           // softmax_ce: dZ = (p - onehot)·gi[0][0]
+      let z = tval(val, ai)
+      let p = softmax_row(z)
+      let target = list.get(aux, i) ?? 0
+      let scale = tg(gi, 0, 0)
+      let c = tcols(z)
+      var dz: List[Float] = []
+      var j = 0
+      while j < c {
+        let oh = if j == target then 1.0 else 0.0
+        list.push(dz, (tg(p, 0, j) - oh) * scale)
+        j = j + 1
+      }
+      grad = list.set(grad, ai, tadd(list.get(grad, ai) ?? [], [dz]))
+    }
+    i = i - 1
+  }
+  grad
+}
+
+fn fmt_row(t: List[List[Float]]) -> String = {
+  // flatten row-major
+  var out: List[String] = []
+  var i = 0
+  while i < trows(t) {
+    var j = 0
+    while j < tcols(t) {
+      list.push(out, float.to_string(tg(t, i, j)))
+      j = j + 1
+    }
+    i = i + 1
+  }
+  out |> list.join(",")
+}
+
+effect fn main() -> () = {
+  var val: List[List[List[Float]]] = []
+  var op: List[Int] = []
+  var pa: List[Int] = []
+  var pb: List[Int] = []
+  var aux: List[Int] = []
+
+  // same tensors as oracle_mlp.py
+  let x  = node(val, op, pa, pb, aux, [[0.5, 0.0 - 1.0]], 0, -1, -1, 0)
+  let w1 = node(val, op, pa, pb, aux, [[0.1, 0.2, 0.0 - 0.3], [0.4, 0.0 - 0.5, 0.6]], 0, -1, -1, 0)
+  let b1 = node(val, op, pa, pb, aux, [[0.01, 0.0 - 0.02, 0.03]], 0, -1, -1, 0)
+  let w2 = node(val, op, pa, pb, aux, [[0.7, 0.0 - 0.8], [0.9, 0.1], [0.0 - 0.2, 0.5]], 0, -1, -1, 0)
+  let b2 = node(val, op, pa, pb, aux, [[0.05, 0.0 - 0.06]], 0, -1, -1, 0)
+  let target = 1
+
+  let h  = node(val, op, pa, pb, aux, tmatmul(tval(val, x), tval(val, w1)), 1, x, w1, 0)
+  let hb = node(val, op, pa, pb, aux, taddbias(tval(val, h), tval(val, b1)), 2, h, b1, 0)
+  let a  = node(val, op, pa, pb, aux, trelu(tval(val, hb)), 3, hb, -1, 0)
+  let z  = node(val, op, pa, pb, aux, tmatmul(tval(val, a), tval(val, w2)), 1, a, w2, 0)
+  let zb = node(val, op, pa, pb, aux, taddbias(tval(val, z), tval(val, b2)), 2, z, b2, 0)
+  // loss = -log(softmax(zb)[target]) as a 1×1 tensor
+  let p = softmax_row(tval(val, zb))
+  let loss = 0.0 - math.log(tg(p, 0, target))
+  let ll = node(val, op, pa, pb, aux, [[loss]], 4, zb, -1, target)
+
+  let grad = backward(val, op, pa, pb, aux, ll)
+
+  println("loss = " + float.to_string(loss))
+  println("dW1 = " + fmt_row(list.get(grad, w1) ?? []))
+  println("db1 = " + fmt_row(list.get(grad, b1) ?? []))
+  println("dW2 = " + fmt_row(list.get(grad, w2) ?? []))
+  println("db2 = " + fmt_row(list.get(grad, b2) ?? []))
+}
