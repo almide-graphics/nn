@@ -1,0 +1,330 @@
+// Multi-layer DLGN in Almide — the scaling step. A 2-hidden-layer gate network
+// (difflogic-style random fixed wiring) learns a non-trivial 2-stage boolean
+// function f(x) = ((x0 XOR x1) OR (x2 AND x3)) over all 16 4-bit inputs, then
+// hardens to an exact circuit. Real backprop THROUGH the layers (each neuron's
+// upstream grad flows to its two wired parents), Adam, on Almide's own autograd.
+// Matches research/autograd/oracle_deep.py (PyTorch): deep DLGNs train + harden.
+//
+// Self-contained (no matrix / no nn-native deps). Run from OUTSIDE the nn
+// package so the native build doesn't pull nn/native/cpu_fast.rs (its matrix
+// runtime is broken at HEAD) — copy to a scratch dir with a minimal almide.toml:
+//   cp research/autograd/deep.almd /tmp/d/ && cd /tmp/d && almide run deep.almd
+// Result (seed search, 2 hidden layers x 6 neurons): seed 12 -> 16/16 exact.
+
+fn relax(g: Int, a: Float, b: Float) -> Float =
+  if g == 0 then 0.0
+  else if g == 1 then a * b
+  else if g == 2 then a - a * b
+  else if g == 3 then a
+  else if g == 4 then b - a * b
+  else if g == 5 then b
+  else if g == 6 then a + b - 2.0 * a * b
+  else if g == 7 then a + b - a * b
+  else if g == 8 then 1.0 - (a + b - a * b)
+  else if g == 9 then 1.0 - (a + b - 2.0 * a * b)
+  else if g == 10 then 1.0 - b
+  else if g == 11 then 1.0 - b + a * b
+  else if g == 12 then 1.0 - a
+  else if g == 13 then 1.0 - a + a * b
+  else if g == 14 then 1.0 - a * b
+  else 1.0
+
+// d relax / d a  and  d relax / d b
+fn drda(g: Int, a: Float, b: Float) -> Float =
+  if g == 1 then b else if g == 2 then 1.0 - b else if g == 3 then 1.0
+  else if g == 4 then 0.0 - b else if g == 6 then 1.0 - 2.0 * b
+  else if g == 7 then 1.0 - b else if g == 8 then 0.0 - 1.0 + b
+  else if g == 9 then 0.0 - 1.0 + 2.0 * b else if g == 11 then b
+  else if g == 12 then 0.0 - 1.0 else if g == 13 then 0.0 - 1.0 + b
+  else if g == 14 then 0.0 - b else 0.0
+fn drdb(g: Int, a: Float, b: Float) -> Float =
+  if g == 1 then a else if g == 2 then 0.0 - a else if g == 4 then 1.0 - a
+  else if g == 5 then 1.0 else if g == 6 then 1.0 - 2.0 * a
+  else if g == 7 then 1.0 - a else if g == 8 then 0.0 - 1.0 + a
+  else if g == 9 then 0.0 - 1.0 + 2.0 * a else if g == 10 then 0.0 - 1.0
+  else if g == 11 then 0.0 - 1.0 + a else if g == 13 then a
+  else if g == 14 then 0.0 - a else 0.0
+
+fn is_trivial(g: Int) -> Bool =
+  g == 0 or g == 3 or g == 5 or g == 15 or g == 12 or g == 10
+
+fn softmax16(lg: List[Float]) -> List[Float] = {
+  var mx = list.get(lg, 0) ?? 0.0
+  var g = 1
+  while g < 16 { let v = list.get(lg, g) ?? 0.0; if v > mx then { mx = v }; g = g + 1 }
+  var es: List[Float] = []
+  var s = 0.0
+  g = 0
+  while g < 16 { let e = math.exp((list.get(lg, g) ?? 0.0) - mx); list.push(es, e); s = s + e; g = g + 1 }
+  es |> list.map((e) => e / s)
+}
+fn argmax16(lg: List[Float]) -> Int = {
+  var bi = 0
+  var bv = list.get(lg, 0) ?? 0.0
+  var g = 1
+  while g < 16 { let v = list.get(lg, g) ?? 0.0; if v > bv then { bv = v; bi = g }; g = g + 1 }
+  bi
+}
+
+fn rng_next(s: Int) -> Int = {
+  var x = int.band(s, 2147483647)
+  x = int.band(int.bxor(x, int.bshl(x, 13)), 2147483647)
+  x = int.bxor(x, int.bshr(x, 17))
+  x = int.band(int.bxor(x, int.bshl(x, 5)), 2147483647)
+  x
+}
+
+let NB = 4        // input bits
+let WID = 6       // neurons per hidden layer
+let DEP = 2       // hidden layers
+let NEX = 16      // examples (all 4-bit inputs)
+let NPARAM = (DEP * WID + 1) * 16   // logits: DEP layers × WID + 1 readout
+
+// flat logit index for (layer, neuron, gate); readout is layer index DEP, neuron 0
+fn pidx(layer: Int, neuron: Int, g: Int) -> Int =
+  if layer < DEP then (layer * WID + neuron) * 16 + g
+  else (DEP * WID) * 16 + g
+
+effect fn main() -> () = {
+  // build inputs X[ex][bit] and target T[ex]
+  var xs: List[List[Float]] = []
+  var ts: List[Float] = []
+  var e = 0
+  while e < NEX {
+    var row: List[Float] = []
+    var k = 0
+    while k < NB {
+      let bit = int.band(int.bshr(e, NB - 1 - k), 1)
+      list.push(row, int.to_float(bit))
+      k = k + 1
+    }
+    list.push(xs, row)
+    let x0 = int.band(int.bshr(e, 3), 1)
+    let x1 = int.band(int.bshr(e, 2), 1)
+    let x2 = int.band(int.bshr(e, 1), 1)
+    let x3 = int.band(e, 1)
+    let f = int.bor(int.bxor(x0, x1), int.band(x2, x3))
+    list.push(ts, int.to_float(f))
+    e = e + 1
+  }
+
+  // fixed random wiring: wire[layer][neuron] = (pa, pb) into prev layer width
+  // (prev width = NB for layer 0, WID otherwise). readout wires into last layer.
+  // search seeds for one that reaches exact.
+  var seed_try = 0
+  var done = false
+  var final_real = 0
+
+  while seed_try < 16 and not done {
+    var rs = 1000 + seed_try * 7919
+    // wiring
+    var wa: List[Int] = []
+    var wb: List[Int] = []
+    var layer = 0
+    while layer < DEP + 1 {
+      let prevw = if layer == 0 then NB else WID
+      let count = if layer < DEP then WID else 1
+      var nn = 0
+      while nn < count {
+        rs = rng_next(rs); list.push(wa, int.band(rs, 1073741823) - (int.band(rs, 1073741823) / prevw) * prevw)
+        rs = rng_next(rs); list.push(wb, int.band(rs, 1073741823) - (int.band(rs, 1073741823) / prevw) * prevw)
+        nn = nn + 1
+      }
+      layer = layer + 1
+    }
+    // wiring index helper: position in wa/wb for (layer,neuron)
+    // layout: [L0 neurons WID][L1 neurons WID][readout 1]
+
+    // init logits
+    var logits: List[Float] = []
+    var i = 0
+    while i < NPARAM {
+      rs = rng_next(rs)
+      list.push(logits, (int.to_float(int.band(rs, 65535)) / 32768.0) - 1.0)
+      i = i + 1
+    }
+    var mAd = list.repeat(0.0, NPARAM)
+    var vAd = list.repeat(0.0, NPARAM)
+    let lr = 0.05
+    let b1 = 0.9
+    let b2 = 0.999
+
+    var step = 0
+    while step < 3000 {
+      var grad = list.repeat(0.0, NPARAM)
+      // precompute softmax per (layer,neuron)
+      // forward storing activations per layer per example would be heavy;
+      // instead loop examples, store per-example activations in small lists.
+      var ex = 0
+      while ex < NEX {
+        // activations: act[layer] = list of values. layer 0 = inputs.
+        // we store as List[List[Float]] indexed [layer][unit]
+        var acts: List[List[Float]] = [list.get(xs, ex) ?? []]
+        // forward through hidden layers + readout, remember chosen probs
+        var layer2 = 0
+        while layer2 < DEP + 1 {
+          let prev = list.get(acts, layer2) ?? []
+          let count = if layer2 < DEP then WID else 1
+          var cur: List[Float] = []
+          var nn = 0
+          while nn < count {
+            let wi = if layer2 < DEP then layer2 * WID + nn else DEP * WID
+            let pa = list.get(wa, wi) ?? 0
+            let pb = list.get(wb, wi) ?? 0
+            let av = list.get(prev, pa) ?? 0.0
+            let bv = list.get(prev, pb) ?? 0.0
+            var lg: List[Float] = []
+            var g = 0
+            while g < 16 { list.push(lg, list.get(logits, pidx(layer2, nn, g)) ?? 0.0); g = g + 1 }
+            let pr = softmax16(lg)
+            var o = 0.0
+            g = 0
+            while g < 16 { o = o + (list.get(pr, g) ?? 0.0) * relax(g, av, bv); g = g + 1 }
+            list.push(cur, o)
+            nn = nn + 1
+          }
+          list.push(acts, cur)
+          layer2 = layer2 + 1
+        }
+        let y = list.get(list.get(acts, DEP + 1) ?? [], 0) ?? 0.0
+        let t = list.get(ts, ex) ?? 0.0
+        // dL/dy
+        let dy = 2.0 * (y - t) / int.to_float(NEX)
+
+        // backward: gradient wrt each unit's output, top layer first
+        // dunit[layer] = list of dL/d(output of unit)
+        var dunit: List[List[Float]] = []
+        var l = 0
+        while l < DEP + 2 { list.push(dunit, list.repeat(0.0, list.len(list.get(acts, l) ?? []))); l = l + 1 }
+        dunit = list.set(dunit, DEP + 1, [dy])
+
+        var lb = DEP
+        while lb >= 0 {
+          let prev = list.get(acts, lb) ?? []
+          let count = if lb < DEP then WID else 1
+          let du = list.get(dunit, lb + 1) ?? []
+          var nn = 0
+          while nn < count {
+            let go = list.get(du, nn) ?? 0.0
+            if go != 0.0 then {
+              let wi = if lb < DEP then lb * WID + nn else DEP * WID
+              let pa = list.get(wa, wi) ?? 0
+              let pb = list.get(wb, wi) ?? 0
+              let av = list.get(prev, pa) ?? 0.0
+              let bv = list.get(prev, pb) ?? 0.0
+              var lg: List[Float] = []
+              var g = 0
+              while g < 16 { list.push(lg, list.get(logits, pidx(lb, nn, g)) ?? 0.0); g = g + 1 }
+              let pr = softmax16(lg)
+              // grad to logits: dL/dp_g = go*relax_g ; softmax vjp
+              var dot = 0.0
+              g = 0
+              while g < 16 { dot = dot + (list.get(pr, g) ?? 0.0) * (go * relax(g, av, bv)); g = g + 1 }
+              g = 0
+              while g < 16 {
+                let pg = list.get(pr, g) ?? 0.0
+                let dl = pg * (go * relax(g, av, bv) - dot)
+                grad = list.set(grad, pidx(lb, nn, g), (list.get(grad, pidx(lb, nn, g)) ?? 0.0) + dl)
+                g = g + 1
+              }
+              // grad to parents: sum_g p_g * drelax * go
+              var sa = 0.0
+              var sb = 0.0
+              g = 0
+              while g < 16 {
+                let pg = list.get(pr, g) ?? 0.0
+                sa = sa + pg * drda(g, av, bv)
+                sb = sb + pg * drdb(g, av, bv)
+                g = g + 1
+              }
+              let dpa = (list.get(list.get(dunit, lb) ?? [], pa) ?? 0.0) + go * sa
+              let dpb = (list.get(list.get(dunit, lb) ?? [], pb) ?? 0.0) + go * sb
+              var dl2 = list.get(dunit, lb) ?? []
+              dl2 = list.set(dl2, pa, dpa)
+              dl2 = list.set(dl2, pb, dpb)
+              dunit = list.set(dunit, lb, dl2)
+            }
+            nn = nn + 1
+          }
+          lb = lb - 1
+        }
+        ex = ex + 1
+      }
+
+      // Adam
+      let tt = int.to_float(step + 1)
+      let bc1 = 1.0 - math.fpow(b1, tt)
+      let bc2 = 1.0 - math.fpow(b2, tt)
+      var j = 0
+      while j < NPARAM {
+        let gj = list.get(grad, j) ?? 0.0
+        let mj = b1 * (list.get(mAd, j) ?? 0.0) + (1.0 - b1) * gj
+        let vj = b2 * (list.get(vAd, j) ?? 0.0) + (1.0 - b2) * gj * gj
+        mAd = list.set(mAd, j, mj)
+        vAd = list.set(vAd, j, vj)
+        logits = list.set(logits, j, (list.get(logits, j) ?? 0.0) - lr * (mj / bc1) / (math.sqrt(vj / bc2) + 0.00000001))
+        j = j + 1
+      }
+      step = step + 1
+    }
+
+    // harden + eval 16/16
+    var correct = 0
+    var ex2 = 0
+    while ex2 < NEX {
+      var acts: List[List[Float]] = [list.get(xs, ex2) ?? []]
+      var layer3 = 0
+      while layer3 < DEP + 1 {
+        let prev = list.get(acts, layer3) ?? []
+        let count = if layer3 < DEP then WID else 1
+        var cur: List[Float] = []
+        var nn = 0
+        while nn < count {
+          let wi = if layer3 < DEP then layer3 * WID + nn else DEP * WID
+          let pa = list.get(wa, wi) ?? 0
+          let pb = list.get(wb, wi) ?? 0
+          var lg: List[Float] = []
+          var g = 0
+          while g < 16 { list.push(lg, list.get(logits, pidx(layer3, nn, g)) ?? 0.0); g = g + 1 }
+          let pk = argmax16(lg)
+          list.push(cur, relax(pk, list.get(prev, pa) ?? 0.0, list.get(prev, pb) ?? 0.0))
+          nn = nn + 1
+        }
+        list.push(acts, cur)
+        layer3 = layer3 + 1
+      }
+      let y = list.get(list.get(acts, DEP + 1) ?? [], 0) ?? 0.0
+      let pred = if y > 0.5 then 1.0 else 0.0
+      if pred == (list.get(ts, ex2) ?? 0.0) then { correct = correct + 1 }
+      ex2 = ex2 + 1
+    }
+    // count real gates
+    var real_gates = 0
+    var u = 0
+    while u < DEP * WID + 1 {
+      var lg: List[Float] = []
+      var g = 0
+      let layeru = if u < DEP * WID then u / WID else DEP
+      let neuronu = if u < DEP * WID then u - (u / WID) * WID else 0
+      while g < 16 { list.push(lg, list.get(logits, pidx(layeru, neuronu, g)) ?? 0.0); g = g + 1 }
+      if not is_trivial(argmax16(lg)) then { real_gates = real_gates + 1 }
+      u = u + 1
+    }
+
+    println("seed " + int.to_string(seed_try) + ": " + int.to_string(correct)
+      + "/16  real_gates " + int.to_string(real_gates))
+    if correct == NEX then {
+      done = true
+      final_real = real_gates
+    }
+    seed_try = seed_try + 1
+  }
+
+  println("")
+  if done then {
+    println("DEEP DLGN learns + hardens in Almide: 16/16 exact, "
+      + int.to_string(final_real) + " real gates")
+  } else {
+    println("no seed reached 16/16 (try more seeds / steps)")
+  }
+}
