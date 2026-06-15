@@ -1,0 +1,151 @@
+// A differentiable logic-gate neuron LEARNS XOR by gradient descent, then
+// hardens to a single exact gate. This closes the DLGN arc in Almide:
+//   16 relaxations as verified ops (gate.almd) -> training -> hardening.
+//
+// One neuron with inputs (a,b) and 16 gate-selection logits. Trained on the
+// 4 XOR examples with MSE + SGD. The softmax should converge onto gate 6
+// (XOR); the hardened (argmax) gate must compute XOR exactly on all 4 inputs.
+//
+//   almide run research/autograd/train_xor.almd
+
+fn relax(g: Int, a: Float, b: Float) -> Float =
+  if g == 0 then 0.0
+  else if g == 1 then a * b
+  else if g == 2 then a - a * b
+  else if g == 3 then a
+  else if g == 4 then b - a * b
+  else if g == 5 then b
+  else if g == 6 then a + b - 2.0 * a * b
+  else if g == 7 then a + b - a * b
+  else if g == 8 then 1.0 - (a + b - a * b)
+  else if g == 9 then 1.0 - (a + b - 2.0 * a * b)
+  else if g == 10 then 1.0 - b
+  else if g == 11 then 1.0 - b + a * b
+  else if g == 12 then 1.0 - a
+  else if g == 13 then 1.0 - a + a * b
+  else if g == 14 then 1.0 - a * b
+  else 1.0
+
+fn softmax16(logits: List[Float]) -> List[Float] = {
+  var mx = list.get(logits, 0) ?? 0.0
+  var g = 1
+  while g < 16 {
+    let v = list.get(logits, g) ?? 0.0
+    if v > mx then { mx = v }
+    g = g + 1
+  }
+  var es: List[Float] = []
+  var s = 0.0
+  g = 0
+  while g < 16 {
+    let e = math.exp((list.get(logits, g) ?? 0.0) - mx)
+    list.push(es, e)
+    s = s + e
+    g = g + 1
+  }
+  es |> list.map((e) => e / s)
+}
+
+fn argmax16(xs: List[Float]) -> Int = {
+  var bi = 0
+  var bv = list.get(xs, 0) ?? 0.0
+  var g = 1
+  while g < 16 {
+    let v = list.get(xs, g) ?? 0.0
+    if v > bv then { bv = v; bi = g }
+    g = g + 1
+  }
+  bi
+}
+
+fn gate_name(g: Int) -> String =
+  match g {
+    0 => "FALSE", 1 => "AND", 2 => "A∧¬B", 3 => "A", 4 => "¬A∧B", 5 => "B",
+    6 => "XOR", 7 => "OR", 8 => "NOR", 9 => "XNOR", 10 => "¬B", 11 => "A∨¬B",
+    12 => "¬A", 13 => "¬A∨B", 14 => "NAND", _ => "TRUE",
+  }
+
+effect fn main() -> () = {
+  let av = [0.0, 0.0, 1.0, 1.0]
+  let bv = [0.0, 1.0, 0.0, 1.0]
+  let tv = [0.0, 1.0, 1.0, 0.0]   // XOR
+  let m = list.len(av)
+  let lr = 1.0
+
+  var logits = list.repeat(0.0, 16)   // uniform start
+
+  var step = 0
+  while step < 400 {
+    let p = softmax16(logits)
+    // forward + MSE loss + dout
+    var loss = 0.0
+    var dout: List[Float] = []
+    var i = 0
+    while i < m {
+      let a = list.get(av, i) ?? 0.0
+      let b = list.get(bv, i) ?? 0.0
+      var o = 0.0
+      var g = 0
+      while g < 16 {
+        o = o + (list.get(p, g) ?? 0.0) * relax(g, a, b)
+        g = g + 1
+      }
+      let e = o - (list.get(tv, i) ?? 0.0)
+      loss = loss + e * e / int.to_float(m)
+      list.push(dout, 2.0 * e / int.to_float(m))
+      i = i + 1
+    }
+    // dL/dp_g
+    var dLdp: List[Float] = []
+    var g = 0
+    while g < 16 {
+      var s = 0.0
+      i = 0
+      while i < m {
+        s = s + (list.get(dout, i) ?? 0.0)
+              * relax(g, list.get(av, i) ?? 0.0, list.get(bv, i) ?? 0.0)
+        i = i + 1
+      }
+      list.push(dLdp, s)
+      g = g + 1
+    }
+    // softmax vjp -> dlogits, then SGD
+    var dot = 0.0
+    g = 0
+    while g < 16 {
+      dot = dot + (list.get(p, g) ?? 0.0) * (list.get(dLdp, g) ?? 0.0)
+      g = g + 1
+    }
+    var nl: List[Float] = []
+    g = 0
+    while g < 16 {
+      let pg = list.get(p, g) ?? 0.0
+      let dg = pg * ((list.get(dLdp, g) ?? 0.0) - dot)
+      list.push(nl, (list.get(logits, g) ?? 0.0) - lr * dg)
+      g = g + 1
+    }
+    logits = nl
+    if step - (step / 100) * 100 == 0 then {
+      println("step " + int.to_string(step) + "  loss " + float.to_string(loss))
+    }
+    step = step + 1
+  }
+
+  let p = softmax16(logits)
+  let pick = argmax16(logits)
+  println("")
+  println("selected gate = " + int.to_string(pick) + " (" + gate_name(pick)
+    + "),  p = " + float.to_string(list.get(p, pick) ?? 0.0))
+
+  // harden: evaluate the picked gate (exact 0/1) on all 4 inputs, check == XOR
+  var correct = 0
+  var i = 0
+  while i < m {
+    let y = relax(pick, list.get(av, i) ?? 0.0, list.get(bv, i) ?? 0.0)
+    let t = list.get(tv, i) ?? 0.0
+    if y == t then { correct = correct + 1 }
+    i = i + 1
+  }
+  println("hardened circuit: " + int.to_string(correct) + "/" + int.to_string(m)
+    + " exact on all inputs" + (if correct == m then "  ✓ learned XOR" else "  ✗"))
+}
