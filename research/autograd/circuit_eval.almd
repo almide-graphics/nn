@@ -1,0 +1,57 @@
+// C (T3 moat): a HARDENED logic circuit — pure boolean, zero floating-point
+// rounding — evaluated by the SAME Almide source on multiple targets must be
+// BIT-IDENTICAL. This is the verifiable-multi-target half of the T2+T3 thesis.
+//
+// The circuit is what cost_sweep.almd learns for 2-bit XOR: a 4-neuron DLGN
+// layer hardened to gates [XOR, FALSE, FALSE, FALSE] feeding a soft-OR
+// readout. On binary inputs the OR of {XOR,0,0,0} is exactly XOR.
+//
+//   almide run research/autograd/circuit_eval.almd                 # native
+//   almide run research/autograd/circuit_eval.almd --target wasm    # wasm (wasmtime)
+// Both must print the identical truth table. The WGSL path (same gates on the
+// GPU) is checked by research/autograd/circuit_eval_gpu.mjs.
+
+// the 16 hardened gates, exact boolean (inputs/outputs in {0,1})
+fn gate(g: Int, a: Int, b: Int) -> Int =
+  if g == 0 then 0
+  else if g == 1 then a * b                       // AND
+  else if g == 2 then a * (1 - b)
+  else if g == 3 then a
+  else if g == 4 then (1 - a) * b
+  else if g == 5 then b
+  else if g == 6 then a + b - 2 * a * b           // XOR
+  else if g == 7 then a + b - a * b               // OR
+  else if g == 8 then 1 - (a + b - a * b)         // NOR
+  else if g == 9 then 1 - (a + b - 2 * a * b)     // XNOR
+  else if g == 10 then 1 - b
+  else if g == 11 then 1 - b + a * b
+  else if g == 12 then 1 - a
+  else if g == 13 then 1 - a + a * b
+  else if g == 14 then 1 - a * b                  // NAND
+  else 1
+
+// hardened circuit: 4 neurons each see (a,b); OR-reduce their outputs.
+fn circuit(picks: List[Int], a: Int, b: Int) -> Int = {
+  var acc = 0
+  var n = 0
+  while n < list.len(picks) {
+    let o = gate(list.get(picks, n) ?? 0, a, b)
+    acc = acc + o - acc * o          // boolean OR (acc ∨ o), stays in {0,1}
+    n = n + 1
+  }
+  acc
+}
+
+effect fn main() -> () = {
+  let picks = [6, 0, 0, 0]   // XOR, FALSE, FALSE, FALSE  (learned by cost_sweep)
+  println("a b | circuit  (hardened DLGN: XOR + OR-readout)")
+  var i = 0
+  while i < 4 {
+    let a = i / 2
+    let b = i - (i / 2) * 2
+    let y = circuit(picks, a, b)
+    println(int.to_string(a) + " " + int.to_string(b) + " |   "
+      + int.to_string(y))
+    i = i + 1
+  }
+}
