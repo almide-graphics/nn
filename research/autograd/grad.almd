@@ -1,0 +1,78 @@
+// Reverse-mode scalar autograd in Almide — flat-tape / arena design.
+//
+// PyTorch's autograd uses object identity + shared-mutable `.grad`, which
+// clashes with Almide's value semantics. Instead a node is just an INDEX
+// into parallel lists (val/op/parent-a/parent-b); the forward appends nodes,
+// and backward is one reverse loop that accumulates grads into a List[Float].
+// No shared-mutable objects — deterministic and verifiable, and it builds on
+// every target. This is the "torch-equivalent mechanism," value-semantics-
+// native. Verified against research/autograd/oracle.py (PyTorch).
+//
+//   almide run research/autograd/grad.almd
+
+// ops: 0 = leaf, 1 = add, 2 = mul, 3 = tanh
+fn tanh(x: Float) -> Float = {
+  let ep = math.exp(x)
+  let en = math.exp(0.0 - x)
+  (ep - en) / (ep + en)
+}
+
+// append a node to the tape (list.push takes &mut, so the caller's lists
+// grow); returns the new node index.
+fn node(mut val: List[Float], mut op: List[Int], mut pa: List[Int], mut pb: List[Int],
+        v: Float, o: Int, ai: Int, bi: Int) -> Int = {
+  list.push(val, v)
+  list.push(op, o)
+  list.push(pa, ai)
+  list.push(pb, bi)
+  list.len(val) - 1
+}
+
+fn getf(xs: List[Float], i: Int) -> Float = list.get(xs, i) ?? 0.0
+fn geti(xs: List[Int], i: Int) -> Int = list.get(xs, i) ?? -1
+
+// reverse-mode sweep: seed d(out)/d(out)=1, push grads to parents per op.
+fn backward(val: List[Float], op: List[Int], pa: List[Int], pb: List[Int], out: Int) -> List[Float] = {
+  let n = list.len(val)
+  var grad = list.repeat(0.0, n)
+  grad = list.set(grad, out, 1.0)
+  var i = n - 1
+  while i >= 0 {
+    let gi = getf(grad, i)
+    let o = geti(op, i)
+    let ai = geti(pa, i)
+    let bi = geti(pb, i)
+    if o == 1 then {                    // add: d/da = d/db = gi
+      grad = list.set(grad, ai, getf(grad, ai) + gi)
+      grad = list.set(grad, bi, getf(grad, bi) + gi)
+    } else if o == 2 then {             // mul: d/da = gi*val[b], d/db = gi*val[a]
+      grad = list.set(grad, ai, getf(grad, ai) + gi * getf(val, bi))
+      grad = list.set(grad, bi, getf(grad, bi) + gi * getf(val, ai))
+    } else if o == 3 then {             // tanh: d = gi*(1 - tanh^2), tanh = val[i]
+      let ti = getf(val, i)
+      grad = list.set(grad, ai, getf(grad, ai) + gi * (1.0 - ti * ti))
+    }
+    i = i - 1
+  }
+  grad
+}
+
+effect fn main() -> () = {
+  var val: List[Float] = []
+  var op: List[Int] = []
+  var pa: List[Int] = []
+  var pb: List[Int] = []
+
+  // a=2, b=-3 ; c=a*b ; d=c+a (a reused → grad accumulates) ; e=tanh(d)
+  let ia = node(val, op, pa, pb, 2.0, 0, -1, -1)
+  let ib = node(val, op, pa, pb, 0.0 - 3.0, 0, -1, -1)
+  let ic = node(val, op, pa, pb, getf(val, ia) * getf(val, ib), 2, ia, ib)
+  let id = node(val, op, pa, pb, getf(val, ic) + getf(val, ia), 1, ic, ia)
+  let ie = node(val, op, pa, pb, tanh(getf(val, id)), 3, id, -1)
+
+  let grad = backward(val, op, pa, pb, ie)
+
+  println("value L = " + float.to_string(getf(val, ie)))
+  println("dL/da   = " + float.to_string(getf(grad, ia)))
+  println("dL/db   = " + float.to_string(getf(grad, ib)))
+}
