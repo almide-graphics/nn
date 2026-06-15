@@ -1,0 +1,383 @@
+// L_depth AT DEPTH, in Almide: a differentiable circuit-DEPTH (latency) penalty
+// shallows the realization of a multi-layer DLGN — the depth-in-loss Pareto the
+// area-only prior (Silicon Aware NN) does not do. Same deep net as deep.almd,
+// task = XOR(x0,x1) (depth-1 function) in a depth-3 net (depth slack exists).
+// loss = MSE + lambda_d * expected_output_depth.
+//
+// Differentiable depth: D[n] = swmax(D[parent_a], D[parent_b]) + sum_g p_g*height_g
+// (softmax-weighted-max relaxes the critical-path max; trivial gates add 0 height).
+// Key derivation: dDepth/dlogit[n,g] = lambda_d * W[n] * p_g*(height_g - E[height_n]),
+// where W[n] = dDepth/dD[n] is the critical-path weight, computed by one reverse
+// sweep over swmax. So the depth grad = the gate-count grad times a per-neuron
+// path weight. Matches research/autograd/oracle_deep_depth.py (distribution view:
+// lambda=0 -> depths scatter, lambda>0 -> all solved circuits collapse to depth 1).
+//
+// Run OUTSIDE the nn package (native build pulls broken nn/native):
+//   cp research/autograd/deep_depth.almd /tmp/d/ && cd /tmp/d && almide run deep_depth.almd
+
+fn relax(g: Int, a: Float, b: Float) -> Float =
+  if g == 0 then 0.0 else if g == 1 then a * b else if g == 2 then a - a * b
+  else if g == 3 then a else if g == 4 then b - a * b else if g == 5 then b
+  else if g == 6 then a + b - 2.0 * a * b else if g == 7 then a + b - a * b
+  else if g == 8 then 1.0 - (a + b - a * b) else if g == 9 then 1.0 - (a + b - 2.0 * a * b)
+  else if g == 10 then 1.0 - b else if g == 11 then 1.0 - b + a * b
+  else if g == 12 then 1.0 - a else if g == 13 then 1.0 - a + a * b
+  else if g == 14 then 1.0 - a * b else 1.0
+
+fn drda(g: Int, a: Float, b: Float) -> Float =
+  if g == 1 then b else if g == 2 then 1.0 - b else if g == 3 then 1.0
+  else if g == 4 then 0.0 - b else if g == 6 then 1.0 - 2.0 * b
+  else if g == 7 then 1.0 - b else if g == 8 then 0.0 - 1.0 + b
+  else if g == 9 then 0.0 - 1.0 + 2.0 * b else if g == 11 then b
+  else if g == 12 then 0.0 - 1.0 else if g == 13 then 0.0 - 1.0 + b
+  else if g == 14 then 0.0 - b else 0.0
+fn drdb(g: Int, a: Float, b: Float) -> Float =
+  if g == 1 then a else if g == 2 then 0.0 - a else if g == 4 then 1.0 - a
+  else if g == 5 then 1.0 else if g == 6 then 1.0 - 2.0 * a
+  else if g == 7 then 1.0 - a else if g == 8 then 0.0 - 1.0 + a
+  else if g == 9 then 0.0 - 1.0 + 2.0 * a else if g == 10 then 0.0 - 1.0
+  else if g == 11 then 0.0 - 1.0 + a else if g == 13 then a
+  else if g == 14 then 0.0 - a else 0.0
+
+// gate "height" = 0 for trivial wire/const, 1 for a real 2-input gate
+fn height(g: Int) -> Float =
+  if g == 0 or g == 3 or g == 5 or g == 15 or g == 12 or g == 10 then 0.0 else 1.0
+
+fn softmax16(lg: List[Float]) -> List[Float] = {
+  var mx = list.get(lg, 0) ?? 0.0
+  var g = 1
+  while g < 16 { let v = list.get(lg, g) ?? 0.0; if v > mx then { mx = v }; g = g + 1 }
+  var es: List[Float] = []
+  var s = 0.0
+  g = 0
+  while g < 16 { let e = math.exp((list.get(lg, g) ?? 0.0) - mx); list.push(es, e); s = s + e; g = g + 1 }
+  es |> list.map((e) => e / s)
+}
+fn argmax16(lg: List[Float]) -> Int = {
+  var bi = 0
+  var bv = list.get(lg, 0) ?? 0.0
+  var g = 1
+  while g < 16 { let v = list.get(lg, g) ?? 0.0; if v > bv then { bv = v; bi = g }; g = g + 1 }
+  bi
+}
+fn rng_next(s: Int) -> Int = {
+  var x = int.band(s, 2147483647)
+  x = int.band(int.bxor(x, int.bshl(x, 13)), 2147483647)
+  x = int.bxor(x, int.bshr(x, 17))
+  x = int.band(int.bxor(x, int.bshl(x, 5)), 2147483647)
+  x
+}
+
+// softmax-weighted-max weight on a (sharpness 8): w0 = 1/(1+e^{8(b-a)})
+fn swmax_w0(a: Float, b: Float) -> Float = 1.0 / (1.0 + math.exp(8.0 * (b - a)))
+
+let NB = 4
+let WID = 4
+let DEP = 3       // 3 hidden layers => depth slack (XOR needs depth 1)
+let NEX = 16
+let NPARAM = (DEP * WID + 1) * 16
+let NUNIT = DEP * WID + 1   // hidden units + 1 readout
+
+fn pidx(layer: Int, neuron: Int, g: Int) -> Int =
+  if layer < DEP then (layer * WID + neuron) * 16 + g else (DEP * WID) * 16 + g
+// flat depth-array index for a (layer, neuron): hidden L,n -> L*WID+n ; readout -> DEP*WID
+fn uidx(layer: Int, neuron: Int) -> Int =
+  if layer < DEP then layer * WID + neuron else DEP * WID
+
+// hardened depth of one neuron given its gate + parent hardened depths
+fn hard_depth(g: Int, dpa: Int, dpb: Int) -> Int =
+  if g == 0 or g == 15 then 0
+  else if g == 3 or g == 12 then dpa
+  else if g == 5 or g == 10 then dpb
+  else (if dpa > dpb then dpa else dpb) + 1
+
+// returns (hard_acc, hard_depth)
+fn train(lam: Float, seed: Int, xs: List[List[Float]], ts: List[Float]) -> (Float, Int) = {
+  var rs = 1000 + seed * 7919
+  var wa: List[Int] = []
+  var wb: List[Int] = []
+  var layer = 0
+  while layer < DEP + 1 {
+    let prevw = if layer == 0 then NB else WID
+    let count = if layer < DEP then WID else 1
+    var nn = 0
+    while nn < count {
+      rs = rng_next(rs); list.push(wa, int.band(rs, 1073741823) - (int.band(rs, 1073741823) / prevw) * prevw)
+      rs = rng_next(rs); list.push(wb, int.band(rs, 1073741823) - (int.band(rs, 1073741823) / prevw) * prevw)
+      nn = nn + 1
+    }
+    layer = layer + 1
+  }
+  var logits: List[Float] = []
+  var i = 0
+  while i < NPARAM { rs = rng_next(rs); list.push(logits, (int.to_float(int.band(rs, 65535)) / 32768.0) - 1.0); i = i + 1 }
+  var mAd = list.repeat(0.0, NPARAM)
+  var vAd = list.repeat(0.0, NPARAM)
+  let lr = 0.05
+  let b1 = 0.9
+  let b2 = 0.999
+
+  var step = 0
+  while step < 3000 {
+    var grad = list.repeat(0.0, NPARAM)
+    // ── MSE backward (per example) ──
+    var ex = 0
+    while ex < NEX {
+      var acts: List[List[Float]] = [list.get(xs, ex) ?? []]
+      var layer2 = 0
+      while layer2 < DEP + 1 {
+        let prev = list.get(acts, layer2) ?? []
+        let count = if layer2 < DEP then WID else 1
+        var cur: List[Float] = []
+        var nn = 0
+        while nn < count {
+          let wi = uidx(layer2, nn)
+          let pa = list.get(wa, wi) ?? 0
+          let pb = list.get(wb, wi) ?? 0
+          let av = list.get(prev, pa) ?? 0.0
+          let bv = list.get(prev, pb) ?? 0.0
+          var lg: List[Float] = []
+          var g = 0
+          while g < 16 { list.push(lg, list.get(logits, pidx(layer2, nn, g)) ?? 0.0); g = g + 1 }
+          let pr = softmax16(lg)
+          var o = 0.0
+          g = 0
+          while g < 16 { o = o + (list.get(pr, g) ?? 0.0) * relax(g, av, bv); g = g + 1 }
+          list.push(cur, o)
+          nn = nn + 1
+        }
+        list.push(acts, cur)
+        layer2 = layer2 + 1
+      }
+      let y = list.get(list.get(acts, DEP + 1) ?? [], 0) ?? 0.0
+      let dy = 2.0 * (y - (list.get(ts, ex) ?? 0.0)) / int.to_float(NEX)
+      var dunit: List[List[Float]] = []
+      var l = 0
+      while l < DEP + 2 { list.push(dunit, list.repeat(0.0, list.len(list.get(acts, l) ?? []))); l = l + 1 }
+      dunit = list.set(dunit, DEP + 1, [dy])
+      var lb = DEP
+      while lb >= 0 {
+        let prev = list.get(acts, lb) ?? []
+        let count = if lb < DEP then WID else 1
+        let du = list.get(dunit, lb + 1) ?? []
+        var nn = 0
+        while nn < count {
+          let go = list.get(du, nn) ?? 0.0
+          if go != 0.0 then {
+            let wi = uidx(lb, nn)
+            let pa = list.get(wa, wi) ?? 0
+            let pb = list.get(wb, wi) ?? 0
+            let av = list.get(prev, pa) ?? 0.0
+            let bv = list.get(prev, pb) ?? 0.0
+            var lg: List[Float] = []
+            var g = 0
+            while g < 16 { list.push(lg, list.get(logits, pidx(lb, nn, g)) ?? 0.0); g = g + 1 }
+            let pr = softmax16(lg)
+            var dot = 0.0
+            g = 0
+            while g < 16 { dot = dot + (list.get(pr, g) ?? 0.0) * (go * relax(g, av, bv)); g = g + 1 }
+            g = 0
+            while g < 16 {
+              let pg = list.get(pr, g) ?? 0.0
+              grad = list.set(grad, pidx(lb, nn, g), (list.get(grad, pidx(lb, nn, g)) ?? 0.0) + pg * (go * relax(g, av, bv) - dot))
+              g = g + 1
+            }
+            var sa = 0.0
+            var sb = 0.0
+            g = 0
+            while g < 16 { let pg = list.get(pr, g) ?? 0.0; sa = sa + pg * drda(g, av, bv); sb = sb + pg * drdb(g, av, bv); g = g + 1 }
+            var dl2 = list.get(dunit, lb) ?? []
+            dl2 = list.set(dl2, pa, (list.get(dl2, pa) ?? 0.0) + go * sa)
+            dl2 = list.set(dl2, pb, (list.get(dl2, pb) ?? 0.0) + go * sb)
+            dunit = list.set(dunit, lb, dl2)
+          }
+          nn = nn + 1
+        }
+        lb = lb - 1
+      }
+      ex = ex + 1
+    }
+
+    // ── DEPTH penalty (structural, computed once) ──
+    // forward: dval[u], eh_[u] per neuron in layer order
+    var dval = list.repeat(0.0, NUNIT)
+    var eh_ = list.repeat(0.0, NUNIT)
+    var lyr = 0
+    while lyr < DEP + 1 {
+      let count = if lyr < DEP then WID else 1
+      var nn = 0
+      while nn < count {
+        let u = uidx(lyr, nn)
+        let pa = list.get(wa, u) ?? 0
+        let pb = list.get(wb, u) ?? 0
+        let dpa = if lyr == 0 then 0.0 else list.get(dval, (lyr - 1) * WID + pa) ?? 0.0
+        let dpb = if lyr == 0 then 0.0 else list.get(dval, (lyr - 1) * WID + pb) ?? 0.0
+        var lg: List[Float] = []
+        var g = 0
+        while g < 16 { list.push(lg, list.get(logits, pidx(lyr, nn, g)) ?? 0.0); g = g + 1 }
+        let pr = softmax16(lg)
+        var eh = 0.0
+        g = 0
+        while g < 16 { eh = eh + (list.get(pr, g) ?? 0.0) * height(g); g = g + 1 }
+        eh_ = list.set(eh_, u, eh)
+        let w0 = swmax_w0(dpa, dpb)
+        dval = list.set(dval, u, w0 * dpa + (1.0 - w0) * dpb + eh)
+        nn = nn + 1
+      }
+      lyr = lyr + 1
+    }
+    // reverse: W[u] = dDepth/dD[u]; readout weight = 1, propagate to parents via swmax grad
+    var wt = list.repeat(0.0, NUNIT)
+    wt = list.set(wt, DEP * WID, 1.0)
+    var lr2 = DEP
+    while lr2 >= 0 {
+      let count = if lr2 < DEP then WID else 1
+      var nn = 0
+      while nn < count {
+        let u = uidx(lr2, nn)
+        let wu = list.get(wt, u) ?? 0.0
+        if lr2 > 0 and wu != 0.0 then {
+          let pa = list.get(wa, u) ?? 0
+          let pb = list.get(wb, u) ?? 0
+          let dpa = list.get(dval, (lr2 - 1) * WID + pa) ?? 0.0
+          let dpb = list.get(dval, (lr2 - 1) * WID + pb) ?? 0.0
+          let w0 = swmax_w0(dpa, dpb)
+          let w1 = 1.0 - w0
+          let k = 8.0 * w0 * w1 * (dpa - dpb)
+          let dsda = w0 + k
+          let dsdb = w1 - k
+          let ua = (lr2 - 1) * WID + pa
+          let ub = (lr2 - 1) * WID + pb
+          wt = list.set(wt, ua, (list.get(wt, ua) ?? 0.0) + wu * dsda)
+          wt = list.set(wt, ub, (list.get(wt, ub) ?? 0.0) + wu * dsdb)
+        }
+        nn = nn + 1
+      }
+      lr2 = lr2 - 1
+    }
+    // grad to logits: lam * W[u] * p_g*(height_g - eh_[u])
+    var u3 = 0
+    while u3 < NUNIT {
+      let layeru = if u3 < DEP * WID then u3 / WID else DEP
+      let neuronu = if u3 < DEP * WID then u3 - (u3 / WID) * WID else 0
+      let wu = list.get(wt, u3) ?? 0.0
+      if wu != 0.0 then {
+        var lg: List[Float] = []
+        var g = 0
+        while g < 16 { list.push(lg, list.get(logits, pidx(layeru, neuronu, g)) ?? 0.0); g = g + 1 }
+        let pr = softmax16(lg)
+        let ehu = list.get(eh_, u3) ?? 0.0
+        g = 0
+        while g < 16 {
+          let pg = list.get(pr, g) ?? 0.0
+          grad = list.set(grad, pidx(layeru, neuronu, g), (list.get(grad, pidx(layeru, neuronu, g)) ?? 0.0) + lam * wu * pg * (height(g) - ehu))
+          g = g + 1
+        }
+      }
+      u3 = u3 + 1
+    }
+
+    // Adam
+    let tt = int.to_float(step + 1)
+    let bc1 = 1.0 - math.fpow(b1, tt)
+    let bc2 = 1.0 - math.fpow(b2, tt)
+    var j = 0
+    while j < NPARAM {
+      let gj = list.get(grad, j) ?? 0.0
+      let mj = b1 * (list.get(mAd, j) ?? 0.0) + (1.0 - b1) * gj
+      let vj = b2 * (list.get(vAd, j) ?? 0.0) + (1.0 - b2) * gj * gj
+      mAd = list.set(mAd, j, mj)
+      vAd = list.set(vAd, j, vj)
+      logits = list.set(logits, j, (list.get(logits, j) ?? 0.0) - lr * (mj / bc1) / (math.sqrt(vj / bc2) + 0.00000001))
+      j = j + 1
+    }
+    step = step + 1
+  }
+
+  // harden: accuracy over all inputs + critical-path depth
+  var correct = 0
+  var ex2 = 0
+  while ex2 < NEX {
+    var acts: List[List[Float]] = [list.get(xs, ex2) ?? []]
+    var layer3 = 0
+    while layer3 < DEP + 1 {
+      let prev = list.get(acts, layer3) ?? []
+      let count = if layer3 < DEP then WID else 1
+      var cur: List[Float] = []
+      var nn = 0
+      while nn < count {
+        let wi = uidx(layer3, nn)
+        var lg: List[Float] = []
+        var g = 0
+        while g < 16 { list.push(lg, list.get(logits, pidx(layer3, nn, g)) ?? 0.0); g = g + 1 }
+        list.push(cur, relax(argmax16(lg), list.get(prev, list.get(wa, wi) ?? 0) ?? 0.0, list.get(prev, list.get(wb, wi) ?? 0) ?? 0.0))
+        nn = nn + 1
+      }
+      list.push(acts, cur)
+      layer3 = layer3 + 1
+    }
+    let y = list.get(list.get(acts, DEP + 1) ?? [], 0) ?? 0.0
+    if (if y > 0.5 then 1.0 else 0.0) == (list.get(ts, ex2) ?? 0.0) then { correct = correct + 1 }
+    ex2 = ex2 + 1
+  }
+  // hardened depth (critical path)
+  var hd = list.repeat(0, NUNIT)
+  var lyr2 = 0
+  while lyr2 < DEP + 1 {
+    let count = if lyr2 < DEP then WID else 1
+    var nn = 0
+    while nn < count {
+      let u = uidx(lyr2, nn)
+      var lg: List[Float] = []
+      var g = 0
+      while g < 16 { list.push(lg, list.get(logits, pidx(lyr2, nn, g)) ?? 0.0); g = g + 1 }
+      let pk = argmax16(lg)
+      let pa = list.get(wa, u) ?? 0
+      let pb = list.get(wb, u) ?? 0
+      let dpa = if lyr2 == 0 then 0 else list.get(hd, (lyr2 - 1) * WID + pa) ?? 0
+      let dpb = if lyr2 == 0 then 0 else list.get(hd, (lyr2 - 1) * WID + pb) ?? 0
+      hd = list.set(hd, u, hard_depth(pk, dpa, dpb))
+      nn = nn + 1
+    }
+    lyr2 = lyr2 + 1
+  }
+  let circuit_depth = list.get(hd, DEP * WID) ?? 0
+  (int.to_float(correct) / int.to_float(NEX), circuit_depth)
+}
+
+effect fn main() -> () = {
+  var xs: List[List[Float]] = []
+  var ts: List[Float] = []
+  var e = 0
+  while e < NEX {
+    var row: List[Float] = []
+    var k = 0
+    while k < NB { list.push(row, int.to_float(int.band(int.bshr(e, NB - 1 - k), 1))); k = k + 1 }
+    list.push(xs, row)
+    let x0 = int.band(int.bshr(e, 3), 1)
+    let x1 = int.band(int.bshr(e, 2), 1)
+    list.push(ts, int.to_float(int.bxor(x0, x1)))   // XOR of first 2 bits
+    e = e + 1
+  }
+
+  println("deep DLGN (3L x4) on XOR(x0,x1) [depth-1 task, depth-3 net] (Almide)")
+  println("  -> does the depth penalty shallow the DISTRIBUTION of solved circuits?")
+  println("lam_d  n_solved  mean_depth  depths(solved)")
+  let lams = [0.0, 0.01, 0.03, 0.06, 0.1, 0.2]
+  for lam in lams {
+    var solved: List[Int] = []
+    var s = 0
+    while s < 8 {
+      let (acc, d) = train(lam, s, xs, ts)
+      if acc == 1.0 then { list.push(solved, d) }
+      s = s + 1
+    }
+    var sum = 0
+    var i = 0
+    while i < list.len(solved) { sum = sum + (list.get(solved, i) ?? 0); i = i + 1 }
+    let md = if list.len(solved) > 0 then int.to_float(sum) / int.to_float(list.len(solved)) else 0.0
+    let ds = solved |> list.map((d) => int.to_string(d)) |> list.join(",")
+    println(float.to_string(lam) + "  " + int.to_string(list.len(solved))
+      + "  " + float.to_string(md) + "  [" + ds + "]")
+  }
+}
