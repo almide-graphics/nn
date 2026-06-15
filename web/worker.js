@@ -22,16 +22,30 @@ let chat = null;
 const DEFAULT_MODEL_URL =
   "https://huggingface.co/O6lvl4/qwen3-0.6b-q8-gguf/resolve/main/qwen3-0.6b-q8_0.gguf";
 
-async function boot(modelUrl) {
+async function boot(modelUrl, minBinding = 0) {
   try {
-    if (!navigator.gpu) throw new Error("WebGPU がこのブラウザにありません");
+    if (!navigator.gpu) {
+      throw new Error(
+        "このブラウザは WebGPU 非対応です。PCの Chrome / Edge（または iOS 18+ / 最新Android）でお試しください。" +
+        "スマホは GPU メモリ制限でモデルが載らないことがあります。");
+    }
     post({ type: "status", text: "GPUアダプタ取得中…" });
     const adapter = await navigator.gpu.requestAdapter({ powerPreference: "high-performance" });
-    if (!adapter) throw new Error("WebGPU adapter が取れません");
+    if (!adapter) throw new Error("WebGPU adapter が取れません（ハードウェアアクセラレーションが無効かもしれません）");
     const lim = adapter.limits;
+    // pre-check GPU memory BEFORE downloading the model: the embedding is one
+    // big storage buffer (0.6B ≈ 176 MB, 1.7B ≈ 340 MB) and phones often cap
+    // maxStorageBufferBindingSize at 128–256 MB.
+    const maxBufMB = Math.round(lim.maxStorageBufferBindingSize / 1048576);
+    if (minBinding && lim.maxStorageBufferBindingSize < minBinding) {
+      throw new Error(
+        `この端末のGPUメモリ上限（${maxBufMB}MB）ではこのモデルが載りません。` +
+        (maxBufMB >= 176 ? "より軽い 0.6B モデルをお試しください（上のメニュー）。" :
+          "PCの Chrome / Edge でお試しください。") +
+        " ダウンロードは行いませんでした。");
+    }
     // request the adapter's full storage-buffer capacity so the GPU itself
-    // (not an arbitrary cap) gates how big a model fits — 0.6B needs 167 MB,
-    // 1.7B's embedding is 334 MB, 4B's is 417 MB
+    // (not an arbitrary cap) gates how big a model fits
     const device = await adapter.requestDevice({
       requiredLimits: {
         maxStorageBufferBindingSize: lim.maxStorageBufferBindingSize,
@@ -39,8 +53,16 @@ async function boot(modelUrl) {
       },
     });
     device.lost.then((i) => post({ type: "error", text: "GPU device lost: " + i.message }));
+    let gpuOom = false;
+    device.onuncapturederror = (ev) => {
+      const msg = ev.error?.message || "";
+      if (!gpuOom && /memory|size|exceed|limit/i.test(msg)) {
+        gpuOom = true;
+        post({ type: "error", text: `GPUメモリが不足しました（上限 ${maxBufMB}MB）。より軽いモデル、またはPCのGPUでお試しください。` });
+      }
+    };
 
-    post({ type: "status", text: "カーネルとモデルを取得中…" });
+    post({ type: "status", text: `カーネルとモデルを取得中…（GPU上限 ${maxBufMB}MB）` });
     const [wgsl, tokWasm, gguf] = await Promise.all([
       fetch(new URL("../native/wgsl/qwen3.wgsl", import.meta.url)).then((r) => r.text()),
       fetch(new URL("./qwen_tokenizer.wasm", import.meta.url)).then((r) => r.arrayBuffer()).then((b) => new Uint8Array(b)),
@@ -128,7 +150,7 @@ async function fetchProgress(url, onPct) {
 self.onmessage = async (e) => {
   const m = e.data;
   if (m.type === "config") {
-    boot(m.modelUrl || DEFAULT_MODEL_URL);
+    boot(m.modelUrl || DEFAULT_MODEL_URL, m.minBinding || 0);
   } else if (m.type === "chat") {
     if (!chat) { post({ type: "error", text: "まだ読み込み中です" }); return; }
     try {

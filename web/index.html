@@ -70,14 +70,21 @@ function setReady(on) {
   if (on) input.focus();
 }
 
-// model picker — switching reloads with ?model= (the worker boots one model)
+// phones cap WebGPU storage buffers low (~128–256 MB) and have little RAM,
+// so 1.7B won't run there; default mobile to 0.6B and flag 1.7B as desktop.
+const isMobile = /Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAgent);
+
+// model picker — switching reloads with ?model= (the worker boots one model).
+// minBinding = the largest single storage buffer (the embedding) the model
+// needs; the worker pre-checks it against the GPU limit before downloading.
 const MODELS = [
-  { id: "0.6b", label: "Qwen3-0.6B · 軽量 640MB",
+  { id: "0.6b", label: "Qwen3-0.6B · 軽量 640MB", minBinding: 176 * 1048576,
     url: "https://huggingface.co/O6lvl4/qwen3-0.6b-q8-gguf/resolve/main/qwen3-0.6b-q8_0.gguf" },
-  { id: "1.7b", label: "Qwen3-1.7B · 高品質 1.8GB",
+  { id: "1.7b", label: "Qwen3-1.7B · 高品質 1.8GB" + (isMobile ? "（PC向け）" : ""), minBinding: 340 * 1048576,
     url: "https://huggingface.co/O6lvl4/qwen3-1.7b-q8-gguf/resolve/main/qwen3-1.7b-q8_0.gguf" },
 ];
 const askedModel = new URLSearchParams(location.search).get("model") || MODELS[0].url;
+const askedMeta = MODELS.find((m) => m.url === askedModel) || { minBinding: 0 };
 const modelSel = document.getElementById("model");
 for (const m of MODELS) {
   const o = document.createElement("option");
@@ -89,7 +96,7 @@ modelSel.addEventListener("change", () => {
   location.search = "?model=" + encodeURIComponent(modelSel.value);
 });
 
-const BUILD = "7"; // ?v bump busts the browser's aggressive module cache
+const BUILD = "8"; // ?v bump busts the browser's aggressive module cache
 const worker = new Worker("./worker.js?v=" + BUILD, { type: "module" });
 let current = null;
 
@@ -113,7 +120,7 @@ worker.onmessage = (e) => {
   if (m.type === "error") { status.textContent = "error"; add("sys", "エラー: " + m.text); setReady(false); }
 };
 
-worker.postMessage({ type: "config", modelUrl: askedModel });
+worker.postMessage({ type: "config", modelUrl: askedModel, minBinding: askedMeta.minBinding });
 
 document.getElementById("f").addEventListener("submit", (ev) => {
   ev.preventDefault();
