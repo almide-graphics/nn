@@ -1,0 +1,163 @@
+// Differentiable logic-gate neuron in Almide — the DLGN building block.
+//
+// out_i = sum_g softmax(logits)_g * relax_g(a_i, b_i), over a batch of i.
+// The 16 two-input boolean gates are differentiable ops: this verifies the
+// vjp to a, b, AND the gate-selection logits against research/autograd/
+// oracle_gate.py (PyTorch f64). Gradients flow THROUGH the relaxations, so
+// these compose into multi-layer DLGNs.
+//
+//   almide run research/autograd/gate.almd
+
+// 16 gate relaxations f_g(a,b), a,b in [0,1]; exact 0/1 at binary inputs.
+fn relax(g: Int, a: Float, b: Float) -> Float =
+  if g == 0 then 0.0
+  else if g == 1 then a * b
+  else if g == 2 then a - a * b
+  else if g == 3 then a
+  else if g == 4 then b - a * b
+  else if g == 5 then b
+  else if g == 6 then a + b - 2.0 * a * b
+  else if g == 7 then a + b - a * b
+  else if g == 8 then 1.0 - (a + b - a * b)
+  else if g == 9 then 1.0 - (a + b - 2.0 * a * b)
+  else if g == 10 then 1.0 - b
+  else if g == 11 then 1.0 - b + a * b
+  else if g == 12 then 1.0 - a
+  else if g == 13 then 1.0 - a + a * b
+  else if g == 14 then 1.0 - a * b
+  else 1.0
+
+fn drelax_da(g: Int, a: Float, b: Float) -> Float =
+  if g == 1 then b
+  else if g == 2 then 1.0 - b
+  else if g == 3 then 1.0
+  else if g == 4 then 0.0 - b
+  else if g == 6 then 1.0 - 2.0 * b
+  else if g == 7 then 1.0 - b
+  else if g == 8 then 0.0 - 1.0 + b
+  else if g == 9 then 0.0 - 1.0 + 2.0 * b
+  else if g == 11 then b
+  else if g == 12 then 0.0 - 1.0
+  else if g == 13 then 0.0 - 1.0 + b
+  else if g == 14 then 0.0 - b
+  else 0.0   // 0,5,10,15
+
+fn drelax_db(g: Int, a: Float, b: Float) -> Float =
+  if g == 1 then a
+  else if g == 2 then 0.0 - a
+  else if g == 4 then 1.0 - a
+  else if g == 5 then 1.0
+  else if g == 6 then 1.0 - 2.0 * a
+  else if g == 7 then 1.0 - a
+  else if g == 8 then 0.0 - 1.0 + a
+  else if g == 9 then 0.0 - 1.0 + 2.0 * a
+  else if g == 10 then 0.0 - 1.0
+  else if g == 11 then 0.0 - 1.0 + a
+  else if g == 13 then a
+  else if g == 14 then 0.0 - a
+  else 0.0   // 0,3,12,15
+
+fn softmax16(logits: List[Float]) -> List[Float] = {
+  var mx = list.get(logits, 0) ?? 0.0
+  var g = 1
+  while g < 16 {
+    let v = list.get(logits, g) ?? 0.0
+    if v > mx then { mx = v }
+    g = g + 1
+  }
+  var es: List[Float] = []
+  var s = 0.0
+  g = 0
+  while g < 16 {
+    let e = math.exp((list.get(logits, g) ?? 0.0) - mx)
+    list.push(es, e)
+    s = s + e
+    g = g + 1
+  }
+  es |> list.map((e) => e / s)
+}
+
+effect fn main() -> () = {
+  let av = [0.3, 0.7]
+  let bv = [0.6, 0.2]
+  let logits = [0.1, 0.0 - 0.2, 0.05, 0.3, 0.0 - 0.1, 0.0, 0.4, 0.0 - 0.3,
+                0.2, 0.15, 0.0 - 0.25, 0.1, 0.05, 0.0 - 0.05, 0.35, 0.0 - 0.4]
+  let m = list.len(av)
+  let p = softmax16(logits)
+
+  // forward: out_i = sum_g p_g * relax_g(a_i, b_i)
+  var out: List[Float] = []
+  var i = 0
+  while i < m {
+    let a = list.get(av, i) ?? 0.0
+    let b = list.get(bv, i) ?? 0.0
+    var s = 0.0
+    var g = 0
+    while g < 16 {
+      s = s + (list.get(p, g) ?? 0.0) * relax(g, a, b)
+      g = g + 1
+    }
+    list.push(out, s)
+    i = i + 1
+  }
+
+  // upstream grad dout = c
+  let dout = [1.0, 0.0 - 2.0]
+
+  // vjp to a, b
+  var da: List[Float] = []
+  var db: List[Float] = []
+  i = 0
+  while i < m {
+    let a = list.get(av, i) ?? 0.0
+    let b = list.get(bv, i) ?? 0.0
+    let go = list.get(dout, i) ?? 0.0
+    var sa = 0.0
+    var sb = 0.0
+    var g = 0
+    while g < 16 {
+      let pg = list.get(p, g) ?? 0.0
+      sa = sa + pg * drelax_da(g, a, b)
+      sb = sb + pg * drelax_db(g, a, b)
+      g = g + 1
+    }
+    list.push(da, go * sa)
+    list.push(db, go * sb)
+    i = i + 1
+  }
+
+  // vjp to logits: dL/dp_g = sum_i dout_i * relax_g(a_i,b_i); then softmax vjp:
+  //   dlogits_g = p_g * (dLdp_g - sum_k p_k * dLdp_k)
+  var dLdp: List[Float] = []
+  var g = 0
+  while g < 16 {
+    var s = 0.0
+    i = 0
+    while i < m {
+      s = s + (list.get(dout, i) ?? 0.0)
+            * relax(g, list.get(av, i) ?? 0.0, list.get(bv, i) ?? 0.0)
+      i = i + 1
+    }
+    list.push(dLdp, s)
+    g = g + 1
+  }
+  var dot = 0.0
+  g = 0
+  while g < 16 {
+    dot = dot + (list.get(p, g) ?? 0.0) * (list.get(dLdp, g) ?? 0.0)
+    g = g + 1
+  }
+  var dlogits: List[Float] = []
+  g = 0
+  while g < 16 {
+    let pg = list.get(p, g) ?? 0.0
+    list.push(dlogits, pg * ((list.get(dLdp, g) ?? 0.0) - dot))
+    g = g + 1
+  }
+
+  let fmt = (xs: List[Float]) => xs |> list.map((v) => float.to_string(v)) |> list.join(",")
+  println("out = " + fmt(out))
+  println("da = " + fmt(da))
+  println("db = " + fmt(db))
+  println("dlogits = " + fmt(dlogits))
+}
