@@ -1,0 +1,41 @@
+// hardmax_rows — one-hot indicator of each row's maximum (axis=1):
+//   m_t = max_j x_{t,j},   out_{t,j} = 1 if x_{t,j} ≥ m_t else 0   → (T,D).
+// The hard (arg-max) counterpart of softmax: a one-hot selection of the winning coordinate —
+// the read-out of hard attention / a MoE top-1 router / the forward pass of a
+// straight-through arg-max. Distinct from softmax (soft weights) and from max_rows (the max
+// *value*, not its *position*). For a unique row maximum (the generic case for continuous
+// inputs) exactly one entry is 1; exact ties would light up all maxima. Output (T,D).
+
+import math
+
+fn hardmax_rows(x: Matrix) -> Matrix = {
+  let rx = matrix.to_lists(x)
+  let (t, _) = matrix.shape(x)
+  var out: List[List[Float]] = []
+  var i = 0
+  while i < t {
+    let xi = list.get_or(rx, i, [])
+    let m = xi |> list.fold(list.get_or(xi, 0, 0.0), (acc, v) => math.fmax(acc, v))
+    out = out + [xi |> list.map((v) => if v >= m then 1.0 else 0.0)]
+    i = i + 1
+  }
+  matrix.from_lists(out)
+}
+
+// the maximum entry becomes 1, the rest 0: [1,5,3] → [0,1,0].
+test "hardmax is the one-hot of the row maximum" {
+  let x = matrix.from_lists([[1.0, 5.0, 3.0]])
+  let y = hardmax_rows(x)
+  assert_eq(matrix.get(y, 0, 0), 0.0)
+  assert_eq(matrix.get(y, 0, 1), 1.0)
+  assert_eq(matrix.get(y, 0, 2), 0.0)
+}
+
+// works per row, including all-negative rows: row0 [−1,−2]→[1,0], row1 [4,9]→[0,1].
+test "hardmax selects the maximum independently per row" {
+  let x = matrix.from_lists([[0.0 - 1.0, 0.0 - 2.0], [4.0, 9.0]])
+  let y = hardmax_rows(x)
+  assert_eq(matrix.get(y, 0, 0), 1.0)
+  assert_eq(matrix.get(y, 1, 1), 1.0)
+  assert_eq(matrix.get(y, 1, 0), 0.0)
+}

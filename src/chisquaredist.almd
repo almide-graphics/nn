@@ -1,0 +1,44 @@
+// chi_square_dist_rows — symmetric χ² distance between two non-negative rows / histograms (2-input):
+//   out_t = ½ Σ_j (a_{t,j} − b_{t,j})² / (a_{t,j} + b_{t,j} + ε)   → one value per row, (T,1).
+// The classic histogram-comparison metric (computer-vision χ² distance): like an L1/L2 distance but
+// each coordinate's squared discrepancy is normalized by that coordinate's total mass, so a mismatch
+// in a small bin counts as much as a proportional mismatch in a large one. 0 for identical
+// histograms, larger as they diverge. Distinct from canberra_dist (Σ|a−b|/(|a|+|b|), an L1 form) and
+// bray_curtis_dist (Σ|a−b|/Σ(a+b), globally normalized): this uses a squared difference over the
+// per-bin sum. Inputs are non-negative (squared standard normals). Output (T,1).
+
+import float
+
+fn chi_square_dist_rows(a: Matrix, b: Matrix) -> Matrix = {
+  let ra = matrix.to_lists(a)
+  let rb = matrix.to_lists(b)
+  let (t, _) = matrix.shape(a)
+  var out: List[List[Float]] = []
+  var i = 0
+  while i < t {
+    let ai = list.get_or(ra, i, [])
+    let bi = list.get_or(rb, i, [])
+    let s = list.zip_with(ai, bi, (av, bv) =>
+      (av - bv) * (av - bv) / (av + bv + 0.000000000001))
+      |> list.fold(0.0, (acc, v) => acc + v)
+    out = out + [[0.5 * s]]
+    i = i + 1
+  }
+  matrix.from_lists(out)
+}
+
+// identical histograms → 0.
+test "chi-square distance of identical histograms is zero" {
+  let a = matrix.from_lists([[1.0, 2.0, 3.0]])
+  let b = matrix.from_lists([[1.0, 2.0, 3.0]])
+  let y = chi_square_dist_rows(a, b)
+  assert(float.abs(matrix.get(y, 0, 0)) < 0.000000001, "0")
+}
+
+// disjoint mass [1,0] vs [0,1]: ½·(1²/1 + 1²/1) = 1.
+test "chi-square distance of disjoint histograms" {
+  let a = matrix.from_lists([[1.0, 0.0]])
+  let b = matrix.from_lists([[0.0, 1.0]])
+  let y = chi_square_dist_rows(a, b)
+  assert(float.abs(matrix.get(y, 0, 0) - 1.0) < 0.000000001, "½·(1+1)=1")
+}

@@ -1,0 +1,43 @@
+// cosine_dist_rows — row-wise cosine distance of two matrices:
+//
+//   dist_r = 1 − (Σ_j a_rj b_rj) / ( √Σ_j a_rj² · √Σ_j b_rj² )
+//
+// One value per row → output (T,1). The distance form of cosine_sim_rows (0 for
+// identical-direction rows, 1 for orthogonal, 2 for antiparallel); retrieval /
+// contrastive metric. Two-input row reduction.
+
+import math
+
+fn cosine_dist_rows(a: Matrix, b: Matrix) -> Matrix = {
+  let ra = matrix.to_lists(a)
+  let rb = matrix.to_lists(b)
+  let (t, _) = matrix.shape(a)
+  var out: List[List[Float]] = []
+  var n = 0
+  while n < t {
+    let an = list.get_or(ra, n, [])
+    let bn = list.get_or(rb, n, [])
+    let dot = list.zip_with(an, bn, (x, y) => x * y) |> list.fold(0.0, (acc, v) => acc + v)
+    let na = an |> list.fold(0.0, (acc, v) => acc + v * v)
+    let nb = bn |> list.fold(0.0, (acc, v) => acc + v * v)
+    let dist = 1.0 - dot / (math.sqrt(na) * math.sqrt(nb))
+    out = out + [[dist]]
+    n = n + 1
+  }
+  matrix.from_lists(out)
+}
+
+// self-distance is 0 (cos = 1).
+test "cosine distance of a row with itself is zero" {
+  let a = matrix.from_lists([[3.0, 4.0]])
+  let y = cosine_dist_rows(a, a)
+  assert(float.abs(matrix.get(y, 0, 0)) < 0.000000001, "self 0")
+}
+
+// orthogonal rows → distance 1 (cos = 0).
+test "cosine distance of orthogonal rows is one" {
+  let a = matrix.from_lists([[1.0, 0.0]])
+  let b = matrix.from_lists([[0.0, 1.0]])
+  let y = cosine_dist_rows(a, b)
+  assert(float.abs(matrix.get(y, 0, 0) - 1.0) < 0.000000001, "orthogonal 1")
+}

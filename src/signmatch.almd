@@ -1,0 +1,50 @@
+// sign_match_rows — elementwise sign-agreement of two matrices.
+//   out_{t,j} = 1 if sign(a_{t,j}) = sign(b_{t,j})  else  0
+// Where the two signals point the same way (both >0, both <0, or both exactly 0).
+// In BitNet-style training this is the gradient/weight sign-agreement map: its mean is
+// the fraction of coordinates a 1-bit update keeps aligned, a direct flip-rate readout.
+// math.sign is Int-only, so each sign is the usual ±1/0 threshold; equality of the two
+// sign codes (both in {−1,0,1}) is tested by |s_a − s_b| < 0.5, which is exact since the
+// difference is 0, 1, or 2. Two-input, purely elementwise. Output (T,D).
+
+import float
+
+fn sign_match_rows(a: Matrix, b: Matrix) -> Matrix = {
+  let ra = matrix.to_lists(a)
+  let rb = matrix.to_lists(b)
+  let (t, _) = matrix.shape(a)
+  var out: List[List[Float]] = []
+  var i = 0
+  while i < t {
+    let ai = list.get_or(ra, i, [])
+    let bi = list.get_or(rb, i, [])
+    let row = list.zip_with(ai, bi, (u, v) => {
+      let su = if u > 0.0 then 1.0 else (if u < 0.0 then 0.0 - 1.0 else 0.0)
+      let sv = if v > 0.0 then 1.0 else (if v < 0.0 then 0.0 - 1.0 else 0.0)
+      if float.abs(su - sv) < 0.5 then 1.0 else 0.0
+    })
+    out = out + [row]
+    i = i + 1
+  }
+  matrix.from_lists(out)
+}
+
+// signs a=[+,+,−], b=[+,−,−] → agree, disagree, agree → [1,0,1].
+test "sign-match flags coordinates that point the same way" {
+  let a = matrix.from_lists([[3.0, 2.0, 0.0 - 1.0]])
+  let b = matrix.from_lists([[5.0, 0.0 - 4.0, 0.0 - 2.0]])
+  let y = sign_match_rows(a, b)
+  assert_eq(matrix.get(y, 0, 0), 1.0)
+  assert_eq(matrix.get(y, 0, 1), 0.0)
+  assert_eq(matrix.get(y, 0, 2), 1.0)
+}
+
+// a matrix always agrees in sign with itself → all ones.
+test "sign-match of a matrix with itself is all ones" {
+  let a = matrix.from_lists([[7.0, 0.0 - 3.0], [0.0, 1.0]])
+  let y = sign_match_rows(a, a)
+  assert_eq(matrix.get(y, 0, 0), 1.0)
+  assert_eq(matrix.get(y, 0, 1), 1.0)
+  assert_eq(matrix.get(y, 1, 0), 1.0)
+  assert_eq(matrix.get(y, 1, 1), 1.0)
+}

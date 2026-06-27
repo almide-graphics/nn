@@ -1,0 +1,57 @@
+// kl_div_logits_rows — KL divergence between two softmax distributions given as raw logits (2-input):
+//   p = softmax(a),   KL(p ‖ q) = Σ_j p_j·( log p_j − log q_j ),   log p = a − lse(a),  log q = b − lse(b)
+//   → one value per row, (T,1).
+// The knowledge-distillation objective KL(teacher ‖ student) computed straight from logits, in the
+// log-sum-exp-stable form (never materializes exp(logit) before subtracting the log-partition).
+// Distinct from kl_div_rows, which takes already-normalized probabilities p, q — this takes raw
+// logits a, b and is shift-invariant and numerically stable (the same logits-vs-probs relationship
+// bce_with_logits has to bce). 0 when the two logit rows induce the same distribution. The link to
+// the strategic axis: this is how a low-bit/ternary student is distilled from a full-precision
+// teacher. Stable per-row softmax + a log-ratio expectation. Output (T,1).
+
+import float
+import math
+
+fn kl_div_logits_rows(a: Matrix, b: Matrix) -> Matrix = {
+  let ra = matrix.to_lists(a)
+  let rb = matrix.to_lists(b)
+  let (t, d) = matrix.shape(a)
+  var out: List[List[Float]] = []
+  var i = 0
+  while i < t {
+    let ai = list.get_or(ra, i, [])
+    let bi = list.get_or(rb, i, [])
+    let ma = ai |> list.fold(0.0 - 100000000000000000000.0, (acc, v) => math.fmax(acc, v))
+    let mb = bi |> list.fold(0.0 - 100000000000000000000.0, (acc, v) => math.fmax(acc, v))
+    let lse_a = ma + math.log(ai |> list.fold(0.0, (acc, v) => acc + math.exp(v - ma)))
+    let lse_b = mb + math.log(bi |> list.fold(0.0, (acc, v) => acc + math.exp(v - mb)))
+    var s = 0.0
+    var j = 0
+    while j < d {
+      let la = list.get_or(ai, j, 0.0) - lse_a
+      let lb = list.get_or(bi, j, 0.0) - lse_b
+      s = s + math.exp(la) * (la - lb)
+      j = j + 1
+    }
+    out = out + [[s]]
+    i = i + 1
+  }
+  matrix.from_lists(out)
+}
+
+// identical logit rows induce the same distribution → KL = 0.
+test "kl of identical logit distributions is zero" {
+  let a = matrix.from_lists([[1.0, 2.0, 3.0]])
+  let b = matrix.from_lists([[1.0, 2.0, 3.0]])
+  let y = kl_div_logits_rows(a, b)
+  assert(float.abs(matrix.get(y, 0, 0)) < 0.000000001, "KL(p‖p) = 0")
+}
+
+// p = softmax([0,0]) = [½,½], q = softmax([0, log 3]) = [¼,¾]:
+// KL = ½ log(½/¼) + ½ log(½/¾) = ½(2 log 2 − log 3) = 0.143841…
+test "kl from logits matches the two-class closed form" {
+  let a = matrix.from_lists([[0.0, 0.0]])
+  let b = matrix.from_lists([[0.0, 1.0986122886681098]])
+  let y = kl_div_logits_rows(a, b)
+  assert(float.abs(matrix.get(y, 0, 0) - 0.14384103622589042) < 0.000000001, "½(2log2−log3)")
+}

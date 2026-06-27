@@ -1,0 +1,15 @@
+// hardtanh — clip(x, -1, 1). Cheap bounded activation / saturating identity.
+// Elementwise.
+
+import math
+
+fn hardtanh(m: Matrix) -> Matrix =
+  matrix.map(m, (x) => math.fmax(-1.0, math.fmin(1.0, x)))
+
+// x ≤ -1 → -1, x in [-1,1] → x, x ≥ 1 → 1.
+test "hardtanh clamps to [-1,1]" {
+  let y = hardtanh(matrix.from_lists([[-3.0, 0.5, 5.0]]))
+  assert_eq(matrix.get(y, 0, 0), -1.0)
+  assert_eq(matrix.get(y, 0, 1), 0.5)
+  assert_eq(matrix.get(y, 0, 2), 1.0)
+}

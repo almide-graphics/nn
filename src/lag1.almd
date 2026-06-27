@@ -1,0 +1,38 @@
+// lag1_rows — one-step causal delay (shift down by one over time):
+//   out_0 = 0,  out_t = x_{t-1}   (t ≥ 1).
+// The unit time-shift operator: feeds each step the previous step's value with a
+// zero pad at the start (the z⁻¹ delay underlying diff / autoregressive features).
+// Carries the previous row forward. O(T), O(D) state. Output (T,D).
+
+fn lag1_rows(x: Matrix) -> Matrix = {
+  let rx = matrix.to_lists(x)
+  let (t, d) = matrix.shape(x)
+  var prev: List[Float] = list.range(0, d) |> list.map((_) => 0.0)
+  var out: List[List[Float]] = []
+  var i = 0
+  while i < t {
+    let xi = list.get_or(rx, i, [])
+    out = out + [prev]
+    prev = xi
+    i = i + 1
+  }
+  matrix.from_lists(out)
+}
+
+// shift [5,6,7] down by one (single channel) → [0,5,6].
+test "lag1 shifts rows down by one with a zero pad" {
+  let x = matrix.from_lists([[5.0], [6.0], [7.0]])
+  let y = lag1_rows(x)
+  assert_eq(matrix.get(y, 0, 0), 0.0)
+  assert_eq(matrix.get(y, 1, 0), 5.0)
+  assert_eq(matrix.get(y, 2, 0), 6.0)
+}
+
+// per channel: [[1,2],[3,4]] → row0 = [0,0], row1 = [1,2].
+test "lag1 zero-pads the first row per channel" {
+  let x = matrix.from_lists([[1.0, 2.0], [3.0, 4.0]])
+  let y = lag1_rows(x)
+  assert_eq(matrix.get(y, 0, 0), 0.0)
+  assert_eq(matrix.get(y, 1, 0), 1.0)
+  assert_eq(matrix.get(y, 1, 1), 2.0)
+}

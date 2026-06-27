@@ -1,0 +1,46 @@
+// logcosh_loss_rows — row-wise log-cosh regression loss of two matrices:
+//
+//   loss_r = (1/D) · Σ_j log(cosh(a_rj − b_rj))
+//
+// One value per row → output (T,1). ~½e² near 0 and ~|e|−log2 in the tails — a
+// twice-differentiable Huber alternative. Stable form
+// log(cosh e) = |e| + log(1+e^{−2|e|}) − log2. Two-input row reduction.
+
+import math
+import float
+
+fn logcosh_loss_rows(a: Matrix, b: Matrix) -> Matrix = {
+  let ra = matrix.to_lists(a)
+  let rb = matrix.to_lists(b)
+  let (rows, d) = matrix.shape(a)
+  let df = int.to_float(d)
+  var out: List[List[Float]] = []
+  var n = 0
+  while n < rows {
+    let an = list.get_or(ra, n, [])
+    let bn = list.get_or(rb, n, [])
+    let s = list.zip_with(an, bn, (x, y) => {
+      let e = x - y
+      let ea = float.abs(e)
+      ea + math.log(1.0 + math.exp(0.0 - 2.0 * ea)) - 0.6931471805599453
+    }) |> list.fold(0.0, (acc, v) => acc + v)
+    out = out + [[s / df]]
+    n = n + 1
+  }
+  matrix.from_lists(out)
+}
+
+// log(cosh 0)=0 → loss(a, a) = 0 (the log2 terms cancel exactly).
+test "logcosh of identical rows is zero" {
+  let a = matrix.from_lists([[1.0, 2.0, 3.0, 4.0]])
+  let y = logcosh_loss_rows(a, a)
+  assert_eq(matrix.get(y, 0, 0), 0.0)
+}
+
+// e=1: log(cosh 1) = 0.4337808304830271.
+test "logcosh at unit difference" {
+  let a = matrix.from_lists([[0.0]])
+  let b = matrix.from_lists([[1.0]])
+  let y = logcosh_loss_rows(a, b)
+  assert(float.abs(matrix.get(y, 0, 0) - 0.4337808304830271) < 0.000000001, "log cosh 1")
+}

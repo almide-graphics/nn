@@ -1,0 +1,39 @@
+// bitnet_sign_rows — BitNet b1 binarization, per element (Wang et al. 2023).
+//   out_{t,j} = +1 if x_{t,j} >= 0
+//               −1 otherwise
+// The 1-bit weight substrate of BitNet: every entry collapses to a single sign bit,
+// turning the matmul into add/subtract only — the canonical "beyond matmul" kernel.
+// Note this is NOT math.sign: sign(0)=0, but BitNet b1 has no zero state, so 0 maps
+// to +1. Exact integer outputs ±1. Output (T,D).
+
+fn bitnet_sign_rows(x: Matrix) -> Matrix = {
+  let rx = matrix.to_lists(x)
+  let (t, d) = matrix.shape(x)
+  var out: List[List[Float]] = []
+  var i = 0
+  while i < t {
+    let xi = list.get_or(rx, i, [])
+    let row = xi |> list.map((v) =>
+      if v >= 0.0 then 1.0 else 0.0 - 1.0)
+    out = out + [row]
+    i = i + 1
+  }
+  matrix.from_lists(out)
+}
+
+// signs split at zero: positives and zero → +1, negatives → −1.
+test "bitnet-sign maps each entry to its binary sign with zero as +1" {
+  let x = matrix.from_lists([[3.0, 0.0 - 4.0, 0.0]])
+  let y = bitnet_sign_rows(x)
+  assert_eq(matrix.get(y, 0, 0), 1.0)
+  assert_eq(matrix.get(y, 0, 1), 0.0 - 1.0)
+  assert_eq(matrix.get(y, 0, 2), 1.0)
+}
+
+// every output is exactly ±1, so squaring any entry yields 1.
+test "bitnet-sign outputs are unit magnitude" {
+  let x = matrix.from_lists([[0.0 - 0.2, 7.0]])
+  let y = bitnet_sign_rows(x)
+  assert_eq(matrix.get(y, 0, 0) * matrix.get(y, 0, 0), 1.0)
+  assert_eq(matrix.get(y, 0, 1) * matrix.get(y, 0, 1), 1.0)
+}

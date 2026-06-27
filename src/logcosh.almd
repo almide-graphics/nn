@@ -1,0 +1,20 @@
+// logcosh — log(cosh(x)). A smooth, twice-differentiable Huber-like loss:
+// ≈ x²/2 near 0, ≈ |x|-log2 for large |x|. Even, ≥0. cosh built from exp;
+// keep |x| moderate. Elementwise.
+
+import math
+
+fn logcosh(m: Matrix) -> Matrix =
+  matrix.map(m, (x) => math.log((math.exp(x) + math.exp(0.0 - x)) / 2.0))
+
+test "logcosh at zero is zero" {
+  let y = logcosh(matrix.from_lists([[0.0]]))
+  assert_eq(matrix.get(y, 0, 0), 0.0)
+}
+
+// log(cosh(1)) and even.
+test "logcosh at 1 and even" {
+  let y = logcosh(matrix.from_lists([[1.0, -1.0]]))
+  assert(float.abs(matrix.get(y, 0, 0) - 0.4337808304830272) < 0.000000001, "log cosh(1)")
+  assert(float.abs(matrix.get(y, 0, 1) - 0.4337808304830272) < 0.000000001, "even")
+}

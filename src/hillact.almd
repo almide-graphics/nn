@@ -1,0 +1,18 @@
+// hill_act — x²/(1+x²). The Hill function (n=2): even gate that is 0 at the
+// origin and saturates to 1, the complement of cauchy_act (sum = 1). Used for
+// soft "magnitude exceeds threshold" gating. Elementwise.
+
+fn hill_act(m: Matrix) -> Matrix =
+  matrix.map(m, (x) => (x * x) / (1.0 + x * x))
+
+test "hill_act at zero is zero" {
+  let y = hill_act(matrix.from_lists([[0.0]]))
+  assert_eq(matrix.get(y, 0, 0), 0.0)
+}
+
+// 1/(1+1)=0.5 at x=1; even.
+test "hill_act at 1 is half and even" {
+  let y = hill_act(matrix.from_lists([[1.0, -1.0]]))
+  assert_eq(matrix.get(y, 0, 0), 0.5)
+  assert_eq(matrix.get(y, 0, 1), 0.5)
+}

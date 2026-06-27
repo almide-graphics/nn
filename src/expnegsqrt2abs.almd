@@ -1,0 +1,21 @@
+// exp_neg_sqrt2_abs — exp(-√(2|x|)). A √2-scaled sub-exponential bump (=
+// exp(-√2·√|x|)): even, peaks at 1, sharp cusp at 0, heavier-than-Laplace tails
+// — a faster-decaying sibling of exp_neg_sqrt_abs. (Distinct from exp_neg_half_abs
+// = exp(-|x|/2).) Elementwise.
+
+import math
+
+fn exp_neg_sqrt2_abs(m: Matrix) -> Matrix =
+  matrix.map(m, (x) => math.exp(0.0 - math.sqrt(2.0 * float.abs(x))))
+
+test "exp_neg_sqrt2_abs peaks at one when x=0" {
+  let y = exp_neg_sqrt2_abs(matrix.from_lists([[0.0]]))
+  assert_eq(matrix.get(y, 0, 0), 1.0)
+}
+
+// √(2·0.5)=1 → exp(-1) at x=0.5; even.
+test "exp_neg_sqrt2_abs at half and even" {
+  let y = exp_neg_sqrt2_abs(matrix.from_lists([[0.5, -0.5]]))
+  assert(float.abs(matrix.get(y, 0, 0) - 0.36787944117144233) < 0.000000001, "e⁻¹")
+  assert(float.abs(matrix.get(y, 0, 1) - 0.36787944117144233) < 0.000000001, "even")
+}

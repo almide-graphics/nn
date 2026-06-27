@@ -1,0 +1,20 @@
+// softplus_inverse — log(exp(x) - 1), the inverse of softplus (defined for x>0).
+// Maps a positive (softplus-parameterized) value back to its raw pre-activation;
+// used to initialize positivity-constrained params. Elementwise.
+
+import math
+
+fn softplus_inverse(m: Matrix) -> Matrix =
+  matrix.map(m, (x) => math.log(math.exp(x) - 1.0))
+
+// softplus(0)=log2, so softplus_inverse(log2)=0.
+test "softplus_inverse at log2 is zero" {
+  let y = softplus_inverse(matrix.from_lists([[0.6931471805599453]]))
+  assert(float.abs(matrix.get(y, 0, 0)) < 0.000000001, "= 0")
+}
+
+// log(e-1) at x=1.
+test "softplus_inverse at one" {
+  let y = softplus_inverse(matrix.from_lists([[1.0]]))
+  assert(float.abs(matrix.get(y, 0, 0) - 0.5413248546129181) < 0.000000001, "log(e-1)")
+}

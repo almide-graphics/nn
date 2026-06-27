@@ -1,0 +1,20 @@
+// cosine_decay — 0.5·(1 + cos(x)). The cosine annealing schedule shape: 1 at
+// x=0, smoothly down to 0 at x=π. (Multiply by a base LR / weight for the
+// actual schedule.) Elementwise.
+
+import math
+
+fn cosine_decay(m: Matrix) -> Matrix =
+  matrix.map(m, (x) => 0.5 * (1.0 + math.cos(x)))
+
+test "cosine_decay at zero is one" {
+  let y = cosine_decay(matrix.from_lists([[0.0]]))
+  assert_eq(matrix.get(y, 0, 0), 1.0)
+}
+
+// 0 at π, 0.5 at π/2.
+test "cosine_decay at pi and pi over two" {
+  let y = cosine_decay(matrix.from_lists([[3.141592653589793, 1.5707963267948966]]))
+  assert(float.abs(matrix.get(y, 0, 0)) < 0.000000001, "→ 0 at π")
+  assert(float.abs(matrix.get(y, 0, 1) - 0.5) < 0.000000001, "→ 0.5 at π/2")
+}

@@ -1,0 +1,22 @@
+// hard_gaussian — max(0, 1 - x²). A compact-support parabolic bump
+// (Epanechnikov kernel): 1 at 0, smoothly to 0 at |x|=1, exactly 0 beyond.
+// The finite-support cousin of the Gaussian RBF. Elementwise.
+
+import math
+
+fn hard_gaussian(m: Matrix) -> Matrix =
+  matrix.map(m, (x) => math.fmax(0.0, 1.0 - x * x))
+
+// peak 1 at 0; 1-0.25=0.75 at 0.5.
+test "hard_gaussian peak and interior" {
+  let y = hard_gaussian(matrix.from_lists([[0.0, 0.5]]))
+  assert_eq(matrix.get(y, 0, 0), 1.0)
+  assert_eq(matrix.get(y, 0, 1), 0.75)
+}
+
+// exactly 0 at and beyond |x|=1.
+test "hard_gaussian zero outside unit" {
+  let y = hard_gaussian(matrix.from_lists([[1.0, -2.0]]))
+  assert_eq(matrix.get(y, 0, 0), 0.0)
+  assert_eq(matrix.get(y, 0, 1), 0.0)
+}

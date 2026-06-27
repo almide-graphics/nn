@@ -1,0 +1,11 @@
+// cube_act — elementwise cube x³. Odd polynomial activation / feature term.
+
+fn cube_act(m: Matrix) -> Matrix =
+  matrix.map(m, (x) => x * x * x)
+
+test "cube_act cubes (odd)" {
+  let y = cube_act(matrix.from_lists([[2.0, -2.0, 0.0]]))
+  assert_eq(matrix.get(y, 0, 0), 8.0)
+  assert_eq(matrix.get(y, 0, 1), -8.0)
+  assert_eq(matrix.get(y, 0, 2), 0.0)
+}

@@ -1,0 +1,40 @@
+// kl_div_rows — row-wise Kullback–Leibler divergence of two probability matrices:
+//
+//   KL(p_r ‖ q_r) = Σ_j p_rj · (log p_rj − log q_rj)
+//
+// One value per row → output (T,1). The standard distillation / VAE objective.
+// Assumes each row of p and q is a positive distribution. Two-input row
+// reduction: to_lists both, fold per row.
+
+import math
+
+fn kl_div_rows(p: Matrix, q: Matrix) -> Matrix = {
+  let rp = matrix.to_lists(p)
+  let rq = matrix.to_lists(q)
+  let (t, _) = matrix.shape(p)
+  var out: List[List[Float]] = []
+  var n = 0
+  while n < t {
+    let pn = list.get_or(rp, n, [])
+    let qn = list.get_or(rq, n, [])
+    let kl = list.zip_with(pn, qn, (pj, qj) => pj * (math.log(pj) - math.log(qj))) |> list.fold(0.0, (acc, v) => acc + v)
+    out = out + [[kl]]
+    n = n + 1
+  }
+  matrix.from_lists(out)
+}
+
+// KL(p ‖ p) = 0 for identical distributions.
+test "kl_div of identical distributions is zero" {
+  let p = matrix.from_lists([[0.2, 0.3, 0.5]])
+  let y = kl_div_rows(p, p)
+  assert(float.abs(matrix.get(y, 0, 0)) < 0.000000001, "self-KL 0")
+}
+
+// KL > 0 for distinct distributions (Gibbs' inequality).
+test "kl_div is positive for distinct distributions" {
+  let p = matrix.from_lists([[0.7, 0.3]])
+  let q = matrix.from_lists([[0.4, 0.6]])
+  let y = kl_div_rows(p, q)
+  assert(matrix.get(y, 0, 0) > 0.0, "positive")
+}

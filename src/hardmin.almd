@@ -1,0 +1,40 @@
+// hardmin_rows — one-hot indicator of each row's minimum (axis=1):
+//   m_t = min_j x_{t,j},   out_{t,j} = 1 if x_{t,j} ≤ m_t else 0   → (T,D).
+// The arg-min selection: a one-hot of the smallest coordinate — the companion of
+// hardmax_rows (the library pairs max/min throughout). Useful for hardest-negative mining,
+// anti-attention, or a min-router read-out. For a unique row minimum (generic for continuous
+// inputs) exactly one entry is 1; exact ties would light up all minima. Output (T,D).
+
+import math
+
+fn hardmin_rows(x: Matrix) -> Matrix = {
+  let rx = matrix.to_lists(x)
+  let (t, _) = matrix.shape(x)
+  var out: List[List[Float]] = []
+  var i = 0
+  while i < t {
+    let xi = list.get_or(rx, i, [])
+    let m = xi |> list.fold(list.get_or(xi, 0, 0.0), (acc, v) => math.fmin(acc, v))
+    out = out + [xi |> list.map((v) => if v <= m then 1.0 else 0.0)]
+    i = i + 1
+  }
+  matrix.from_lists(out)
+}
+
+// the minimum entry becomes 1, the rest 0: [1,5,3] → [1,0,0].
+test "hardmin is the one-hot of the row minimum" {
+  let x = matrix.from_lists([[1.0, 5.0, 3.0]])
+  let y = hardmin_rows(x)
+  assert_eq(matrix.get(y, 0, 0), 1.0)
+  assert_eq(matrix.get(y, 0, 1), 0.0)
+  assert_eq(matrix.get(y, 0, 2), 0.0)
+}
+
+// works per row, including all-positive rows: row0 [2,7]→[1,0], row1 [4,−9]→[0,1].
+test "hardmin selects the minimum independently per row" {
+  let x = matrix.from_lists([[2.0, 7.0], [4.0, 0.0 - 9.0]])
+  let y = hardmin_rows(x)
+  assert_eq(matrix.get(y, 0, 0), 1.0)
+  assert_eq(matrix.get(y, 1, 1), 1.0)
+  assert_eq(matrix.get(y, 1, 0), 0.0)
+}

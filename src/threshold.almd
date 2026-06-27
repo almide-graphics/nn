@@ -1,0 +1,11 @@
+// threshold — keep x where x>θ, else 0. θ scalar. A parameterized hard gate
+// (θ=0 recovers ReLU). Elementwise.
+
+fn threshold(m: Matrix, theta: Float) -> Matrix =
+  matrix.map(m, (x) => if x > theta then x else 0.0)
+
+test "threshold passes above and zeros below" {
+  let y = threshold(matrix.from_lists([[5.0, 0.5]]), 1.0)
+  assert_eq(matrix.get(y, 0, 0), 5.0)
+  assert_eq(matrix.get(y, 0, 1), 0.0)
+}

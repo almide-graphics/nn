@@ -1,0 +1,38 @@
+// mse_rows — row-wise mean squared error of two matrices:
+//
+//   mse_r = (1/D) · Σ_j (a_rj − b_rj)²
+//
+// One value per row → output (T,1). The core regression / distillation loss.
+// Two-input row reduction: to_lists both, fold the squared diffs per row.
+
+fn mse_rows(a: Matrix, b: Matrix) -> Matrix = {
+  let ra = matrix.to_lists(a)
+  let rb = matrix.to_lists(b)
+  let (t, d) = matrix.shape(a)
+  let df = int.to_float(d)
+  var out: List[List[Float]] = []
+  var n = 0
+  while n < t {
+    let an = list.get_or(ra, n, [])
+    let bn = list.get_or(rb, n, [])
+    let sse = list.zip_with(an, bn, (x, y) => (x - y) * (x - y)) |> list.fold(0.0, (acc, v) => acc + v)
+    out = out + [[sse / df]]
+    n = n + 1
+  }
+  matrix.from_lists(out)
+}
+
+// mse(a, a) = 0.
+test "mse of identical rows is zero" {
+  let a = matrix.from_lists([[1.0, 2.0, 3.0, 4.0]])
+  let y = mse_rows(a, a)
+  assert_eq(matrix.get(y, 0, 0), 0.0)
+}
+
+// (1²+3²)/2 = 5.
+test "mse computes mean squared error" {
+  let a = matrix.from_lists([[0.0, 0.0]])
+  let b = matrix.from_lists([[1.0, 3.0]])
+  let y = mse_rows(a, b)
+  assert_eq(matrix.get(y, 0, 0), 5.0)
+}

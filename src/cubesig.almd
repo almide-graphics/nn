@@ -1,0 +1,24 @@
+// cube_sigmoid — σ(x)³. A sharpened logistic gate: bounded in (0,1) but with a
+// later, steeper turn-on than σ (used for high-precision "AND-like" gating).
+// Elementwise.
+
+import math
+
+fn cube_sigmoid(m: Matrix) -> Matrix =
+  matrix.map(m, (x) => {
+    let s = 1.0 / (1.0 + math.exp(0.0 - x))
+    s * s * s
+  })
+
+// σ(0)³ = 0.5³ = 0.125.
+test "cube_sigmoid at zero is one eighth" {
+  let y = cube_sigmoid(matrix.from_lists([[0.0]]))
+  assert_eq(matrix.get(y, 0, 0), 0.125)
+}
+
+// saturates 0 / 1.
+test "cube_sigmoid saturates 1 and 0" {
+  let y = cube_sigmoid(matrix.from_lists([[30.0, -30.0]]))
+  assert(float.abs(matrix.get(y, 0, 0) - 1.0) < 0.000000001, "→ 1")
+  assert(float.abs(matrix.get(y, 0, 1)) < 0.000000001, "→ 0")
+}

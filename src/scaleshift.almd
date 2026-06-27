@@ -1,0 +1,11 @@
+// scale_shift — affine transform a·x + b (scalar a, b). The per-tensor
+// scale/bias used by normalization layers and quantization. Elementwise.
+
+fn scale_shift(m: Matrix, a: Float, b: Float) -> Matrix =
+  matrix.map(m, (x) => a * x + b)
+
+test "scale_shift is affine" {
+  let y = scale_shift(matrix.from_lists([[3.0, 0.0]]), 2.0, 1.0)
+  assert_eq(matrix.get(y, 0, 0), 7.0)
+  assert_eq(matrix.get(y, 0, 1), 1.0)
+}

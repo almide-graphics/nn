@@ -1,0 +1,56 @@
+// clamp_rows — elementwise clamp of x to per-element bounds [lo, hi] (3-input):
+//   out_{t,j} = max( lo_{t,j}, min( hi_{t,j}, x_{t,j} ) )   → (T,D).
+// The general clamp/clip (torch.clamp with *tensor* min and max): every coordinate is held inside its
+// own [lo, hi] interval. Distinct from the fixed-bound clamps already here — relu6 [0,6], clamp_unit
+// [0,1], clip_symmetric [−c,c] and softclamp [lo,hi] all use scalar bounds; this takes the bounds as
+// two further matrices, so the box is data-dependent per coordinate (constraint projection, per-
+// feature saturation, trust-region/range clipping). max(0,·)/min are continuous so parity is exact.
+// Output (T,D).
+
+import float
+import math
+
+fn clamp_rows(x: Matrix, lo: Matrix, hi: Matrix) -> Matrix = {
+  let rx = matrix.to_lists(x)
+  let rl = matrix.to_lists(lo)
+  let rh = matrix.to_lists(hi)
+  let (t, d) = matrix.shape(x)
+  var out: List[List[Float]] = []
+  var i = 0
+  while i < t {
+    let xi = list.get_or(rx, i, [])
+    let li = list.get_or(rl, i, [])
+    let hii = list.get_or(rh, i, [])
+    var row: List[Float] = []
+    var j = 0
+    while j < d {
+      let xv = list.get_or(xi, j, 0.0)
+      let lv = list.get_or(li, j, 0.0)
+      let hv = list.get_or(hii, j, 0.0)
+      row = row + [math.fmax(lv, math.fmin(hv, xv))]
+      j = j + 1
+    }
+    out = out + [row]
+    i = i + 1
+  }
+  matrix.from_lists(out)
+}
+
+// in-range values pass through unchanged: x=0.5 in [0,1] → 0.5.
+test "clamp leaves in-range values unchanged" {
+  let x = matrix.from_lists([[0.5]])
+  let lo = matrix.from_lists([[0.0]])
+  let hi = matrix.from_lists([[1.0]])
+  let y = clamp_rows(x, lo, hi)
+  assert(float.abs(matrix.get(y, 0, 0) - 0.5) < 0.000000001, "0.5")
+}
+
+// out-of-range values clamp to the bounds: 5→hi=1, −5→lo=0.
+test "clamp bounds values to the per-element interval" {
+  let x = matrix.from_lists([[5.0, 0.0 - 5.0]])
+  let lo = matrix.from_lists([[0.0, 0.0]])
+  let hi = matrix.from_lists([[1.0, 1.0]])
+  let y = clamp_rows(x, lo, hi)
+  assert(float.abs(matrix.get(y, 0, 0) - 1.0) < 0.000000001, "clamp hi=1")
+  assert(float.abs(matrix.get(y, 0, 1)) < 0.000000001, "clamp lo=0")
+}

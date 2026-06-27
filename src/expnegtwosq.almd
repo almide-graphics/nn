@@ -1,0 +1,20 @@
+// exp_neg_two_sq — exp(-2x²). A narrow Gaussian RBF (precision γ=2, i.e. σ²=¼):
+// even, peaks at 1, decays faster than the unit Gaussian — a tighter
+// localization kernel. Elementwise.
+
+import math
+
+fn exp_neg_two_sq(m: Matrix) -> Matrix =
+  matrix.map(m, (x) => math.exp(0.0 - 2.0 * x * x))
+
+test "exp_neg_two_sq peaks at one when x=0" {
+  let y = exp_neg_two_sq(matrix.from_lists([[0.0]]))
+  assert_eq(matrix.get(y, 0, 0), 1.0)
+}
+
+// 2·(1/√2)²=1 → exp(-1) at x=1/√2; even.
+test "exp_neg_two_sq at one over sqrt2 and even" {
+  let y = exp_neg_two_sq(matrix.from_lists([[0.7071067811865476, -0.7071067811865476]]))
+  assert(float.abs(matrix.get(y, 0, 0) - 0.36787944117144233) < 0.000000001, "e⁻¹")
+  assert(float.abs(matrix.get(y, 0, 1) - 0.36787944117144233) < 0.000000001, "even")
+}

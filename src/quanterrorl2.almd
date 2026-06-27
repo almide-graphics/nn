@@ -1,0 +1,57 @@
+// quant_error_l2_rows — per-row L2 norm of the BitNet b1 quantization residual.
+//   β = (1 / (T·D)) Σ_{t,j} |x_{t,j}|                  (per-tensor absmean scale)
+//   e_{t,j} = x_{t,j} − β · sign⁺(x_{t,j})
+//   out_t = sqrt( Σ_j e_{t,j}² )                        → one norm per row, (T,1).
+// The amount of quantization noise BitNet b1 injects into each row: the length of the
+// residual `quant_error_rows` leaves behind after replacing the weights with β·sign⁺.
+// It is the per-row term QAT drives down. Two passes (absmean over all elements, then a
+// per-row sum of squared residuals under a root). Output (T,1).
+
+import float
+import math
+
+fn quant_error_l2_rows(x: Matrix) -> Matrix = {
+  let rx = matrix.to_lists(x)
+  let (t, d) = matrix.shape(x)
+  let n = int.to_float(t * d)
+  // pass 1: absmean scale β over the whole tensor.
+  var total = 0.0
+  var p = 0
+  while p < t {
+    let xp = list.get_or(rx, p, [])
+    let s = xp |> list.fold(0.0, (acc, v) => acc + float.abs(v))
+    total = total + s
+    p = p + 1
+  }
+  let beta = total / n
+  // pass 2: per-row L2 of the residual x − β·sign⁺(x).
+  var out: List[List[Float]] = []
+  var i = 0
+  while i < t {
+    let xi = list.get_or(rx, i, [])
+    let sq = xi |> list.fold(0.0, (acc, v) => {
+      let e = v - beta * (if v >= 0.0 then 1.0 else 0.0 - 1.0)
+      acc + e * e
+    })
+    out = out + [[math.sqrt(sq)]]
+    i = i + 1
+  }
+  matrix.from_lists(out)
+}
+
+// β = mean|x| = (3+1+2+0)/4 = 1.5. residual row0 = [3−1.5, 1−1.5] = [1.5, −0.5];
+//   ‖·‖ = sqrt(2.25 + 0.25) = sqrt(2.5).
+test "quant-error-l2 is the norm of the bit-quantization residual" {
+  let x = matrix.from_lists([[3.0, 1.0], [0.0 - 2.0, 0.0]])
+  let y = quant_error_l2_rows(x)
+  let want = math.sqrt(2.5)
+  assert(float.abs(matrix.get(y, 0, 0) - want) < 0.000000001, "row0 norm = sqrt(2.5)")
+}
+
+// the norm is never negative.
+test "quant-error-l2 is nonnegative" {
+  let x = matrix.from_lists([[1.0, 0.0 - 2.0, 3.0], [0.0 - 4.0, 5.0, 0.0 - 6.0]])
+  let y = quant_error_l2_rows(x)
+  assert(matrix.get(y, 0, 0) >= 0.0, "row0 >= 0")
+  assert(matrix.get(y, 1, 0) >= 0.0, "row1 >= 0")
+}

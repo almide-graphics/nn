@@ -1,0 +1,41 @@
+// canberra_dist_rows — row-wise Canberra distance of two matrices:
+//   dist_t = Σ_j |a_{t,j} − b_{t,j}| / (|a_{t,j}| + |b_{t,j}| + ε)   → one value per row, (T,1).
+// A coordinate-normalized L1 dissimilarity: each term is the absolute difference scaled by
+// the pair's magnitude, so small-magnitude coordinates count as much as large ones (unlike
+// l1_dist_rows, which is dominated by the big differences). Each term ∈ [0,1], so the row sum
+// ∈ [0,D]; widely used where relative deviation matters (ecology, intrusion detection). The
+// +ε makes a 0/0 pair contribute 0. Two-input row reduction. Output (T,1).
+
+import float
+
+fn canberra_dist_rows(a: Matrix, b: Matrix) -> Matrix = {
+  let ra = matrix.to_lists(a)
+  let rb = matrix.to_lists(b)
+  let (t, _) = matrix.shape(a)
+  var out: List[List[Float]] = []
+  var i = 0
+  while i < t {
+    let ai = list.get_or(ra, i, [])
+    let bi = list.get_or(rb, i, [])
+    let s = list.zip_with(ai, bi, (x, y) => float.abs(x - y) / (float.abs(x) + float.abs(y) + 0.000000000001))
+            |> list.fold(0.0, (acc, v) => acc + v)
+    out = out + [[s]]
+    i = i + 1
+  }
+  matrix.from_lists(out)
+}
+
+// a row has zero Canberra distance to itself (every numerator is 0).
+test "canberra distance of identical rows is zero" {
+  let a = matrix.from_lists([[1.0, 0.0 - 2.0, 3.0, 4.0]])
+  let y = canberra_dist_rows(a, a)
+  assert(float.abs(matrix.get(y, 0, 0)) < 0.000000001, "self → 0")
+}
+
+// [1,0] vs [3,0]: |1−3|/(1+3) = 0.5; the (0,0) pair is ε-guarded to 0 → total 0.5.
+test "canberra distance normalizes each coordinate by |a|+|b|" {
+  let a = matrix.from_lists([[1.0, 0.0]])
+  let b = matrix.from_lists([[3.0, 0.0]])
+  let y = canberra_dist_rows(a, b)
+  assert(float.abs(matrix.get(y, 0, 0) - 0.5) < 0.000000001, "= 0.5")
+}

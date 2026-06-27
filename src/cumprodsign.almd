@@ -1,0 +1,43 @@
+// cumprod_sign_rows — running product of signs over time (down the rows):
+//   out_{t,j} = Π_{i≤t} sign(x_{i,j})   ∈ {−1, 0, 1}.
+// The cumulative sign parity of a sequence: +1 while an even number of negatives have
+// been seen, −1 after an odd number, and 0 forever once an exact zero appears (it
+// absorbs the product). A discrete spin / parity tracker — the multiplicative companion
+// of cumsum_sign (which tallies an additive ±-vote). sign is Int-only, so the Float sign
+// is the usual ±1/0 threshold; the running product is seeded at the all-ones vector.
+// O(T), O(D) state. Output (T,D).
+
+fn cumprod_sign_rows(x: Matrix) -> Matrix = {
+  let rx = matrix.to_lists(x)
+  let (t, d) = matrix.shape(x)
+  var acc: List[Float] = list.range(0, d) |> list.map((_) => 1.0)
+  var out: List[List[Float]] = []
+  var i = 0
+  while i < t {
+    let xi = list.get_or(rx, i, [])
+    acc = list.zip_with(acc, xi, (a, b) =>
+      a * (if b > 0.0 then 1.0 else (if b < 0.0 then 0.0 - 1.0 else 0.0)))
+    out = out + [acc]
+    i = i + 1
+  }
+  matrix.from_lists(out)
+}
+
+// column 0 signs = [+,−,−,+]: parity = [+1,−1,+1,+1].
+test "cumprod-sign tracks the running sign parity" {
+  let x = matrix.from_lists([[2.0], [0.0 - 3.0], [0.0 - 1.0], [5.0]])
+  let y = cumprod_sign_rows(x)
+  assert_eq(matrix.get(y, 0, 0), 1.0)
+  assert_eq(matrix.get(y, 1, 0), 0.0 - 1.0)
+  assert_eq(matrix.get(y, 2, 0), 1.0)
+  assert_eq(matrix.get(y, 3, 0), 1.0)
+}
+
+// an exact zero absorbs the product from that step on.
+test "cumprod-sign is absorbed by a zero" {
+  let x = matrix.from_lists([[0.0 - 4.0], [0.0], [7.0]])
+  let y = cumprod_sign_rows(x)
+  assert_eq(matrix.get(y, 0, 0), 0.0 - 1.0)
+  assert_eq(matrix.get(y, 1, 0), 0.0)
+  assert_eq(matrix.get(y, 2, 0), 0.0)
+}

@@ -1,0 +1,25 @@
+// cosine_kernel — cos(π/2·|x|) for |x|<1, else 0. The raised-cosine (Tukey-style)
+// window: 1 at 0, smoothly to 0 at |x|=1 with a horizontal tangent, exactly 0
+// beyond. Even, compact support. Elementwise.
+
+import math
+
+fn cosine_kernel(m: Matrix) -> Matrix =
+  matrix.map(m, (x) => {
+    let a = float.abs(x)
+    if a < 1.0 then math.cos(1.5707963267948966 * a) else 0.0
+  })
+
+// peak 1 at 0; cos(π/4) at 0.5.
+test "cosine_kernel peak and interior" {
+  let y = cosine_kernel(matrix.from_lists([[0.0, 0.5]]))
+  assert_eq(matrix.get(y, 0, 0), 1.0)
+  assert(float.abs(matrix.get(y, 0, 1) - 0.7071067811865476) < 0.000000001, "cos(π/4)")
+}
+
+// exactly 0 beyond |x|=1.
+test "cosine_kernel zero outside unit" {
+  let y = cosine_kernel(matrix.from_lists([[2.0, -3.0]]))
+  assert_eq(matrix.get(y, 0, 0), 0.0)
+  assert_eq(matrix.get(y, 0, 1), 0.0)
+}

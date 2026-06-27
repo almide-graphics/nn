@@ -1,0 +1,50 @@
+// retnet_retention — RetNet retention in diagonal recurrent form (per channel):
+//
+//   S_t = γ ⊙ S_{t-1} + k_t ⊙ v_t          (retention state, fixed decay γ)
+//   o_t = q_t ⊙ S_t                         (query readout)
+//
+// Distinct from gla_diag (src/gla.almd): there the gate `a` is time-varying
+// (T,D); here γ is a single per-channel decay vector (D,) reused every step —
+// the RetNet "retention" parameterization. O(1) state per channel, streaming.
+
+fn retnet_retention(q: Matrix, k: Matrix, v: Matrix, gamma: List[Float]) -> Matrix = {
+  let rq = matrix.to_lists(q)
+  let rk = matrix.to_lists(k)
+  let rv = matrix.to_lists(v)
+  let (t, d) = matrix.shape(q)
+  var s: List[Float] = list.range(0, d) |> list.map((_) => 0.0)
+  var out: List[List[Float]] = []
+  var i = 0
+  while i < t {
+    let qi = list.get_or(rq, i, [])
+    let ki = list.get_or(rk, i, [])
+    let vi = list.get_or(rv, i, [])
+    let decayed = list.zip_with(gamma, s, (g, x) => g * x)
+    let kv = list.zip_with(ki, vi, (p, x) => p * x)
+    s = list.zip_with(decayed, kv, (p, x) => p + x)
+    let oi = list.zip_with(qi, s, (p, x) => p * x)
+    out = out + [oi]
+    i = i + 1
+  }
+  matrix.from_lists(out)
+}
+
+// γ=0 → memoryless: S_t = k_t⊙v_t, o_t = q_t⊙k_t⊙v_t.
+test "retnet zero-decay is memoryless gated product" {
+  let q = matrix.from_lists([[2.0], [3.0]])
+  let k = matrix.from_lists([[1.0], [4.0]])
+  let v = matrix.from_lists([[5.0], [0.5]])
+  let y = retnet_retention(q, k, v, [0.0])
+  assert_eq(matrix.get(y, 0, 0), 10.0)
+  assert_eq(matrix.get(y, 1, 0), 6.0)
+}
+
+// γ=1 → undamped accumulation of k⊙v, read out by q.
+test "retnet unit-decay accumulates" {
+  let q = matrix.from_lists([[1.0], [1.0]])
+  let k = matrix.from_lists([[1.0], [1.0]])
+  let v = matrix.from_lists([[2.0], [3.0]])
+  let y = retnet_retention(q, k, v, [1.0])
+  assert_eq(matrix.get(y, 0, 0), 2.0)
+  assert_eq(matrix.get(y, 1, 0), 5.0)
+}

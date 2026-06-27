@@ -1,0 +1,44 @@
+// ruzicka_similarity_rows — per-row Ruzicka (weighted Jaccard) similarity of two non-negative rows:
+//   out_t = Σ_j min(a_{t,j}, b_{t,j}) / ( Σ_j max(a_{t,j}, b_{t,j}) + ε )   → (T,1), ∈ [0,1].
+// The continuous Jaccard index: shared mass (the histogram intersection) over total mass (the union).
+// It is the bounded, normalized similarity that pairs with Bray–Curtis dissimilarity the way Jaccard
+// pairs with the symmetric difference — 1 for identical rows, 0 for disjoint support, in between for
+// partial overlap. Distinct from hist_intersection_rows (the un-normalized Σ min) and from the
+// distances (a difference, not a ratio of overlap to union). Inputs non-negative; ε guards an all-zero
+// pair. Output (T,1).
+
+import float
+import math
+
+fn ruzicka_similarity_rows(a: Matrix, b: Matrix) -> Matrix = {
+  let ra = matrix.to_lists(a)
+  let rb = matrix.to_lists(b)
+  let (t, _) = matrix.shape(a)
+  var out: List[List[Float]] = []
+  var i = 0
+  while i < t {
+    let ai = list.get_or(ra, i, [])
+    let bi = list.get_or(rb, i, [])
+    let smin = list.zip_with(ai, bi, (av, bv) => math.fmin(av, bv)) |> list.fold(0.0, (acc, v) => acc + v)
+    let smax = list.zip_with(ai, bi, (av, bv) => math.fmax(av, bv)) |> list.fold(0.0, (acc, v) => acc + v)
+    out = out + [[smin / (smax + 0.000000000001)]]
+    i = i + 1
+  }
+  matrix.from_lists(out)
+}
+
+// identical rows: Σmin = Σmax → 1.
+test "ruzicka similarity of identical rows is one" {
+  let a = matrix.from_lists([[1.0, 2.0, 3.0]])
+  let b = matrix.from_lists([[1.0, 2.0, 3.0]])
+  let y = ruzicka_similarity_rows(a, b)
+  assert(float.abs(matrix.get(y, 0, 0) - 1.0) < 0.0000001, "6/6=1")
+}
+
+// proportional rows: Σmin/Σmax = (1+2)/(2+4) = 3/6 = 0.5.
+test "ruzicka similarity is the weighted Jaccard ratio" {
+  let a = matrix.from_lists([[1.0, 2.0]])
+  let b = matrix.from_lists([[2.0, 4.0]])
+  let y = ruzicka_similarity_rows(a, b)
+  assert(float.abs(matrix.get(y, 0, 0) - 0.5) < 0.0000001, "3/6=0.5")
+}

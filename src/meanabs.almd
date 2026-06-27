@@ -1,0 +1,35 @@
+// mean_abs_rows — row-wise mean absolute value:
+//
+//   out_r = (1/D) · Σ_j |x_rj|
+//
+// One value per row → output (T,1). The average L1 magnitude / mean activation
+// strength (the value, not a normalization or a max). Single-input row reduction.
+
+import float
+
+fn mean_abs_rows(x: Matrix) -> Matrix = {
+  let rx = matrix.to_lists(x)
+  let (rows, d) = matrix.shape(x)
+  let df = int.to_float(d)
+  var out: List[List[Float]] = []
+  var n = 0
+  while n < rows {
+    let xn = list.get_or(rx, n, [])
+    let s = xn |> list.fold(0.0, (acc, v) => acc + float.abs(v))
+    out = out + [[s / df]]
+    n = n + 1
+  }
+  matrix.from_lists(out)
+}
+
+// (|3|+|-4|)/2 = 3.5.
+test "mean abs averages the magnitudes" {
+  let y = mean_abs_rows(matrix.from_lists([[3.0, 0.0 - 4.0]]))
+  assert_eq(matrix.get(y, 0, 0), 3.5)
+}
+
+// all zeros → 0.
+test "mean abs of zeros is zero" {
+  let y = mean_abs_rows(matrix.from_lists([[0.0, 0.0, 0.0]]))
+  assert_eq(matrix.get(y, 0, 0), 0.0)
+}

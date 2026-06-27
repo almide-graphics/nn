@@ -1,0 +1,45 @@
+// soft_xor_rows — the differentiable (probabilistic) XOR gate, elementwise (2-input):
+//   out_{t,j} = a + b − 2·a·b   for a, b ∈ [0,1]   → (T,D).
+// Reading a, b as independent Bernoulli probabilities, this is exactly P(a XOR b) — the relaxed
+// logic gate that a differentiable-logic network (difflogic, Petersen 2022) learns over. It is the
+// substrate of the project's "beyond matmul" thesis: a network of these soft gates *is* a Boolean
+// circuit, learned by gradient descent, and hardens to real logic at the {0,1} corners. XOR is the
+// canonical non-linearly-separable gate — unreachable by a single linear unit — so it carries the
+// expressive core. Distinct from soft AND (a·b = hadamard) and soft OR (a+b−ab). At the boolean
+// corners it is the XOR truth table; at a=b=½ it is maximally uncertain (½). Output (T,D).
+
+import float
+
+fn soft_xor_rows(a: Matrix, b: Matrix) -> Matrix = {
+  let ra = matrix.to_lists(a)
+  let rb = matrix.to_lists(b)
+  let (t, _) = matrix.shape(a)
+  var out: List[List[Float]] = []
+  var i = 0
+  while i < t {
+    let ai = list.get_or(ra, i, [])
+    let bi = list.get_or(rb, i, [])
+    out = out + [list.zip_with(ai, bi, (av, bv) => av + bv - 2.0 * av * bv)]
+    i = i + 1
+  }
+  matrix.from_lists(out)
+}
+
+// at the boolean corners it is the XOR truth table: 0⊕0=0, 0⊕1=1, 1⊕0=1, 1⊕1=0.
+test "soft-xor reduces to the XOR truth table at boolean corners" {
+  let a = matrix.from_lists([[0.0, 0.0, 1.0, 1.0]])
+  let b = matrix.from_lists([[0.0, 1.0, 0.0, 1.0]])
+  let y = soft_xor_rows(a, b)
+  assert_eq(matrix.get(y, 0, 0), 0.0)
+  assert_eq(matrix.get(y, 0, 1), 1.0)
+  assert_eq(matrix.get(y, 0, 2), 1.0)
+  assert_eq(matrix.get(y, 0, 3), 0.0)
+}
+
+// at a = b = ½ the gate is maximally uncertain: ½ + ½ − 2·¼ = ½.
+test "soft-xor at p=0.5 is maximally uncertain" {
+  let a = matrix.from_lists([[0.5]])
+  let b = matrix.from_lists([[0.5]])
+  let y = soft_xor_rows(a, b)
+  assert(float.abs(matrix.get(y, 0, 0) - 0.5) < 0.000000001, "0.5")
+}

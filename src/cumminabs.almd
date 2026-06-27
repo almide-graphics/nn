@@ -1,0 +1,40 @@
+// cummin_abs_rows — cumulative minimum of absolute value over time (down rows):
+//   out_t = min_{i≤t} |x_i|   (elementwise per channel).
+// The running closest-to-zero magnitude / lower envelope of |x| — a streaming
+// dead-zone / smallest-activation tracker (floor counterpart of cummax_abs_rows).
+// Seeds with the first row's magnitude. O(T), O(D) state. Output (T,D).
+
+import float
+import math
+
+fn cummin_abs_rows(x: Matrix) -> Matrix = {
+  let rx = matrix.to_lists(x)
+  let (t, _) = matrix.shape(x)
+  var acc: List[Float] = list.get_or(rx, 0, []) |> list.map((v) => float.abs(v))
+  var out: List[List[Float]] = []
+  var i = 0
+  while i < t {
+    let xi = list.get_or(rx, i, [])
+    acc = list.zip_with(acc, xi, (a, b) => math.fmin(a, float.abs(b)))
+    out = out + [acc]
+    i = i + 1
+  }
+  matrix.from_lists(out)
+}
+
+// running smallest magnitude of [3,-1,5] (single channel) → [3,1,1].
+test "cummin abs is the running lower envelope" {
+  let x = matrix.from_lists([[3.0], [0.0 - 1.0], [5.0]])
+  let y = cummin_abs_rows(x)
+  assert_eq(matrix.get(y, 0, 0), 3.0)
+  assert_eq(matrix.get(y, 1, 0), 1.0)
+  assert_eq(matrix.get(y, 2, 0), 1.0)
+}
+
+// per channel: [[2,-4],[-5,1]] → row1 = [min(2,5), min(4,1)] = [2,1].
+test "cummin abs works per channel" {
+  let x = matrix.from_lists([[2.0, 0.0 - 4.0], [0.0 - 5.0, 1.0]])
+  let y = cummin_abs_rows(x)
+  assert_eq(matrix.get(y, 1, 0), 2.0)
+  assert_eq(matrix.get(y, 1, 1), 1.0)
+}

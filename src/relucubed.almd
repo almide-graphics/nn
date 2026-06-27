@@ -1,0 +1,23 @@
+// relu_cubed — max(0,x)³. One-sided cubic gate: 0 for x≤0, x³ for x>0. Higher-
+// order than relu_squared, with an even flatter turn-on. Elementwise.
+
+import math
+
+fn relu_cubed(m: Matrix) -> Matrix =
+  matrix.map(m, (x) => {
+    let r = math.fmax(0.0, x)
+    r * r * r
+  })
+
+// 0 for x≤0 (incl. 0).
+test "relu_cubed is zero for x<=0" {
+  let y = relu_cubed(matrix.from_lists([[-2.0, 0.0]]))
+  assert_eq(matrix.get(y, 0, 0), 0.0)
+  assert_eq(matrix.get(y, 0, 1), 0.0)
+}
+
+// 2³=8 for x>0.
+test "relu_cubed is x cubed for x>0" {
+  let y = relu_cubed(matrix.from_lists([[2.0]]))
+  assert_eq(matrix.get(y, 0, 0), 8.0)
+}

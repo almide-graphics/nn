@@ -1,0 +1,56 @@
+// soft_majority3_rows — the differentiable 3-input majority (median-of-3) gate, elementwise (3-input):
+//   out = a·b + b·c + c·a − 2·a·b·c   for a, b, c ∈ [0,1]   → (T,D).
+// Reading a, b, c as independent Bernoulli probabilities, this is P(at least two of three are on) —
+// the majority / median-of-3 gate. It is the canonical threshold-logic primitive (triple-modular
+// redundancy, fault-tolerant voting) and a genuinely 3-ary differentiable-logic gate, beyond the
+// 2-input AND/OR/XOR/AND_NOT substrate: a majority network expresses threshold functions a XOR-tree
+// cannot reach cheaply. At the boolean corners it is the majority truth table; at a=b=c=½ it is ½.
+// Symmetric in its three inputs. Output (T,D).
+
+import float
+
+fn soft_majority3_rows(a: Matrix, b: Matrix, c: Matrix) -> Matrix = {
+  let ra = matrix.to_lists(a)
+  let rb = matrix.to_lists(b)
+  let rc = matrix.to_lists(c)
+  let (t, d) = matrix.shape(a)
+  var out: List[List[Float]] = []
+  var i = 0
+  while i < t {
+    let ai = list.get_or(ra, i, [])
+    let bi = list.get_or(rb, i, [])
+    let ci = list.get_or(rc, i, [])
+    var row: List[Float] = []
+    var j = 0
+    while j < d {
+      let av = list.get_or(ai, j, 0.0)
+      let bv = list.get_or(bi, j, 0.0)
+      let cv = list.get_or(ci, j, 0.0)
+      row = row + [av * bv + bv * cv + cv * av - 2.0 * av * bv * cv]
+      j = j + 1
+    }
+    out = out + [row]
+    i = i + 1
+  }
+  matrix.from_lists(out)
+}
+
+// majority truth table: (1,1,1)→1, (1,1,0)→1, (0,0,1)→0.
+test "soft-majority-3 matches the majority truth table at corners" {
+  let a = matrix.from_lists([[1.0, 1.0, 0.0]])
+  let b = matrix.from_lists([[1.0, 1.0, 0.0]])
+  let c = matrix.from_lists([[1.0, 0.0, 1.0]])
+  let y = soft_majority3_rows(a, b, c)
+  assert_eq(matrix.get(y, 0, 0), 1.0)
+  assert_eq(matrix.get(y, 0, 1), 1.0)
+  assert_eq(matrix.get(y, 0, 2), 0.0)
+}
+
+// at a = b = c = ½: 3·¼ − 2·⅛ = ¾ − ¼ = ½.
+test "soft-majority-3 at p=0.5 is one half" {
+  let a = matrix.from_lists([[0.5]])
+  let b = matrix.from_lists([[0.5]])
+  let c = matrix.from_lists([[0.5]])
+  let y = soft_majority3_rows(a, b, c)
+  assert(float.abs(matrix.get(y, 0, 0) - 0.5) < 0.000000001, "0.5")
+}

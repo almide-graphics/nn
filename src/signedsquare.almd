@@ -1,0 +1,42 @@
+// signed_square_rows — sign-preserving square, sign(x)·x² = x·|x|, elementwise.
+//   out_{t,j} = x_{t,j} · |x_{t,j}|
+// The odd reflection of the squaring map: it sharpens large magnitudes like x² while
+// keeping the sign (f(−x) = −f(x)), the inverse of signed_sqrt. Used as an expansive
+// reward shaping / emphasis nonlinearity. Written as x·|x| so no explicit sign threshold
+// is needed (the factor x already carries it; x = 0 gives 0). Purely elementwise.
+// Output (T,D).
+
+import float
+
+fn signed_square_rows(x: Matrix) -> Matrix = {
+  let rx = matrix.to_lists(x)
+  let (t, _d) = matrix.shape(x)
+  var out: List[List[Float]] = []
+  var i = 0
+  while i < t {
+    let xi = list.get_or(rx, i, [])
+    let row = xi |> list.map((v) => v * float.abs(v))
+    out = out + [row]
+    i = i + 1
+  }
+  matrix.from_lists(out)
+}
+
+// 3 → 9, −4 → −16, 0 → 0.
+test "signed-square keeps sign and squares magnitude" {
+  let x = matrix.from_lists([[3.0, 0.0 - 4.0], [0.0, 0.5]])
+  let y = signed_square_rows(x)
+  assert_eq(matrix.get(y, 0, 0), 9.0)
+  assert_eq(matrix.get(y, 0, 1), 0.0 - 16.0)
+  assert_eq(matrix.get(y, 1, 0), 0.0)
+  assert_eq(matrix.get(y, 1, 1), 0.25)
+}
+
+// it is the exact inverse of signed_sqrt on magnitudes: f(−v) = −f(v).
+test "signed-square is an odd function" {
+  let x = matrix.from_lists([[6.0]])
+  let xn = matrix.from_lists([[0.0 - 6.0]])
+  let a = matrix.get(signed_square_rows(x), 0, 0)
+  let b = matrix.get(signed_square_rows(xn), 0, 0)
+  assert_eq(a + b, 0.0)
+}

@@ -1,0 +1,17 @@
+// softsign — x / (1 + |x|). A cheaper, polynomially-saturating tanh-like
+// squashing function bounded in (-1, 1). Elementwise.
+
+fn softsign(m: Matrix) -> Matrix =
+  matrix.map(m, (x) => x / (1.0 + float.abs(x)))
+
+test "softsign at zero is zero" {
+  let y = softsign(matrix.from_lists([[0.0]]))
+  assert_eq(matrix.get(y, 0, 0), 0.0)
+}
+
+// softsign(1) = 1/2, softsign(-1) = -1/2.
+test "softsign at plus/minus one is half" {
+  let y = softsign(matrix.from_lists([[1.0, -1.0]]))
+  assert_eq(matrix.get(y, 0, 0), 0.5)
+  assert_eq(matrix.get(y, 0, 1), -0.5)
+}

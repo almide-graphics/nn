@@ -1,0 +1,40 @@
+// cummax_minus_x_rows — drawdown from the running maximum over time (down the rows):
+//   out_t = (max_{i≤t} x_i) − x_t   (elementwise per channel).
+// How far the current value sits below the best-so-far — the classic drawdown of a
+// sequence. Always ≥ 0, zero whenever x_t sets a new running high (so row 0 is 0).
+// O(T), O(D) state. Output (T,D).
+
+import math
+
+fn cummax_minus_x_rows(x: Matrix) -> Matrix = {
+  let rx = matrix.to_lists(x)
+  let (t, _) = matrix.shape(x)
+  var acc: List[Float] = list.get_or(rx, 0, [])
+  var out: List[List[Float]] = []
+  var i = 0
+  while i < t {
+    let xi = list.get_or(rx, i, [])
+    acc = list.zip_with(acc, xi, (a, b) => math.fmax(a, b))
+    out = out + [list.zip_with(acc, xi, (a, b) => a - b)]
+    i = i + 1
+  }
+  matrix.from_lists(out)
+}
+
+// [3,1,2] → running max 3,3,3 → drawdown 0,2,1.
+test "cummax-minus-x is the running drawdown" {
+  let x = matrix.from_lists([[3.0], [1.0], [2.0]])
+  let y = cummax_minus_x_rows(x)
+  assert_eq(matrix.get(y, 0, 0), 0.0)
+  assert_eq(matrix.get(y, 1, 0), 2.0)
+  assert_eq(matrix.get(y, 2, 0), 1.0)
+}
+
+// a non-decreasing column always sets new highs → drawdown 0 throughout.
+test "cummax-minus-x is zero on a non-decreasing channel" {
+  let x = matrix.from_lists([[1.0], [2.0], [5.0]])
+  let y = cummax_minus_x_rows(x)
+  assert_eq(matrix.get(y, 0, 0), 0.0)
+  assert_eq(matrix.get(y, 1, 0), 0.0)
+  assert_eq(matrix.get(y, 2, 0), 0.0)
+}

@@ -1,0 +1,23 @@
+// cube_tanh — tanh(x)³. An odd squashing activation with a flatter dead-zone
+// near 0 than tanh (cubed) and the same ±1 saturation — a more selective,
+// sharper-shouldered tanh. tanh via exp. Elementwise.
+
+import math
+
+fn cube_tanh(m: Matrix) -> Matrix =
+  matrix.map(m, (x) => {
+    let t = 2.0 / (1.0 + math.exp(0.0 - 2.0 * x)) - 1.0
+    t * t * t
+  })
+
+test "cube_tanh at zero is zero" {
+  let y = cube_tanh(matrix.from_lists([[0.0]]))
+  assert_eq(matrix.get(y, 0, 0), 0.0)
+}
+
+// saturates +1 / -1; odd.
+test "cube_tanh saturates one and odd" {
+  let y = cube_tanh(matrix.from_lists([[30.0, -30.0]]))
+  assert(float.abs(matrix.get(y, 0, 0) - 1.0) < 0.000000001, "→ 1")
+  assert(float.abs(matrix.get(y, 0, 1) + 1.0) < 0.000000001, "→ -1")
+}

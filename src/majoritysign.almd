@@ -1,0 +1,40 @@
+// majority_sign_rows — the majority-vote direction of each row, (T,1).
+//   out_t = sign( Σ_j x_{t,j} )   ∈ {−1, 0, 1}.
+// Which way a row leans on balance: the sign of its total. This is the 1-bit aggregate a
+// BitNet readout collapses a row to — a hard, scale-free summary of net direction (0 only
+// when the row sums to exactly zero). Computed as a per-row sum followed by the usual
+// Float sign threshold (sign is Int-only). Output (T,1).
+
+fn majority_sign_rows(x: Matrix) -> Matrix = {
+  let rx = matrix.to_lists(x)
+  let (t, _d) = matrix.shape(x)
+  var out: List[List[Float]] = []
+  var i = 0
+  while i < t {
+    let xi = list.get_or(rx, i, [])
+    let s = xi |> list.fold(0.0, (acc, v) => acc + v)
+    let sg = if s > 0.0 then 1.0 else (if s < 0.0 then 0.0 - 1.0 else 0.0)
+    out = out + [[sg]]
+    i = i + 1
+  }
+  matrix.from_lists(out)
+}
+
+// row sums: [1+2−10]=−7 → −1; [4+1+1]=6 → +1; [3−3]=0 → 0.
+test "majority-sign is the sign of the row total" {
+  let x = matrix.from_lists([[1.0, 2.0, 0.0 - 10.0], [4.0, 1.0, 1.0], [3.0, 0.0 - 3.0, 0.0]])
+  let y = majority_sign_rows(x)
+  assert_eq(matrix.get(y, 0, 0), 0.0 - 1.0)
+  assert_eq(matrix.get(y, 1, 0), 1.0)
+  assert_eq(matrix.get(y, 2, 0), 0.0)
+}
+
+// output is always ternary: s·(s²−1) = 0 at every row.
+test "majority-sign outputs are exactly ternary" {
+  let x = matrix.from_lists([[5.0, 0.0 - 1.0], [0.0 - 2.0, 0.0 - 3.0]])
+  let y = majority_sign_rows(x)
+  let a = matrix.get(y, 0, 0)
+  let b = matrix.get(y, 1, 0)
+  assert_eq(a * (a * a - 1.0), 0.0)
+  assert_eq(b * (b * b - 1.0), 0.0)
+}

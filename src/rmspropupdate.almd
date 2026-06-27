@@ -1,0 +1,42 @@
+// rmsprop_update_rows — the preconditioned-gradient step of RMSProp / Adam (2-input):
+//   out_{t,j} = g_{t,j} / ( sqrt(v_{t,j}) + ε ),   ε = 1e-8   → (T,D).
+// Divides each gradient g by the root of its running second moment v (the ema_sq_rows
+// accumulator): the adaptive-learning-rate direction an Adam/RMSProp step takes before the
+// scalar lr. Coordinates with a large v (historically big/noisy gradients) are damped; small-v
+// coordinates pass through. Distinct from ema_sq_rows (which builds v) and from plain division —
+// the +ε is the optimizer's numerical floor. Two-input, elementwise. Output (T,D).
+
+import float
+import math
+
+fn rmsprop_update_rows(g: Matrix, v: Matrix) -> Matrix = {
+  let rg = matrix.to_lists(g)
+  let rv = matrix.to_lists(v)
+  let (t, _) = matrix.shape(g)
+  var out: List[List[Float]] = []
+  var i = 0
+  while i < t {
+    let gi = list.get_or(rg, i, [])
+    let vi = list.get_or(rv, i, [])
+    out = out + [list.zip_with(gi, vi, (gv, vv) => gv / (math.sqrt(vv) + 0.00000001))]
+    i = i + 1
+  }
+  matrix.from_lists(out)
+}
+
+// g=3, v=4 → 3/(sqrt(4)+ε) ≈ 3/2 = 1.5.
+test "rmsprop update preconditions the gradient by 1/sqrt(v)" {
+  let g = matrix.from_lists([[3.0]])
+  let v = matrix.from_lists([[4.0]])
+  let y = rmsprop_update_rows(g, v)
+  assert(float.abs(matrix.get(y, 0, 0) - 1.5) < 0.0000001, "3/2=1.5")
+}
+
+// equal gradients, unequal v: [2,2]/(sqrt([1,100])) = [2, 0.2] — the high-v dim is damped 10×.
+test "rmsprop update damps high-second-moment coordinates" {
+  let g = matrix.from_lists([[2.0, 2.0]])
+  let v = matrix.from_lists([[1.0, 100.0]])
+  let y = rmsprop_update_rows(g, v)
+  assert(float.abs(matrix.get(y, 0, 0) - 2.0) < 0.0000001, "2/1=2")
+  assert(float.abs(matrix.get(y, 0, 1) - 0.2) < 0.0000001, "2/10=0.2")
+}

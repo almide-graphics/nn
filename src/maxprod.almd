@@ -1,0 +1,43 @@
+// max_prod_rows — row-wise maximum elementwise product of two matrices:
+//
+//   out_r = max_j ( a_rj · b_rj )
+//
+// One value per row → output (T,1). The best single-coordinate agreement (a hard
+// / max-pooled bilinear score). Seeds the fold with the first product so negative
+// values are handled correctly. Two-input row reduction.
+
+import math
+
+fn max_prod_rows(a: Matrix, b: Matrix) -> Matrix = {
+  let ra = matrix.to_lists(a)
+  let rb = matrix.to_lists(b)
+  let (rows, _) = matrix.shape(a)
+  var out: List[List[Float]] = []
+  var n = 0
+  while n < rows {
+    let an = list.get_or(ra, n, [])
+    let bn = list.get_or(rb, n, [])
+    let ps = list.zip_with(an, bn, (x, y) => x * y)
+    let seed = list.get_or(ps, 0, 0.0)
+    let mx = ps |> list.fold(seed, (acc, v) => math.fmax(acc, v))
+    out = out + [[mx]]
+    n = n + 1
+  }
+  matrix.from_lists(out)
+}
+
+// products [3, 2] → max 3.
+test "max prod picks the largest product" {
+  let a = matrix.from_lists([[1.0, 2.0]])
+  let b = matrix.from_lists([[3.0, 1.0]])
+  let y = max_prod_rows(a, b)
+  assert_eq(matrix.get(y, 0, 0), 3.0)
+}
+
+// all-negative products [-3, -2] → max -2.
+test "max prod handles all-negative products" {
+  let a = matrix.from_lists([[0.0 - 1.0, 0.0 - 2.0]])
+  let b = matrix.from_lists([[3.0, 1.0]])
+  let y = max_prod_rows(a, b)
+  assert_eq(matrix.get(y, 0, 0), 0.0 - 2.0)
+}

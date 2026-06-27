@@ -1,0 +1,45 @@
+// hamming_sign_rows — row-wise binary Hamming distance between two matrices' signs.
+//   out_t = Σ_j [ sign(a_{t,j}) ≠ sign(b_{t,j}) ]        → one count per row, (T,1).
+// The dual of binary_dot: once both operands are binarized, the Hamming distance counts
+// the bits that disagree (a XOR popcount), and dot = D − 2·hamming for a full ±1 row.
+// It is the flip count a 1-bit update would have to pay — the natural distance on the
+// BitNet sign hypercube. Sign codes (both in {−1,0,1}) are compared by |s_a − s_b| < 0.5
+// for "equal", else counted as a disagreement. Two-input row reduction. Output (T,1).
+
+import float
+
+fn hamming_sign_rows(a: Matrix, b: Matrix) -> Matrix = {
+  let ra = matrix.to_lists(a)
+  let rb = matrix.to_lists(b)
+  let (t, _) = matrix.shape(a)
+  var out: List[List[Float]] = []
+  var i = 0
+  while i < t {
+    let ai = list.get_or(ra, i, [])
+    let bi = list.get_or(rb, i, [])
+    let diffs = list.zip_with(ai, bi, (u, v) => {
+      let su = if u > 0.0 then 1.0 else (if u < 0.0 then 0.0 - 1.0 else 0.0)
+      let sv = if v > 0.0 then 1.0 else (if v < 0.0 then 0.0 - 1.0 else 0.0)
+      if float.abs(su - sv) < 0.5 then 0.0 else 1.0
+    })
+    let dist = diffs |> list.fold(0.0, (acc, p) => acc + p)
+    out = out + [[dist]]
+    i = i + 1
+  }
+  matrix.from_lists(out)
+}
+
+// a=[+,+,−,−], b=[+,−,−,+]: disagree at j=1,3 → distance 2.
+test "hamming-sign counts the sign disagreements" {
+  let a = matrix.from_lists([[1.0, 2.0, 0.0 - 3.0, 0.0 - 4.0]])
+  let b = matrix.from_lists([[5.0, 0.0 - 6.0, 0.0 - 7.0, 8.0]])
+  let y = hamming_sign_rows(a, b)
+  assert_eq(matrix.get(y, 0, 0), 2.0)
+}
+
+// a matrix has zero Hamming distance to itself.
+test "hamming-sign of a matrix with itself is zero" {
+  let a = matrix.from_lists([[7.0, 0.0 - 3.0, 9.0]])
+  let y = hamming_sign_rows(a, a)
+  assert_eq(matrix.get(y, 0, 0), 0.0)
+}

@@ -1,0 +1,20 @@
+// shifted_softplus — softplus(x) - log(2), so that f(0)=0. Used in SchNet and
+// other molecular nets as a zero-centered smooth ReLU. Stable softplus form.
+
+import math
+
+fn shifted_softplus(m: Matrix) -> Matrix =
+  matrix.map(m, (x) =>
+    math.fmax(x, 0.0) + math.log(1.0 + math.exp(0.0 - float.abs(x))) - 0.6931471805599453)
+
+// softplus(0)=log2 → shifted_softplus(0)=0.
+test "shifted_softplus at zero is zero" {
+  let y = shifted_softplus(matrix.from_lists([[0.0]]))
+  assert(float.abs(matrix.get(y, 0, 0)) < 0.000000001, "= 0")
+}
+
+// Large negative → softplus→0 → shifted → -log2.
+test "shifted_softplus saturates left to minus log2" {
+  let y = shifted_softplus(matrix.from_lists([[-30.0]]))
+  assert(float.abs(matrix.get(y, 0, 0) + 0.6931471805599453) < 0.000000001, "= -log2")
+}

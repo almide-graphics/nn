@@ -1,0 +1,22 @@
+// tanh_squared — tanh(x)². An even, [0,1)-bounded "energy" gate: 0 at the origin,
+// saturating to 1 for large |x| (1 - sech²). tanh built from exp. Elementwise.
+
+import math
+
+fn tanh_squared(m: Matrix) -> Matrix =
+  matrix.map(m, (x) => {
+    let t = 2.0 / (1.0 + math.exp(0.0 - 2.0 * x)) - 1.0
+    t * t
+  })
+
+test "tanh_squared at zero is zero" {
+  let y = tanh_squared(matrix.from_lists([[0.0]]))
+  assert_eq(matrix.get(y, 0, 0), 0.0)
+}
+
+// saturates to 1; even.
+test "tanh_squared saturates to one and even" {
+  let y = tanh_squared(matrix.from_lists([[30.0, -30.0]]))
+  assert(float.abs(matrix.get(y, 0, 0) - 1.0) < 0.000000001, "→ 1")
+  assert(float.abs(matrix.get(y, 0, 1) - 1.0) < 0.000000001, "even")
+}

@@ -1,0 +1,46 @@
+// hadamard_sign_rows — elementwise product of the two matrices' signs.
+//   out_{t,j} = sign(a_{t,j}) · sign(b_{t,j})  ∈ {−1, 0, 1}
+// The bipolar XNOR of two {−1,+1} encodings: +1 where the signs agree, −1 where they
+// oppose, 0 if either entry is exactly 0. This is the per-coordinate term of a binary
+// (BitNet) inner product — the "beyond matmul" primitive where a multiply collapses to
+// a sign agreement. math.sign is Int-only, so each sign is the usual ±1/0 threshold.
+// Two-input, purely elementwise. Output (T,D).
+
+fn hadamard_sign_rows(a: Matrix, b: Matrix) -> Matrix = {
+  let ra = matrix.to_lists(a)
+  let rb = matrix.to_lists(b)
+  let (t, _) = matrix.shape(a)
+  var out: List[List[Float]] = []
+  var i = 0
+  while i < t {
+    let ai = list.get_or(ra, i, [])
+    let bi = list.get_or(rb, i, [])
+    let row = list.zip_with(ai, bi, (u, v) => {
+      let su = if u > 0.0 then 1.0 else (if u < 0.0 then 0.0 - 1.0 else 0.0)
+      let sv = if v > 0.0 then 1.0 else (if v < 0.0 then 0.0 - 1.0 else 0.0)
+      su * sv
+    })
+    out = out + [row]
+    i = i + 1
+  }
+  matrix.from_lists(out)
+}
+
+// a=[+,+,−], b=[+,−,−] → [+1, −1, +1]; a zero factor gives 0.
+test "hadamard-sign is +1 on agreement, -1 on opposition" {
+  let a = matrix.from_lists([[3.0, 2.0, 0.0 - 1.0], [0.0, 4.0, 0.0]])
+  let b = matrix.from_lists([[5.0, 0.0 - 4.0, 0.0 - 2.0], [9.0, 1.0, 0.0]])
+  let y = hadamard_sign_rows(a, b)
+  assert_eq(matrix.get(y, 0, 0), 1.0)
+  assert_eq(matrix.get(y, 0, 1), 0.0 - 1.0)
+  assert_eq(matrix.get(y, 0, 2), 1.0)
+  assert_eq(matrix.get(y, 1, 0), 0.0)
+}
+
+// product of a sign-only matrix with itself is +1 wherever nonzero (s·s = 1).
+test "hadamard-sign of a matrix with itself is one on its support" {
+  let a = matrix.from_lists([[7.0, 0.0 - 3.0]])
+  let y = hadamard_sign_rows(a, a)
+  assert_eq(matrix.get(y, 0, 0), 1.0)
+  assert_eq(matrix.get(y, 0, 1), 1.0)
+}

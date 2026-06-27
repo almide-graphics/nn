@@ -1,0 +1,25 @@
+// quartic_kernel — (max(0, 1-x²))². The Biweight/quartic kernel: a smooth,
+// compact-support bump (1 at 0, exactly 0 beyond |x|=1) with a flatter top than
+// the Epanechnikov bump. Even. Elementwise.
+
+import math
+
+fn quartic_kernel(m: Matrix) -> Matrix =
+  matrix.map(m, (x) => {
+    let u = math.fmax(0.0, 1.0 - x * x)
+    u * u
+  })
+
+// peak 1 at 0; (1-0.25)²=0.5625 at 0.5.
+test "quartic_kernel peak and interior" {
+  let y = quartic_kernel(matrix.from_lists([[0.0, 0.5]]))
+  assert_eq(matrix.get(y, 0, 0), 1.0)
+  assert_eq(matrix.get(y, 0, 1), 0.5625)
+}
+
+// exactly 0 at and beyond |x|=1.
+test "quartic_kernel zero outside unit" {
+  let y = quartic_kernel(matrix.from_lists([[1.0, -2.0]]))
+  assert_eq(matrix.get(y, 0, 0), 0.0)
+  assert_eq(matrix.get(y, 0, 1), 0.0)
+}

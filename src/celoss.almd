@@ -1,0 +1,44 @@
+// cross_entropy_rows — per-row softmax cross-entropy against a one-hot target:
+//
+//   ce_r = -Σ_j target_rj · logsoftmax(logits_r)_j
+//   logsoftmax_j = x_j - ( m + log Σ_i exp(x_i - m) ),  m = max_i x_i
+//
+// Output is one loss per row → (T,1). The training-head op the stdlib lacks.
+
+import math
+
+fn cross_entropy_rows(logits: Matrix, target: Matrix) -> Matrix = {
+  let rl = matrix.to_lists(logits)
+  let rt = matrix.to_lists(target)
+  let (t, _) = matrix.shape(logits)
+  var out: List[List[Float]] = []
+  var n = 0
+  while n < t {
+    let ln = list.get_or(rl, n, [])
+    let tn = list.get_or(rt, n, [])
+    let mx = ln |> list.fold(-1.0e38, (acc, v) => math.fmax(acc, v))
+    let sumexp = ln |> list.fold(0.0, (acc, v) => acc + math.exp(v - mx))
+    let lse = mx + math.log(sumexp)
+    let terms = list.zip_with(tn, ln, (tt, xx) => tt * (xx - lse))
+    let ce = terms |> list.fold(0.0, (acc, v) => acc + v)
+    out = out + [[0.0 - ce]]
+    n = n + 1
+  }
+  matrix.from_lists(out)
+}
+
+// Uniform logits, one-hot target → loss = log(n).
+test "cross_entropy uniform equals log n" {
+  let logits = matrix.from_lists([[0.0, 0.0]])
+  let target = matrix.from_lists([[1.0, 0.0]])
+  let y = cross_entropy_rows(logits, target)
+  assert(float.abs(matrix.get(y, 0, 0) - 0.6931471805599453) < 0.000000001, "log 2")
+}
+
+// Confident correct prediction → loss ≈ 0.
+test "cross_entropy confident correct is zero" {
+  let logits = matrix.from_lists([[100.0, 0.0]])
+  let target = matrix.from_lists([[1.0, 0.0]])
+  let y = cross_entropy_rows(logits, target)
+  assert(float.abs(matrix.get(y, 0, 0)) < 0.000000001, "≈ 0 loss")
+}

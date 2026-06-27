@@ -1,0 +1,49 @@
+// centered_sign_rows — sign of each entry relative to its own row mean (axis=1):
+//   μ_t = (1/D) Σ_j x_{t,j},   out_{t,j} = sign(x_{t,j} − μ_t)   ∈ {−1, 0, +1}.
+// A per-row competitive mask: which channels sit above (+1) / below (−1) / exactly at (0)
+// their row's average — lateral-inhibition / winner-direction pattern, the sign half of a
+// row-internal centering. Distinct from center_rows, which subtracts the per-channel time
+// mean (axis=0); here the mean is taken across the row (axis=1) and only its sign is kept.
+// One pass per row (row mean, then threshold). Output (T,D).
+
+import float
+
+fn centered_sign_rows(x: Matrix) -> Matrix = {
+  let rx = matrix.to_lists(x)
+  let (t, d) = matrix.shape(x)
+  let df = int.to_float(d)
+  var out: List[List[Float]] = []
+  var i = 0
+  while i < t {
+    let xi = list.get_or(rx, i, [])
+    let s = xi |> list.fold(0.0, (acc, v) => acc + v)
+    let mu = s / df
+    let row = xi |> list.map((v) => {
+      let c = v - mu
+      if c > 0.0 then 1.0 else (if c < 0.0 then 0.0 - 1.0 else 0.0)
+    })
+    out = out + [row]
+    i = i + 1
+  }
+  matrix.from_lists(out)
+}
+
+// row [1,2,3,6]: mean 3 → x−μ = [−2,−1,0,3] → signs [−1,−1,0,+1].
+test "centered-sign marks entries above/below/at the row mean" {
+  let x = matrix.from_lists([[1.0, 2.0, 3.0, 6.0]])
+  let y = centered_sign_rows(x)
+  assert_eq(matrix.get(y, 0, 0), 0.0 - 1.0)
+  assert_eq(matrix.get(y, 0, 1), 0.0 - 1.0)
+  assert_eq(matrix.get(y, 0, 2), 0.0)
+  assert_eq(matrix.get(y, 0, 3), 1.0)
+}
+
+// a constant row centers to all zeros; rows are independent (row1 mean 4 → [−1,−1,+1]).
+test "a constant row gives all zeros, rows handled independently" {
+  let x = matrix.from_lists([[5.0, 5.0, 5.0], [1.0, 2.0, 9.0]])
+  let y = centered_sign_rows(x)
+  assert_eq(matrix.get(y, 0, 0), 0.0)
+  assert_eq(matrix.get(y, 0, 1), 0.0)
+  assert_eq(matrix.get(y, 0, 2), 0.0)
+  assert_eq(matrix.get(y, 1, 2), 1.0)
+}

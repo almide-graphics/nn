@@ -1,0 +1,23 @@
+// abs_times_sigmoid — |x|·σ(x). A sigmoid-gated magnitude: ≈0 for x≪0 (the
+// gate kills the growing |x|), ≈x for x≫0, and 0 at the origin — a smooth
+// one-sided rectifier on |x| (SiLU-like but driven by magnitude). Elementwise.
+
+import math
+
+fn abs_times_sigmoid(m: Matrix) -> Matrix =
+  matrix.map(m, (x) => {
+    let s = 1.0 / (1.0 + math.exp(0.0 - x))
+    float.abs(x) * s
+  })
+
+test "abs_times_sigmoid at zero is zero" {
+  let y = abs_times_sigmoid(matrix.from_lists([[0.0]]))
+  assert_eq(matrix.get(y, 0, 0), 0.0)
+}
+
+// x>0: |x|·σ(x)=2·σ(2); x≪0: suppressed to ~0.
+test "abs_times_sigmoid right active left suppressed" {
+  let y = abs_times_sigmoid(matrix.from_lists([[2.0, -30.0]]))
+  assert(float.abs(matrix.get(y, 0, 0) - 1.7615941559557646) < 0.000000001, "x·σ(x)")
+  assert(float.abs(matrix.get(y, 0, 1)) < 0.000000001, "→ 0")
+}

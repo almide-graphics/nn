@@ -1,0 +1,46 @@
+// fma_rows — elementwise fused multiply-add of three matrices (3-input):
+//   out_{t,j} = a_{t,j}·b_{t,j} + c_{t,j}              → (T,D).
+// The multiply-accumulate primitive (torch.addcmul): scale-and-add in one op. The core of an
+// Adam-style second-moment update (v.addcmul(g, g)), of bias-add-after-product, and of any
+// "accumulate a product into a running tensor" step. Distinct from hadamard (just a·b) and from
+// lerp_rows (a + t·(b−a)); here the third operand is an independent additive term. Built from two
+// binary zip_with passes (a·b, then +c). Output (T,D).
+
+fn fma_rows(a: Matrix, b: Matrix, c: Matrix) -> Matrix = {
+  let ra = matrix.to_lists(a)
+  let rb = matrix.to_lists(b)
+  let rc = matrix.to_lists(c)
+  let (rows, _) = matrix.shape(a)
+  var out: List[List[Float]] = []
+  var i = 0
+  while i < rows {
+    let ai = list.get_or(ra, i, [])
+    let bi = list.get_or(rb, i, [])
+    let ci = list.get_or(rc, i, [])
+    let prod = list.zip_with(ai, bi, (av, bv) => av * bv)
+    let row = list.zip_with(prod, ci, (pv, cv) => pv + cv)
+    out = out + [row]
+    i = i + 1
+  }
+  matrix.from_lists(out)
+}
+
+// a·b + c: [2,3]·[4,5] + [1,1] = [9, 16].
+test "fma computes a*b + c elementwise" {
+  let a = matrix.from_lists([[2.0, 3.0]])
+  let b = matrix.from_lists([[4.0, 5.0]])
+  let c = matrix.from_lists([[1.0, 1.0]])
+  let y = fma_rows(a, b, c)
+  assert_eq(matrix.get(y, 0, 0), 9.0)
+  assert_eq(matrix.get(y, 0, 1), 16.0)
+}
+
+// with c = 0 it reduces to the Hadamard product a·b.
+test "fma with zero addend is the elementwise product" {
+  let a = matrix.from_lists([[0.0 - 2.0, 3.0]])
+  let b = matrix.from_lists([[5.0, 0.0 - 4.0]])
+  let c = matrix.from_lists([[0.0, 0.0]])
+  let y = fma_rows(a, b, c)
+  assert_eq(matrix.get(y, 0, 0), 0.0 - 10.0)
+  assert_eq(matrix.get(y, 0, 1), 0.0 - 12.0)
+}

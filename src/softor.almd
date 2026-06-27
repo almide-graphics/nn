@@ -1,0 +1,43 @@
+// soft_or_rows — the differentiable (probabilistic) OR gate, elementwise (2-input):
+//   out_{t,j} = a + b − a·b   for a, b ∈ [0,1]   → (T,D).
+// Reading a, b as independent Bernoulli probabilities, this is P(a OR b) = 1 − (1−a)(1−b). The
+// disjunction gate of the differentiable-logic substrate (difflogic), the third fundamental gate
+// alongside soft AND (a·b = hadamard) and soft XOR (a+b−2ab). Symmetric and non-complementary
+// (not a 1−gate). At the boolean corners it is the OR truth table; at a=b=½ it is ¾ (only the
+// all-false corner stays low). Output (T,D).
+
+import float
+
+fn soft_or_rows(a: Matrix, b: Matrix) -> Matrix = {
+  let ra = matrix.to_lists(a)
+  let rb = matrix.to_lists(b)
+  let (t, _) = matrix.shape(a)
+  var out: List[List[Float]] = []
+  var i = 0
+  while i < t {
+    let ai = list.get_or(ra, i, [])
+    let bi = list.get_or(rb, i, [])
+    out = out + [list.zip_with(ai, bi, (av, bv) => av + bv - av * bv)]
+    i = i + 1
+  }
+  matrix.from_lists(out)
+}
+
+// at the boolean corners it is the OR truth table: 0∨0=0, 0∨1=1, 1∨0=1, 1∨1=1.
+test "soft-or reduces to the OR truth table at boolean corners" {
+  let a = matrix.from_lists([[0.0, 0.0, 1.0, 1.0]])
+  let b = matrix.from_lists([[0.0, 1.0, 0.0, 1.0]])
+  let y = soft_or_rows(a, b)
+  assert_eq(matrix.get(y, 0, 0), 0.0)
+  assert_eq(matrix.get(y, 0, 1), 1.0)
+  assert_eq(matrix.get(y, 0, 2), 1.0)
+  assert_eq(matrix.get(y, 0, 3), 1.0)
+}
+
+// at a = b = ½: ½ + ½ − ¼ = ¾.
+test "soft-or at p=0.5 is three quarters" {
+  let a = matrix.from_lists([[0.5]])
+  let b = matrix.from_lists([[0.5]])
+  let y = soft_or_rows(a, b)
+  assert(float.abs(matrix.get(y, 0, 0) - 0.75) < 0.000000001, "0.75")
+}

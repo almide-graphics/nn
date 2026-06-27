@@ -1,0 +1,104 @@
+// wkv — RWKV-4 WKV operator (attention-free token mixing), in the
+// numerically-stabilized recurrent (inference) form. Per channel:
+//
+//   wkv_t = ( Σ_{i<t} exp(-(t-1-i)·w + k_i)·v_i  +  exp(u + k_t)·v_t )
+//         / ( Σ_{i<t} exp(-(t-1-i)·w + k_i)      +  exp(u + k_t) )
+//
+// w = per-channel time-decay (≥0, subtracted in the exponent each step),
+// u = per-channel bonus on the current token. The running state (a,b,p) keeps
+// numerator/denominator and a max-exponent p for stability — O(1) state per
+// channel, O(T) over the sequence, exactly like scan_diag (see src/scan.almd).
+//
+// Output is a convex combination of past+current v with positive normalized
+// weights → it never leaves the range of the v's. The "selective scan" core
+// (src/scan.almd) and this share the same recurrence shape; this one adds the
+// softmax-style normalization that makes it attention-free attention.
+
+import math
+
+fn wkv(k: Matrix, v: Matrix, w: List[Float], u: List[Float]) -> Matrix = {
+  let rk = matrix.to_lists(k)
+  let rv = matrix.to_lists(v)
+  let (t, d) = matrix.shape(k)
+  var a: List[Float] = list.range(0, d) |> list.map((_) => 0.0)
+  var b: List[Float] = list.range(0, d) |> list.map((_) => 0.0)
+  var p: List[Float] = list.range(0, d) |> list.map((_) => -1.0e38)
+  var out: List[List[Float]] = []
+  var i = 0
+  while i < t {
+    let ki = list.get_or(rk, i, [])
+    let vi = list.get_or(rv, i, [])
+
+    // --- output at t: include current token via bonus u ---
+    let uk = list.zip_with(u, ki, (uu, kk) => uu + kk)            // u + k_t
+    let q  = list.zip_with(p, uk, (pp, qq) => math.fmax(pp, qq))  // max(p, u+k)
+    let e1 = list.zip_with(p, q, (pp, qq) => math.exp(pp - qq))   // exp(p - q)
+    let e2 = list.zip_with(uk, q, (xx, qq) => math.exp(xx - qq))  // exp(u+k - q)
+    let e1a = list.zip_with(e1, a, (ee, aa) => ee * aa)
+    let e2v = list.zip_with(e2, vi, (ee, vv) => ee * vv)
+    let num = list.zip_with(e1a, e2v, (l, r) => l + r)
+    let e1b = list.zip_with(e1, b, (ee, bb) => ee * bb)
+    let den = list.zip_with(e1b, e2, (l, r) => l + r)
+    let wkv_t = list.zip_with(num, den, (nn, dd) => nn / dd)
+    out = out + [wkv_t]
+
+    // --- state update: decay previous accumulators by w, fold in v_t ---
+    let pw  = list.zip_with(p, w, (pp, ww) => pp - ww)            // p - w
+    let q2  = list.zip_with(pw, ki, (pp, kk) => math.fmax(pp, kk))// max(p-w, k)
+    let f1  = list.zip_with(pw, q2, (pp, qq) => math.exp(pp - qq))
+    let f2  = list.zip_with(ki, q2, (kk, qq) => math.exp(kk - qq))
+    let na1 = list.zip_with(f1, a, (ee, aa) => ee * aa)
+    let na2 = list.zip_with(f2, vi, (ee, vv) => ee * vv)
+    let nb1 = list.zip_with(f1, b, (ee, bb) => ee * bb)
+    a = list.zip_with(na1, na2, (l, r) => l + r)
+    b = list.zip_with(nb1, f2, (l, r) => l + r)
+    p = q2
+    i = i + 1
+  }
+  matrix.from_lists(out)
+}
+
+// Invariant 1: with no history, the first token's output is exactly v_0
+// (the only weighted term is the current one).
+test "wkv first token equals v_0" {
+  let k = matrix.from_lists([[0.1, -0.2], [0.5, 0.3]])
+  let v = matrix.from_lists([[1.0, 2.0], [9.0, 8.0]])
+  let y = wkv(k, v, [0.3, 0.8], [0.2, -0.1])
+  assert_eq(matrix.get(y, 0, 0), 1.0)
+  assert_eq(matrix.get(y, 0, 1), 2.0)
+}
+
+// Invariant 2: WKV is a convex combination of the v's → constant v yields that
+// constant at every step, for any k/w/u.
+test "wkv of constant values is that constant" {
+  let k = matrix.from_lists([[0.1, -0.7], [0.5, 0.3], [-0.2, 0.9]])
+  let v = matrix.from_lists([[4.0, 4.0], [4.0, 4.0], [4.0, 4.0]])
+  let y = wkv(k, v, [0.3, 0.8], [0.2, -0.1])
+  assert(float.abs(matrix.get(y, 2, 0) - 4.0) < 0.000000001, "row2 col0 != 4")
+  assert(float.abs(matrix.get(y, 1, 1) - 4.0) < 0.000000001, "row1 col1 != 4")
+}
+
+// Independent oracle: numpy float64 reference (tools/.venv numpy 1.26.4),
+// same stabilized recurrence. Agreement to 1e-9 is the op-level parity receipt.
+test "wkv matches numpy float64 reference" {
+  let k = matrix.from_lists([[0.1, -0.2, 0.3], [0.5, 0.0, -0.1], [-0.3, 0.2, 0.4], [0.2, -0.1, 0.0]])
+  let v = matrix.from_lists([[1.0, 2.0, -1.0], [0.5, -0.5, 2.0], [-1.0, 1.0, 0.0], [2.0, 0.0, 1.0]])
+  let y = wkv(k, v, [0.3, 0.8, 0.5], [0.2, -0.1, 0.4])
+  let ref = [
+    1.0, 2.0, -1.0,
+    0.6771718468871023, 0.68755203130265, 0.5,
+    0.2189177361937694, 0.5422169408740924, 0.25092851526758286,
+    0.8521113573338583, 0.4999831889809908, 0.5194436826824578
+  ]
+  var r = 0
+  while r < 4 {
+    var c = 0
+    while c < 3 {
+      let got = matrix.get(y, r, c)
+      let want = list.get_or(ref, r * 3 + c, 0.0)
+      assert(float.abs(got - want) < 0.000000001, "wkv cell vs numpy mismatch")
+      c = c + 1
+    }
+    r = r + 1
+  }
+}

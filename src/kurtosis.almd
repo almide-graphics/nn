@@ -1,0 +1,44 @@
+// kurtosis_rows — population excess kurtosis (4th standardized moment) of each row (axis=1):
+//   μ  = (1/D) Σ_j x_j,   m2 = (1/D) Σ_j (x_j−μ)²,   m4 = (1/D) Σ_j (x_j−μ)⁴
+//   out_t = m4 / (σ⁴ + ε) − 3,   σ⁴ = m2²            → one value per row, (T,1).
+// The tailedness / peakedness of a row's distribution, with the Gaussian baseline removed
+// (excess form): ≈0 for a normal-shaped row, <0 for flat / two-point / bimodal rows (min
+// −2), >0 for heavy-tailed rows with outliers. The 4th-moment companion to skewness_rows,
+// completing mean/var/std/skew/kurt — an activation-distribution diagnostic (outlier /
+// saturation detection). σ⁴ is m2² (no sqrt needed). The +ε guards a constant row against
+// division by zero. Two passes (mean, then 2nd/4th central moments). Output (T,1).
+
+import float
+
+fn kurtosis_rows(x: Matrix) -> Matrix = {
+  let rx = matrix.to_lists(x)
+  let (t, d) = matrix.shape(x)
+  let df = int.to_float(d)
+  var out: List[List[Float]] = []
+  var i = 0
+  while i < t {
+    let xi = list.get_or(rx, i, [])
+    let mean = (xi |> list.fold(0.0, (acc, v) => acc + v)) / df
+    let m2 = (xi |> list.fold(0.0, (acc, v) => acc + (v - mean) * (v - mean))) / df
+    let m4 = (xi |> list.fold(0.0, (acc, v) => {
+      let dd = (v - mean) * (v - mean)
+      acc + dd * dd
+    })) / df
+    out = out + [[m4 / (m2 * m2 + 0.000000000001) - 3.0]]
+    i = i + 1
+  }
+  matrix.from_lists(out)
+}
+
+// two-point symmetric row [−1,−1,1,1]: m2=1, m4=1 → excess kurtosis 1−3 = −2 (the minimum).
+test "a two-point symmetric row has excess kurtosis −2 (the floor)" {
+  let x = matrix.from_lists([[0.0 - 1.0, 0.0 - 1.0, 1.0, 1.0]])
+  let y = kurtosis_rows(x)
+  assert(float.abs(matrix.get(y, 0, 0) - (0.0 - 2.0)) < 0.000000001, "−2")
+}
+
+// constant row (σ=0): the +ε keeps it finite (0/ε − 3 = −3), never a division by zero.
+test "a constant row is ε-guarded to a finite value" {
+  let y = kurtosis_rows(matrix.from_lists([[5.0, 5.0, 5.0]]))
+  assert(float.abs(matrix.get(y, 0, 0) - (0.0 - 3.0)) < 0.000000001, "0/ε − 3 = −3, finite")
+}

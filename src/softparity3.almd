@@ -1,0 +1,57 @@
+// soft_parity3_rows — the differentiable 3-input parity (XOR-of-three) gate, elementwise (3-input):
+//   out = a + b + c − 2(ab + bc + ca) + 4abc   for a, b, c ∈ [0,1]   → (T,D).
+// Reading a, b, c as independent Bernoulli probabilities, this is P(an odd number of the three are
+// on) — the multilinear extension of a⊕b⊕c, equal to (1 − (1−2a)(1−2b)(1−2c))/2. Parity is the
+// other fundamental symmetric function alongside majority, and the classic separator of circuit
+// classes: it is provably hard for AC⁰ and unreachable by any single linear or threshold unit, so a
+// differentiable network that learns it is computing genuinely beyond matmul. At the boolean corners
+// it is the parity truth table (1 iff an odd count); at a=b=c=½ it is ½. Symmetric in its inputs.
+// Output (T,D).
+
+import float
+
+fn soft_parity3_rows(a: Matrix, b: Matrix, c: Matrix) -> Matrix = {
+  let ra = matrix.to_lists(a)
+  let rb = matrix.to_lists(b)
+  let rc = matrix.to_lists(c)
+  let (t, d) = matrix.shape(a)
+  var out: List[List[Float]] = []
+  var i = 0
+  while i < t {
+    let ai = list.get_or(ra, i, [])
+    let bi = list.get_or(rb, i, [])
+    let ci = list.get_or(rc, i, [])
+    var row: List[Float] = []
+    var j = 0
+    while j < d {
+      let av = list.get_or(ai, j, 0.0)
+      let bv = list.get_or(bi, j, 0.0)
+      let cv = list.get_or(ci, j, 0.0)
+      row = row + [av + bv + cv - 2.0 * (av * bv + bv * cv + cv * av) + 4.0 * av * bv * cv]
+      j = j + 1
+    }
+    out = out + [row]
+    i = i + 1
+  }
+  matrix.from_lists(out)
+}
+
+// parity truth table: (1,1,1)→1 (odd 3), (1,1,0)→0 (even 2), (1,0,0)→1 (odd 1).
+test "soft-parity-3 matches the XOR/parity truth table at corners" {
+  let a = matrix.from_lists([[1.0, 1.0, 1.0]])
+  let b = matrix.from_lists([[1.0, 1.0, 0.0]])
+  let c = matrix.from_lists([[1.0, 0.0, 0.0]])
+  let y = soft_parity3_rows(a, b, c)
+  assert_eq(matrix.get(y, 0, 0), 1.0)
+  assert_eq(matrix.get(y, 0, 1), 0.0)
+  assert_eq(matrix.get(y, 0, 2), 1.0)
+}
+
+// at a = b = c = ½: 1.5 − 2·0.75 + 4·0.125 = 1.5 − 1.5 + 0.5 = 0.5.
+test "soft-parity-3 at p=0.5 is one half" {
+  let a = matrix.from_lists([[0.5]])
+  let b = matrix.from_lists([[0.5]])
+  let c = matrix.from_lists([[0.5]])
+  let y = soft_parity3_rows(a, b, c)
+  assert(float.abs(matrix.get(y, 0, 0) - 0.5) < 0.000000001, "0.5")
+}

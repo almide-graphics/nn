@@ -1,0 +1,21 @@
+// recip_1px2_cube — 1/(1+x²)³. The cubed Lorentzian: even, peaks at 1, with
+// ~x⁻⁶ tails (lighter than recip_1px2_sq's ~x⁻⁴) — the most concentrated of the
+// rational-kernel family. Elementwise.
+
+fn recip_1px2_cube(m: Matrix) -> Matrix =
+  matrix.map(m, (x) => {
+    let d = 1.0 / (1.0 + x * x)
+    d * d * d
+  })
+
+test "recip_1px2_cube peaks at one when x=0" {
+  let y = recip_1px2_cube(matrix.from_lists([[0.0]]))
+  assert_eq(matrix.get(y, 0, 0), 1.0)
+}
+
+// (1/2)³=0.125 at x=±1; even.
+test "recip_1px2_cube eighth at plus minus one" {
+  let y = recip_1px2_cube(matrix.from_lists([[1.0, -1.0]]))
+  assert_eq(matrix.get(y, 0, 0), 0.125)
+  assert_eq(matrix.get(y, 0, 1), 0.125)
+}

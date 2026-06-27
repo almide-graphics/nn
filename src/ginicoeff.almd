@@ -1,0 +1,43 @@
+// gini_coeff_abs_rows — the Gini coefficient of each row's magnitudes (axis=1):
+//   v = |x|,   out_t = ( Σ_i Σ_j |v_i − v_j| ) / ( 2·D·Σ_j v_j + ε )   ∈ [0,1), (T,1).
+// A concentration / inequality measure of the magnitude distribution: 0 when all |x| are
+// equal (perfectly spread), → (D−1)/D when a single coordinate carries everything (maximally
+// concentrated). A continuous, scale-invariant sparsity gauge — distinct from
+// ternary_density_rows (a hard-threshold kept fraction) and from the variance/entropy spreads;
+// it is the measure used to track weight concentration in pruning / BitNet studies. The
+// all-pairs mean absolute difference is computed as a nested per-row fold (O(D²)). +ε guards
+// an all-zero row. Output (T,1).
+
+import float
+
+fn gini_coeff_abs_rows(x: Matrix) -> Matrix = {
+  let rx = matrix.to_lists(x)
+  let (t, d) = matrix.shape(x)
+  let df = int.to_float(d)
+  var out: List[List[Float]] = []
+  var i = 0
+  while i < t {
+    let xi = list.get_or(rx, i, [])
+    let v = xi |> list.map((a) => float.abs(a))
+    let total = v |> list.map((vi) => v |> list.fold(0.0, (acc, vj) => acc + float.abs(vi - vj)))
+                  |> list.fold(0.0, (acc, s) => acc + s)
+    let sumv = v |> list.fold(0.0, (acc, a) => acc + a)
+    out = out + [[total / (2.0 * df * sumv + 0.000000000001)]]
+    i = i + 1
+  }
+  matrix.from_lists(out)
+}
+
+// equal magnitudes → no inequality → Gini 0.
+test "an all-equal-magnitude row has zero Gini" {
+  let x = matrix.from_lists([[3.0, 3.0, 3.0, 3.0]])
+  let y = gini_coeff_abs_rows(x)
+  assert(float.abs(matrix.get(y, 0, 0)) < 0.000000001, "equality → 0")
+}
+
+// one nonzero of D=4 is maximally concentrated → Gini = (D−1)/D = 0.75.
+test "a one-hot magnitude row has Gini (D−1)/D = 0.75" {
+  let x = matrix.from_lists([[0.0, 0.0, 0.0, 4.0]])
+  let y = gini_coeff_abs_rows(x)
+  assert(float.abs(matrix.get(y, 0, 0) - 0.75) < 0.000000001, "(4−1)/4")
+}

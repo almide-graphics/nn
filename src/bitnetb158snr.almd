@@ -1,0 +1,59 @@
+// bitnet_b158_quant_snr_rows — per-row signal-to-quantization-noise ratio of BitNet b1.58.
+//   γ   = (1 / (T·D)) Σ_{t,j} |x_{t,j}|              (per-tensor absmean scale)
+//   code = +1 if x/γ > 0.5 ; −1 if x/γ < −0.5 ; 0    ;   q = γ·code
+//   out_t = (Σ_j x²) / (Σ_j (x−q)² + ε)              → one ratio per row, (T,1).
+// The quantization quality of b1.58 per row: signal power over the power of the residual
+// that bitnet_b158_quant_error_rows leaves (the linear SQNR the per-tensor 1.58-bit weight
+// achieves). Distinct from quant_snr_rows (binary b1, β·sign⁺) and ternary_quant_snr_rows
+// (TWN, per-row α): here the scale γ is a single per-tensor absmean shared across all rows,
+// so a row's SNR depends on the global scale. The +ε guards an already-quantized row. Two
+// passes (γ over all cells, then per-row signal/noise). Output (T,1).
+
+import float
+
+fn bitnet_b158_quant_snr_rows(x: Matrix) -> Matrix = {
+  let rx = matrix.to_lists(x)
+  let (t, d) = matrix.shape(x)
+  let n = int.to_float(t * d)
+  // pass 1: per-tensor absmean γ.
+  var total = 0.0
+  var p = 0
+  while p < t {
+    let xp = list.get_or(rx, p, [])
+    let s = xp |> list.fold(0.0, (acc, v) => acc + float.abs(v))
+    total = total + s
+    p = p + 1
+  }
+  let gamma = total / n
+  // pass 2: per-row signal power over b1.58 residual power.
+  var out: List[List[Float]] = []
+  var i = 0
+  while i < t {
+    let xi = list.get_or(rx, i, [])
+    let sig = xi |> list.fold(0.0, (acc, v) => acc + v * v)
+    let noise = xi |> list.fold(0.0, (acc, v) => {
+      let u = v / gamma
+      let code = if u > 0.5 then 1.0 else (if u < (0.0 - 0.5) then 0.0 - 1.0 else 0.0)
+      let e = v - gamma * code
+      acc + e * e
+    })
+    out = out + [[sig / (noise + 0.000000000001)]]
+    i = i + 1
+  }
+  matrix.from_lists(out)
+}
+
+// [2,2,−2,−2]: γ=2, code [+1,+1,−1,−1], q=x → residual 0 → SNR = ‖x‖²/ε (huge, ε-guarded).
+test "an already-b1.58 row has near-zero noise and a huge finite SNR" {
+  let x = matrix.from_lists([[2.0, 2.0, 0.0 - 2.0, 0.0 - 2.0]])
+  let y = bitnet_b158_quant_snr_rows(x)
+  assert(matrix.get(y, 0, 0) > 1000000.0, "exact b1.58 → huge SNR")
+}
+
+// single row [4,1,1,0]: γ=1.5; code [+1,+1,+1,0]; q=[1.5,1.5,1.5,0];
+//   residual [2.5,−0.5,−0.5,0]; sig=18, noise=6.75 → 8/3.
+test "b1.58-quant-snr is row signal power over b1.58 noise power" {
+  let x = matrix.from_lists([[4.0, 1.0, 1.0, 0.0]])
+  let y = bitnet_b158_quant_snr_rows(x)
+  assert(float.abs(matrix.get(y, 0, 0) - 2.6666666666666665) < 0.0000001, "8/3")
+}

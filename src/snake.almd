@@ -1,0 +1,18 @@
+// snake — x + sin²(x). The Snake activation (Ziyin et al.): an identity trend
+// plus a periodic bump, good at learning periodic signals. Elementwise.
+
+import math
+
+fn snake(m: Matrix) -> Matrix =
+  matrix.map(m, (x) => x + math.sin(x) * math.sin(x))
+
+test "snake at zero is zero" {
+  let y = snake(matrix.from_lists([[0.0]]))
+  assert_eq(matrix.get(y, 0, 0), 0.0)
+}
+
+// snake(π/2) = π/2 + 1.
+test "snake at pi/2" {
+  let y = snake(matrix.from_lists([[1.5707963267948966]]))
+  assert(float.abs(matrix.get(y, 0, 0) - 2.5707963267948966) < 0.000000001, "= π/2+1")
+}

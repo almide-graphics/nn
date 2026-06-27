@@ -1,0 +1,16 @@
+// clamp_unit — clamp x to the unit interval [0,1]: max(0, min(1, x)).
+// The fixed-range counterpart of hardsigmoid's output; gating / opacity values.
+// Elementwise.
+
+import math
+
+fn clamp_unit(m: Matrix) -> Matrix =
+  matrix.map(m, (x) => math.fmax(0.0, math.fmin(1.0, x)))
+
+// x<0 → 0 ; x in [0,1] → x ; x>1 → 1.
+test "clamp_unit clamps to [0,1]" {
+  let y = clamp_unit(matrix.from_lists([[-2.0, 0.5, 3.0]]))
+  assert_eq(matrix.get(y, 0, 0), 0.0)
+  assert_eq(matrix.get(y, 0, 1), 0.5)
+  assert_eq(matrix.get(y, 0, 2), 1.0)
+}

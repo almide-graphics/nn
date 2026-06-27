@@ -1,0 +1,22 @@
+// hardswish — piecewise-linear swish (MobileNetV3): x · hardσ(x),
+//   hardσ(x) = clip((x+3)/6, 0, 1)        clip(v,a,b) = max(a, min(b, v))
+// Cheap, quantization-friendly swish. Elementwise. (matrix stdlib has gelu but
+// no hard* activations.)
+
+import math
+
+fn hardswish(m: Matrix) -> Matrix =
+  matrix.map(m, (x) => x * math.fmax(0.0, math.fmin(1.0, (x + 3.0) / 6.0)))
+
+// x ≤ -3 → hardσ = 0 → hardswish = 0.
+test "hardswish saturates left to zero" {
+  let y = hardswish(matrix.from_lists([[-3.0, -5.0]]))
+  assert_eq(matrix.get(y, 0, 0), 0.0)
+  assert_eq(matrix.get(y, 0, 1), 0.0)
+}
+
+// x ≥ 3 → hardσ = 1 → hardswish = x.
+test "hardswish passes large positive through" {
+  let y = hardswish(matrix.from_lists([[6.0]]))
+  assert_eq(matrix.get(y, 0, 0), 6.0)
+}

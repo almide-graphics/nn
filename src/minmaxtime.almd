@@ -1,0 +1,48 @@
+// minmax_time_rows — min-max normalization along the time axis (down the rows):
+//   out_{t,c} = (x_{t,c} − mn_c) / (mx_c − mn_c),  mn_c = min_t x,  mx_c = max_t x.
+// Rescales each channel's trajectory to the [0,1] range over time (axis=0 feature
+// scaling). Two passes. Output (T,D).
+
+import math
+
+fn minmax_time_rows(x: Matrix) -> Matrix = {
+  let rx = matrix.to_lists(x)
+  let (t, _) = matrix.shape(x)
+  var mn: List[Float] = list.get_or(rx, 0, [])
+  var mx: List[Float] = list.get_or(rx, 0, [])
+  var i = 0
+  while i < t {
+    let xi = list.get_or(rx, i, [])
+    mn = list.zip_with(mn, xi, (a, b) => math.fmin(a, b))
+    mx = list.zip_with(mx, xi, (a, b) => math.fmax(a, b))
+    i = i + 1
+  }
+  let den = list.zip_with(mx, mn, (a, b) => a - b)
+  var out: List[List[Float]] = []
+  var j = 0
+  while j < t {
+    let xj = list.get_or(rx, j, [])
+    let num = list.zip_with(xj, mn, (a, b) => a - b)
+    out = out + [list.zip_with(num, den, (a, b) => a / b)]
+    j = j + 1
+  }
+  matrix.from_lists(out)
+}
+
+// single channel [0,2,4]: mn=0, mx=4 → [0, 0.5, 1].
+test "minmax over time rescales to zero-one" {
+  let x = matrix.from_lists([[0.0], [2.0], [4.0]])
+  let y = minmax_time_rows(x)
+  assert_eq(matrix.get(y, 0, 0), 0.0)
+  assert_eq(matrix.get(y, 1, 0), 0.5)
+  assert_eq(matrix.get(y, 2, 0), 1.0)
+}
+
+// per channel: min→0, max→1.
+test "minmax over time hits zero and one per channel" {
+  let x = matrix.from_lists([[1.0, 10.0], [3.0, 30.0]])
+  let y = minmax_time_rows(x)
+  assert_eq(matrix.get(y, 0, 0), 0.0)
+  assert_eq(matrix.get(y, 1, 0), 1.0)
+  assert_eq(matrix.get(y, 1, 1), 1.0)
+}

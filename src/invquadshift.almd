@@ -1,0 +1,18 @@
+// inv_quad_shift — 1/(1 + (x-1)²). A Lorentzian / Cauchy RBF centered at 1
+// (shifted inv_quad): peaks at 1, heavy polynomial tails, symmetric about its
+// center. A localized attention bump away from the origin. Elementwise.
+
+fn inv_quad_shift(m: Matrix) -> Matrix =
+  matrix.map(m, (x) => 1.0 / (1.0 + (x - 1.0) * (x - 1.0)))
+
+test "inv_quad_shift peaks at one when x=1" {
+  let y = inv_quad_shift(matrix.from_lists([[1.0]]))
+  assert_eq(matrix.get(y, 0, 0), 1.0)
+}
+
+// 1/(1+1)=0.5 at x=0 and x=2 (symmetric about 1).
+test "inv_quad_shift half at zero and two" {
+  let y = inv_quad_shift(matrix.from_lists([[0.0, 2.0]]))
+  assert_eq(matrix.get(y, 0, 0), 0.5)
+  assert_eq(matrix.get(y, 0, 1), 0.5)
+}

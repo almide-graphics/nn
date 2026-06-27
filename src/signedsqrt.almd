@@ -1,0 +1,46 @@
+// signed_sqrt_rows — signed square root, sign(x)·sqrt(|x|), elementwise.
+//   out_{t,j} = sign(x_{t,j}) · sqrt(|x_{t,j}|),   sign(0) = 0  ⇒  out = 0
+// A symmetric variance-stabilizing transform: it compresses large magnitudes like a
+// square root while preserving sign, and is its own odd reflection (f(−x) = −f(x)).
+// Common as a feature-squashing / reward-scaling map. math.sign is Int-only, so the
+// sign is written directly as a ±1/0 threshold; sqrt acts on |x| ≥ 0 so it never sees
+// a negative argument. Purely elementwise — no reductions. Output (T,D).
+
+import float
+import math
+
+fn signed_sqrt_rows(x: Matrix) -> Matrix = {
+  let rx = matrix.to_lists(x)
+  let (t, _d) = matrix.shape(x)
+  var out: List[List[Float]] = []
+  var i = 0
+  while i < t {
+    let xi = list.get_or(rx, i, [])
+    let row = xi |> list.map((v) => {
+      let s = if v > 0.0 then 1.0 else (if v < 0.0 then 0.0 - 1.0 else 0.0)
+      s * math.sqrt(float.abs(v))
+    })
+    out = out + [row]
+    i = i + 1
+  }
+  matrix.from_lists(out)
+}
+
+// 9 → +3, −4 → −2, 0 → 0.
+test "signed-sqrt preserves sign and takes root of magnitude" {
+  let x = matrix.from_lists([[9.0, 0.0 - 4.0], [0.0, 0.25]])
+  let y = signed_sqrt_rows(x)
+  assert_eq(matrix.get(y, 0, 0), 3.0)
+  assert_eq(matrix.get(y, 0, 1), 0.0 - 2.0)
+  assert_eq(matrix.get(y, 1, 0), 0.0)
+  assert_eq(matrix.get(y, 1, 1), 0.5)
+}
+
+// odd symmetry: f(−v) = −f(v), so f(v) + f(−v) = 0 exactly.
+test "signed-sqrt is an odd function" {
+  let x = matrix.from_lists([[5.0]])
+  let xn = matrix.from_lists([[0.0 - 5.0]])
+  let a = matrix.get(signed_sqrt_rows(x), 0, 0)
+  let b = matrix.get(signed_sqrt_rows(xn), 0, 0)
+  assert_eq(a + b, 0.0)
+}

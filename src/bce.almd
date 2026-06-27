@@ -1,0 +1,42 @@
+// bce_rows — row-wise binary cross-entropy between predictions p and targets t:
+//
+//   bce_r = −(1/D) · Σ_j [ t_rj·log p_rj + (1−t_rj)·log(1−p_rj) ]
+//
+// One value per row → output (T,1). The canonical sigmoid/binary classification
+// loss (supports soft targets). Assumes p, t ∈ (0,1). Two-input row reduction.
+
+import math
+
+fn bce_rows(p: Matrix, t: Matrix) -> Matrix = {
+  let rp = matrix.to_lists(p)
+  let rt = matrix.to_lists(t)
+  let (rows, d) = matrix.shape(p)
+  let df = int.to_float(d)
+  var out: List[List[Float]] = []
+  var n = 0
+  while n < rows {
+    let pn = list.get_or(rp, n, [])
+    let tn = list.get_or(rt, n, [])
+    let s = list.zip_with(pn, tn, (pj, tj) => 0.0 - (tj * math.log(pj) + (1.0 - tj) * math.log(1.0 - pj))) |> list.fold(0.0, (acc, v) => acc + v)
+    out = out + [[s / df]]
+    n = n + 1
+  }
+  matrix.from_lists(out)
+}
+
+// p=0.5, t∈{1,0}: each term −log0.5 = log2 → mean = log2.
+test "bce at half is log2" {
+  let p = matrix.from_lists([[0.5, 0.5]])
+  let t = matrix.from_lists([[1.0, 0.0]])
+  let y = bce_rows(p, t)
+  assert(float.abs(matrix.get(y, 0, 0) - 0.6931471805599453) < 0.000000001, "log2")
+}
+
+// confident-correct predictions give strictly lower loss than the p=0.5 case.
+test "bce confident correct gives lower loss" {
+  let p = matrix.from_lists([[0.9, 0.1]])
+  let t = matrix.from_lists([[1.0, 0.0]])
+  let y = bce_rows(p, t)
+  assert(matrix.get(y, 0, 0) > 0.0, "positive")
+  assert(matrix.get(y, 0, 0) < 0.6931471805599453, "< log2")
+}

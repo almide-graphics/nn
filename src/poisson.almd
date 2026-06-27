@@ -1,0 +1,42 @@
+// poisson_loss_rows — row-wise Poisson negative log-likelihood between rate
+// predictions p (>0) and counts/targets t (≥0):
+//
+//   loss_r = (1/D) · Σ_j ( p_rj − t_rj·log p_rj )
+//
+// One value per row → output (T,1). The count-regression loss (dropping the
+// data-only log t! term). Two-input row reduction.
+
+import math
+
+fn poisson_loss_rows(p: Matrix, t: Matrix) -> Matrix = {
+  let rp = matrix.to_lists(p)
+  let rt = matrix.to_lists(t)
+  let (rows, d) = matrix.shape(p)
+  let df = int.to_float(d)
+  var out: List[List[Float]] = []
+  var n = 0
+  while n < rows {
+    let pn = list.get_or(rp, n, [])
+    let tn = list.get_or(rt, n, [])
+    let s = list.zip_with(pn, tn, (pj, tj) => pj - tj * math.log(pj)) |> list.fold(0.0, (acc, v) => acc + v)
+    out = out + [[s / df]]
+    n = n + 1
+  }
+  matrix.from_lists(out)
+}
+
+// t=0: loss = mean(p) (the −t·log p term vanishes).
+test "poisson with zero target equals mean prediction" {
+  let p = matrix.from_lists([[2.0, 2.0]])
+  let t = matrix.from_lists([[0.0, 0.0]])
+  let y = poisson_loss_rows(p, t)
+  assert_eq(matrix.get(y, 0, 0), 2.0)
+}
+
+// p=1, t=1: 1 − 1·log1 = 1.
+test "poisson at unit rate and count is one" {
+  let p = matrix.from_lists([[1.0]])
+  let t = matrix.from_lists([[1.0]])
+  let y = poisson_loss_rows(p, t)
+  assert_eq(matrix.get(y, 0, 0), 1.0)
+}

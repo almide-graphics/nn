@@ -1,0 +1,39 @@
+// cummin_rows — cumulative minimum over time (down the rows): out_t = min_{i≤t} x_i
+// (elementwise per channel). The min analogue of cumsum_rows / cummax_rows; a
+// running-floor sequence primitive (monotone lower envelope over a prefix).
+// Seeds the running state with the first row. O(T), O(D) state. Output (T,D).
+
+import math
+
+fn cummin_rows(x: Matrix) -> Matrix = {
+  let rx = matrix.to_lists(x)
+  let (t, _) = matrix.shape(x)
+  var acc: List[Float] = list.get_or(rx, 0, [])
+  var out: List[List[Float]] = []
+  var i = 0
+  while i < t {
+    let xi = list.get_or(rx, i, [])
+    acc = list.zip_with(acc, xi, (a, b) => math.fmin(a, b))
+    out = out + [acc]
+    i = i + 1
+  }
+  matrix.from_lists(out)
+}
+
+// running min down the rows: [5,2]→[3,2]→[3,1].
+test "cummin accumulates the running min down rows" {
+  let x = matrix.from_lists([[5.0, 2.0], [3.0, 4.0], [8.0, 1.0]])
+  let y = cummin_rows(x)
+  assert_eq(matrix.get(y, 0, 0), 5.0)
+  assert_eq(matrix.get(y, 1, 0), 3.0)
+  assert_eq(matrix.get(y, 2, 1), 1.0)
+}
+
+// single channel stays at the running floor: 8,3,3.
+test "cummin holds the floor" {
+  let x = matrix.from_lists([[8.0], [3.0], [5.0]])
+  let y = cummin_rows(x)
+  assert_eq(matrix.get(y, 0, 0), 8.0)
+  assert_eq(matrix.get(y, 1, 0), 3.0)
+  assert_eq(matrix.get(y, 2, 0), 3.0)
+}

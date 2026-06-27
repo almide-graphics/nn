@@ -1,0 +1,40 @@
+// taylor_softmax_rows — second-order Taylor (polynomial) softmax over each row (axis=1):
+//   n_{t,j} = 1 + x_{t,j} + ½·x_{t,j}²,   out_{t,j} = n_{t,j} / Σ_k n_{t,k}   → (T,D).
+// A softmax alternative that replaces exp(x) with its 2nd-order Taylor polynomial. Each
+// numerator n = ½(x+1)² + ½ ≥ ½ > 0, so the row is a valid probability distribution (positive,
+// sums to 1) with no max-subtraction and no ε needed — and no transcendental, which is why it
+// shows up in efficient / linear-attention work. Distinct from the stdlib exp-softmax (a
+// different functional form, heavier-tailed for large |x|). Per-row normalize. Output (T,D).
+
+import float
+
+fn taylor_softmax_rows(x: Matrix) -> Matrix = {
+  let rx = matrix.to_lists(x)
+  let (t, _) = matrix.shape(x)
+  var out: List[List[Float]] = []
+  var i = 0
+  while i < t {
+    let xi = list.get_or(rx, i, [])
+    let num = xi |> list.map((v) => 1.0 + v + 0.5 * v * v)
+    let z = num |> list.fold(0.0, (acc, v) => acc + v)
+    out = out + [num |> list.map((v) => v / z)]
+    i = i + 1
+  }
+  matrix.from_lists(out)
+}
+
+// the output row is a probability distribution → it sums to 1.
+test "taylor-softmax rows sum to one" {
+  let x = matrix.from_lists([[0.0, 1.0, 0.0 - 1.0]])
+  let y = taylor_softmax_rows(x)
+  let s = matrix.get(y, 0, 0) + matrix.get(y, 0, 1) + matrix.get(y, 0, 2)
+  assert(float.abs(s - 1.0) < 0.000000001, "sum to 1")
+}
+
+// [0,1,−1]: num=[1,2.5,0.5], z=4 → p=[0.25,0.625,0.125]; the largest input gets the most mass.
+test "taylor-softmax gives the largest input the largest weight" {
+  let x = matrix.from_lists([[0.0, 1.0, 0.0 - 1.0]])
+  let y = taylor_softmax_rows(x)
+  assert(float.abs(matrix.get(y, 0, 1) - 0.625) < 0.000000001, "p1 = 2.5/4")
+  assert(matrix.get(y, 0, 1) > matrix.get(y, 0, 0), "x=1 beats x=0")
+}

@@ -1,0 +1,45 @@
+// bt_preference_rows — the Bradley–Terry pairwise preference probability, elementwise (2-input):
+//   out_{t,j} = σ(a − b) = 1 / (1 + exp(−(a − b)))   → (T,D).
+// Given two scalar scores a (for option A) and b (for option B), this is P(A is preferred over B)
+// under the Bradley–Terry / logistic comparison model — the head of an RLHF reward model and of
+// learning-to-rank. Distinct from a plain sigmoid (a unary squashing): this is the binary comparison
+// operator on a *pair* of scores, the quantity a preference dataset supervises. Equal scores give
+// ½; a dominating score saturates toward 1 (and its mirror toward 0). Computed directly (scores are
+// moderate, so 1/(1+exp(−d)) is stable for the seeded range). Output (T,D).
+
+import float
+import math
+
+fn bt_preference_rows(a: Matrix, b: Matrix) -> Matrix = {
+  let ra = matrix.to_lists(a)
+  let rb = matrix.to_lists(b)
+  let (t, _) = matrix.shape(a)
+  var out: List[List[Float]] = []
+  var i = 0
+  while i < t {
+    let ai = list.get_or(ra, i, [])
+    let bi = list.get_or(rb, i, [])
+    out = out + [list.zip_with(ai, bi, (av, bv) => 1.0 / (1.0 + math.exp(0.0 - (av - bv))))]
+    i = i + 1
+  }
+  matrix.from_lists(out)
+}
+
+// equal scores → indifference: σ(0) = ½.
+test "preference of equal scores is one half" {
+  let a = matrix.from_lists([[3.0, 1.0]])
+  let b = matrix.from_lists([[3.0, 1.0]])
+  let y = bt_preference_rows(a, b)
+  assert(float.abs(matrix.get(y, 0, 0) - 0.5) < 0.000000001, "σ(0)=0.5")
+  assert(float.abs(matrix.get(y, 0, 1) - 0.5) < 0.000000001, "σ(0)=0.5")
+}
+
+// a dominating score is strongly preferred (σ(10) ≈ 0.99995), but still below 1.
+test "preference favors the higher score" {
+  let a = matrix.from_lists([[10.0]])
+  let b = matrix.from_lists([[0.0]])
+  let y = bt_preference_rows(a, b)
+  let v = matrix.get(y, 0, 0)
+  assert(v > 0.999, "a strongly preferred")
+  assert(v < 1.0, "still below certainty")
+}

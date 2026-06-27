@@ -1,0 +1,49 @@
+// welsch_loss_rows — per-row Welsch (Leclerc) robust loss between two rows (2-input):
+//   out_t = (1/D) Σ_j 0.5·( 1 − exp( −(a_{t,j} − b_{t,j})² ) )   → (T,1).   (scale c = 1)
+// A *bounded, redescending* M-estimator: each residual contributes at most 0.5, and as |r| grows the
+// influence (the derivative) returns to zero, so gross outliers are rejected outright rather than
+// merely down-weighted. This is qualitatively different from every loss already here — Huber /
+// smooth_l1 / Charbonnier (linear tails), log-cosh (linear tail), Cauchy (logarithmic tail) all keep
+// growing, so their influence never vanishes. Welsch is the only saturating one (used in robust
+// vision / IRLS). A perfect match costs 0, a large error saturates at 0.5. Output (T,1).
+
+import float
+import math
+
+fn welsch_loss_rows(a: Matrix, b: Matrix) -> Matrix = {
+  let ra = matrix.to_lists(a)
+  let rb = matrix.to_lists(b)
+  let (t, d) = matrix.shape(a)
+  var out: List[List[Float]] = []
+  var i = 0
+  while i < t {
+    let ai = list.get_or(ra, i, [])
+    let bi = list.get_or(rb, i, [])
+    var s = 0.0
+    var j = 0
+    while j < d {
+      let r = list.get_or(ai, j, 0.0) - list.get_or(bi, j, 0.0)
+      s = s + 0.5 * (1.0 - math.exp(0.0 - r * r))
+      j = j + 1
+    }
+    out = out + [[s / int.to_float(d)]]
+    i = i + 1
+  }
+  matrix.from_lists(out)
+}
+
+// a perfect match has zero residual → zero loss.
+test "welsch loss is zero for a perfect match" {
+  let a = matrix.from_lists([[1.0, 2.0, 3.0]])
+  let b = matrix.from_lists([[1.0, 2.0, 3.0]])
+  let y = welsch_loss_rows(a, b)
+  assert(float.abs(matrix.get(y, 0, 0)) < 0.000000001, "0")
+}
+
+// a large error saturates at the cap 0.5 (the redescending plateau).
+test "welsch loss saturates at 0.5 for large errors" {
+  let a = matrix.from_lists([[10.0]])
+  let b = matrix.from_lists([[0.0]])
+  let y = welsch_loss_rows(a, b)
+  assert(float.abs(matrix.get(y, 0, 0) - 0.5) < 0.0001, "≈0.5")
+}

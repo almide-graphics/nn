@@ -1,0 +1,18 @@
+// bent_identity — (√(x²+1) - 1)/2 + x. A near-identity activation with a gentle
+// nonlinear bend; never saturates, always ≥ x (the bend term is ≥0). Elementwise.
+
+import math
+
+fn bent_identity(m: Matrix) -> Matrix =
+  matrix.map(m, (x) => (math.sqrt(x * x + 1.0) - 1.0) / 2.0 + x)
+
+test "bent_identity at zero is zero" {
+  let y = bent_identity(matrix.from_lists([[0.0]]))
+  assert_eq(matrix.get(y, 0, 0), 0.0)
+}
+
+// the bend term (√(x²+1)-1)/2 is strictly positive away from 0, so f(x) > x.
+test "bent_identity lies above identity" {
+  let y = bent_identity(matrix.from_lists([[5.0]]))
+  assert(matrix.get(y, 0, 0) > 5.0, "above identity")
+}

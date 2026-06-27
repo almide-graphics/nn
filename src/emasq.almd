@@ -1,0 +1,38 @@
+// ema_sq_rows — exponential moving average of squares over time (down the rows, per channel):
+//   s_t = β·s_{t-1} + (1−β)·x_t²,   s starts at 0,   β = 0.9   (elementwise per channel).
+// The running second-moment estimate that RMSProp / Adam keep (v ← β·v + (1−β)·g²): an
+// exponentially-weighted mean square, zero-initialized like ema (so s_0 = (1−β)·x_0²). Distinct
+// from ema (a moving average of x itself), from cumrms_rows (a uniform-weight RMS, no decay) and
+// from cumvar_rows (centered). One O(D)-state recurrence over time. Output (T,D).
+
+import float
+
+fn ema_sq_rows(x: Matrix) -> Matrix = {
+  let rx = matrix.to_lists(x)
+  let (t, d) = matrix.shape(x)
+  var s: List[Float] = list.range(0, d) |> list.map((_) => 0.0)
+  var out: List[List[Float]] = []
+  var n = 0
+  while n < t {
+    let xn = list.get_or(rx, n, [])
+    s = list.zip_with(s, xn, (sv, xv) => 0.9 * sv + 0.1 * (xv * xv))
+    out = out + [s]
+    n = n + 1
+  }
+  matrix.from_lists(out)
+}
+
+// β=0.9 recurrence from zero init: column [0,10] → s_0 = 0, s_1 = 0.9·0 + 0.1·100 = 10.
+test "ema-of-squares applies the β=0.9 recurrence from zero init" {
+  let x = matrix.from_lists([[0.0], [10.0]])
+  let y = ema_sq_rows(x)
+  assert(float.abs(matrix.get(y, 0, 0)) < 0.000000001, "0.1·0 = 0")
+  assert(float.abs(matrix.get(y, 1, 0) - 10.0) < 0.000000001, "0.9·0+0.1·100 = 10")
+}
+
+// the first step is (1−β)·x₀²: x₀=4 → 0.1·16 = 1.6 (zero-init bias).
+test "ema-of-squares first step is (1−β)·x0 squared" {
+  let x = matrix.from_lists([[4.0]])
+  let y = ema_sq_rows(x)
+  assert(float.abs(matrix.get(y, 0, 0) - 1.6) < 0.000000001, "0.1·16 = 1.6")
+}

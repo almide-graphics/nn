@@ -1,0 +1,42 @@
+// dice_coeff_rows — row-wise Sørensen–Dice coefficient of two matrices:
+//   dice_t = 2·(Σ_j a_{t,j}·b_{t,j}) / (Σ_j a_{t,j}² + Σ_j b_{t,j}² + ε)   → one value per row, (T,1).
+// The soft Dice overlap (F1 for continuous masks): twice the inner product over the sum of the
+// squared norms. Distinct from cosine_sim_rows, which divides by the *product* of the norms
+// (geometric mean) — Dice uses their arithmetic mean ×2, so it also reacts to magnitude
+// mismatch, not just direction. 1 for identical rows, 0 for orthogonal. The standard
+// segmentation-overlap objective. Two-input row reduction; +ε guards an all-zero pair. (T,1).
+
+import float
+
+fn dice_coeff_rows(a: Matrix, b: Matrix) -> Matrix = {
+  let ra = matrix.to_lists(a)
+  let rb = matrix.to_lists(b)
+  let (t, _) = matrix.shape(a)
+  var out: List[List[Float]] = []
+  var i = 0
+  while i < t {
+    let ai = list.get_or(ra, i, [])
+    let bi = list.get_or(rb, i, [])
+    let dot = list.zip_with(ai, bi, (x, y) => x * y) |> list.fold(0.0, (acc, v) => acc + v)
+    let na = ai |> list.fold(0.0, (acc, v) => acc + v * v)
+    let nb = bi |> list.fold(0.0, (acc, v) => acc + v * v)
+    out = out + [[2.0 * dot / (na + nb + 0.000000000001)]]
+    i = i + 1
+  }
+  matrix.from_lists(out)
+}
+
+// a row overlaps perfectly with itself → Dice 1.
+test "dice coefficient of a row with itself is 1" {
+  let a = matrix.from_lists([[1.0, 2.0, 3.0]])
+  let y = dice_coeff_rows(a, a)
+  assert(float.abs(matrix.get(y, 0, 0) - 1.0) < 0.000000001, "self → 1")
+}
+
+// orthogonal rows → 0; [2,0] vs [1,0] → 2·2/(4+1) = 0.8 (magnitude-sensitive, unlike cosine).
+test "dice is 0 for orthogonal rows and magnitude-sensitive otherwise" {
+  let yo = dice_coeff_rows(matrix.from_lists([[3.0, 0.0]]), matrix.from_lists([[0.0, 4.0]]))
+  assert(float.abs(matrix.get(yo, 0, 0)) < 0.000000001, "orthogonal → 0")
+  let yv = dice_coeff_rows(matrix.from_lists([[2.0, 0.0]]), matrix.from_lists([[1.0, 0.0]]))
+  assert(float.abs(matrix.get(yv, 0, 0) - 0.8) < 0.000000001, "2·2/(4+1)=0.8")
+}

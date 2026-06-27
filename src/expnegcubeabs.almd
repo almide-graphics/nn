@@ -1,0 +1,20 @@
+// exp_neg_cube_abs — exp(-|x|³). A super-Gaussian bump: even, peaks at 1, decays
+// faster than a Gaussian (cubic exponent) — a flat-topped, sharp-skirted
+// localization window. Elementwise.
+
+import math
+
+fn exp_neg_cube_abs(m: Matrix) -> Matrix =
+  matrix.map(m, (x) => math.exp(0.0 - float.abs(x * x * x)))
+
+test "exp_neg_cube_abs peaks at one when x=0" {
+  let y = exp_neg_cube_abs(matrix.from_lists([[0.0]]))
+  assert_eq(matrix.get(y, 0, 0), 1.0)
+}
+
+// exp(-1) at x=1; even.
+test "exp_neg_cube_abs at 1 and even" {
+  let y = exp_neg_cube_abs(matrix.from_lists([[1.0, -1.0]]))
+  assert(float.abs(matrix.get(y, 0, 0) - 0.36787944117144233) < 0.000000001, "e⁻¹")
+  assert(float.abs(matrix.get(y, 0, 1) - 0.36787944117144233) < 0.000000001, "even")
+}

@@ -1,0 +1,23 @@
+// cube_softsign — softsign(x)³ = (x/(1+|x|))³. An odd, (-1,1)-bounded activation
+// with a flatter dead-zone near 0 than softsign (cubed) and the same slow
+// polynomial saturation. A gentler, more selective softsign. Elementwise.
+
+import math
+
+fn cube_softsign(m: Matrix) -> Matrix =
+  matrix.map(m, (x) => {
+    let s = x / (1.0 + float.abs(x))
+    s * s * s
+  })
+
+test "cube_softsign at zero is zero" {
+  let y = cube_softsign(matrix.from_lists([[0.0]]))
+  assert_eq(matrix.get(y, 0, 0), 0.0)
+}
+
+// (1/2)³ = 0.125 at x=1; odd → -0.125 at x=-1.
+test "cube_softsign odd with eighth magnitude at one" {
+  let y = cube_softsign(matrix.from_lists([[1.0, -1.0]]))
+  assert_eq(matrix.get(y, 0, 0), 0.125)
+  assert_eq(matrix.get(y, 0, 1), -0.125)
+}

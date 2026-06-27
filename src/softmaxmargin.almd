@@ -1,0 +1,45 @@
+// softmax_margin_rows — the top-1 minus top-2 softmax probability of each row (axis=1):
+//   p_j = exp(x−m)/Σ exp(x−m),  m = max_i x_i
+//   p1 = max_j p_j,   p2 = max_{j : p_j < p1} p_j,   out_t = p1 − p2   ∈ [0,1],  (T,1).
+// "Margin sampling": the gap between the two most probable classes — the standard
+// active-learning uncertainty score (small ⇒ the model is torn between two options). Unlike
+// logit_margin_rows (a raw logit difference, unbounded, depending only on the top two logits),
+// this lives in probability space: the softmax couples in every logit, so it is bounded and a
+// genuinely different function. Second-largest probability found sort-free (sentinel −1e38).
+// Per-row reduction. Output (T,1).
+
+import float
+import math
+
+fn softmax_margin_rows(x: Matrix) -> Matrix = {
+  let rx = matrix.to_lists(x)
+  let (t, _) = matrix.shape(x)
+  var out: List[List[Float]] = []
+  var i = 0
+  while i < t {
+    let xi = list.get_or(rx, i, [])
+    let m = xi |> list.fold(list.get_or(xi, 0, 0.0), (acc, v) => math.fmax(acc, v))
+    let e = xi |> list.map((v) => math.exp(v - m))
+    let z = e |> list.fold(0.0, (acc, v) => acc + v)
+    let p = e |> list.map((ej) => ej / z)
+    let p1 = p |> list.fold(0.0 - 1.0e38, (acc, v) => math.fmax(acc, v))
+    let p2 = p |> list.fold(0.0 - 1.0e38, (acc, v) => if v < p1 then math.fmax(acc, v) else acc)
+    out = out + [[p1 - p2]]
+    i = i + 1
+  }
+  matrix.from_lists(out)
+}
+
+// two logits [2,0]: softmax margin = (e²−1)/(e²+1) = tanh(1).
+test "softmax margin for two logits [2,0] is tanh(1)" {
+  let x = matrix.from_lists([[2.0, 0.0]])
+  let y = softmax_margin_rows(x)
+  assert(float.abs(matrix.get(y, 0, 0) - 0.7615941559557649) < 0.000000001, "tanh(1)")
+}
+
+// a confident logit row → top prob ≈ 1, runner-up ≈ 0 → margin ≈ 1.
+test "a confident logit row has softmax margin near 1" {
+  let x = matrix.from_lists([[100.0, 0.0, 0.0]])
+  let y = softmax_margin_rows(x)
+  assert(matrix.get(y, 0, 0) > 0.9999, "confident → ≈ 1")
+}

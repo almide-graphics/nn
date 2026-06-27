@@ -1,0 +1,49 @@
+// lerp_rows — elementwise linear interpolation between two matrices by a per-element weight (3-input):
+//   out_{t,j} = a_{t,j} + t_{t,j}·(b_{t,j} − a_{t,j})   → (T,D).
+// The interpolation / blend primitive (torch.lerp): t=0 returns a, t=1 returns b, t=0.5 the
+// midpoint; t outside [0,1] extrapolates. The read-out of a gated residual / highway mix, of a
+// Polyak/EMA parameter update (a + τ(b−a)), and of mixup-style sample interpolation. The weight
+// t is a full matrix, so the blend is per-coordinate. Built from two binary zip_with passes
+// (b−a, then a + t·diff). Output (T,D).
+
+import float
+
+fn lerp_rows(a: Matrix, b: Matrix, t: Matrix) -> Matrix = {
+  let ra = matrix.to_lists(a)
+  let rb = matrix.to_lists(b)
+  let rt = matrix.to_lists(t)
+  let (rows, _) = matrix.shape(a)
+  var out: List[List[Float]] = []
+  var i = 0
+  while i < rows {
+    let ai = list.get_or(ra, i, [])
+    let bi = list.get_or(rb, i, [])
+    let ti = list.get_or(rt, i, [])
+    let diff = list.zip_with(bi, ai, (bv, av) => bv - av)
+    let scaled = list.zip_with(ti, diff, (tv, dv) => tv * dv)
+    let row = list.zip_with(ai, scaled, (av, sv) => av + sv)
+    out = out + [row]
+    i = i + 1
+  }
+  matrix.from_lists(out)
+}
+
+// t=0 returns a, t=1 returns b: a=[1,2], b=[5,6], t=[0,1] → [1, 6].
+test "lerp at t=0 returns a, at t=1 returns b" {
+  let a = matrix.from_lists([[1.0, 2.0]])
+  let b = matrix.from_lists([[5.0, 6.0]])
+  let t = matrix.from_lists([[0.0, 1.0]])
+  let y = lerp_rows(a, b, t)
+  assert_eq(matrix.get(y, 0, 0), 1.0)
+  assert_eq(matrix.get(y, 0, 1), 6.0)
+}
+
+// t=0.5 gives the midpoint: a=[0,0], b=[4,10] → [2, 5].
+test "lerp at t=0.5 is the midpoint" {
+  let a = matrix.from_lists([[0.0, 0.0]])
+  let b = matrix.from_lists([[4.0, 10.0]])
+  let t = matrix.from_lists([[0.5, 0.5]])
+  let y = lerp_rows(a, b, t)
+  assert(float.abs(matrix.get(y, 0, 0) - 2.0) < 0.000000001, "mid 2")
+  assert(float.abs(matrix.get(y, 0, 1) - 5.0) < 0.000000001, "mid 5")
+}

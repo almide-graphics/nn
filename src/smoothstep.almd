@@ -1,0 +1,19 @@
+// smoothstep — Hermite S-curve: clamp x to [0,1] then 3c²-2c³. Smoothly ramps
+// 0→1 with zero slope at both ends (C¹). The standard GLSL interpolation gate.
+// Elementwise.
+
+import math
+
+fn smoothstep(m: Matrix) -> Matrix =
+  matrix.map(m, (x) => {
+    let c = math.fmax(0.0, math.fmin(1.0, x))
+    c * c * (3.0 - 2.0 * c)
+  })
+
+// clamps below 0 and above 1; symmetric value 0.5 at x=0.5.
+test "smoothstep clamps and is half at midpoint" {
+  let y = smoothstep(matrix.from_lists([[-1.0, 0.5, 2.0]]))
+  assert_eq(matrix.get(y, 0, 0), 0.0)
+  assert_eq(matrix.get(y, 0, 1), 0.5)
+  assert_eq(matrix.get(y, 0, 2), 1.0)
+}

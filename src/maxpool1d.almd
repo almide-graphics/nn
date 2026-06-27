@@ -1,0 +1,46 @@
+// max_pool1d_k2_rows — 1-D max pooling with kernel 2, stride 2, along each row:
+//   out_{t,j} = max(x_{t,2j}, x_{t,2j+1})   for j = 0 … D/2−1   → (T, D/2).
+// Non-overlapping max-pool downsampling (the conv-net / token-merging primitive): each adjacent
+// pair of features collapses to its larger value, halving the width. Distinct from the full-row
+// pools here (max_rows / meanpool / sumpool reduce a whole row to a scalar) and from attention_pool
+// — this is a *windowed* reduction that changes the output shape to (T, D/2). Assumes an even D;
+// scans the row in steps of two (no integer division). Output (T, D/2).
+
+import math
+
+fn max_pool1d_k2_rows(x: Matrix) -> Matrix = {
+  let rx = matrix.to_lists(x)
+  let (t, d) = matrix.shape(x)
+  var out: List[List[Float]] = []
+  var i = 0
+  while i < t {
+    let xi = list.get_or(rx, i, [])
+    var row: List[Float] = []
+    var j = 0
+    while j < d {
+      let a = list.get_or(xi, j, 0.0)
+      let b = list.get_or(xi, j + 1, 0.0)
+      row = row + [math.fmax(a, b)]
+      j = j + 2
+    }
+    out = out + [row]
+    i = i + 1
+  }
+  matrix.from_lists(out)
+}
+
+// each adjacent pair collapses to its max: [1,3,2,5] → [3,5].
+test "max-pool-1d takes the max of each adjacent pair" {
+  let x = matrix.from_lists([[1.0, 3.0, 2.0, 5.0]])
+  let y = max_pool1d_k2_rows(x)
+  assert_eq(matrix.get(y, 0, 0), 3.0)
+  assert_eq(matrix.get(y, 0, 1), 5.0)
+}
+
+// negatives: keeps the larger (less negative) of each pair: [−1,−3,−5,−2] → [−1,−2].
+test "max-pool-1d keeps the larger of each negative pair" {
+  let x = matrix.from_lists([[0.0 - 1.0, 0.0 - 3.0, 0.0 - 5.0, 0.0 - 2.0]])
+  let y = max_pool1d_k2_rows(x)
+  assert_eq(matrix.get(y, 0, 0), 0.0 - 1.0)
+  assert_eq(matrix.get(y, 0, 1), 0.0 - 2.0)
+}

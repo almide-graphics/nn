@@ -1,0 +1,20 @@
+// exp_half_neg_sq — exp(-x²/2). The (unnormalized) standard-normal density: a
+// unit-σ Gaussian bump. Wider than the gaussian op (exp(-x²)); the kernel for
+// RBF/attention with σ=1. Even, peaks at 1. Elementwise.
+
+import math
+
+fn exp_half_neg_sq(m: Matrix) -> Matrix =
+  matrix.map(m, (x) => math.exp(0.0 - 0.5 * x * x))
+
+test "exp_half_neg_sq peaks at one when x=0" {
+  let y = exp_half_neg_sq(matrix.from_lists([[0.0]]))
+  assert_eq(matrix.get(y, 0, 0), 1.0)
+}
+
+// at x=√2: exp(-0.5·2) = exp(-1); even.
+test "exp_half_neg_sq at sqrt2 and even" {
+  let y = exp_half_neg_sq(matrix.from_lists([[1.4142135623730951, -1.4142135623730951]]))
+  assert(float.abs(matrix.get(y, 0, 0) - 0.36787944117144233) < 0.000000001, "e⁻¹")
+  assert(float.abs(matrix.get(y, 0, 1) - 0.36787944117144233) < 0.000000001, "even")
+}

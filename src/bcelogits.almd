@@ -1,0 +1,45 @@
+// bce_with_logits_rows — numerically stable binary cross-entropy from logits (2-input):
+//   per element  ℓ = max(z,0) − z·y + log(1 + exp(−|z|)),   out_t = (1/D) Σ_j ℓ_{t,j}   → (T,1).
+// The logit-space binary cross-entropy (torch.binary_cross_entropy_with_logits): fuses the sigmoid
+// and the cross-entropy into the log-sum-exp-stable form, so it never forms exp(z) or log(0) for
+// large |z|. Distinct from bce_rows, which takes already-sigmoided probabilities p and computes
+// −y log p −(1−y) log(1−p); this takes raw logits z and is stable. A confident-correct logit costs
+// ≈0; a zero logit costs log 2 (chance) regardless of label. Row-mean reduction. Output (T,1).
+
+import float
+import math
+
+fn bce_with_logits_rows(z: Matrix, y: Matrix) -> Matrix = {
+  let rz = matrix.to_lists(z)
+  let ry = matrix.to_lists(y)
+  let (t, d) = matrix.shape(z)
+  let df = int.to_float(d)
+  var out: List[List[Float]] = []
+  var i = 0
+  while i < t {
+    let zi = list.get_or(rz, i, [])
+    let yi = list.get_or(ry, i, [])
+    let s = list.zip_with(zi, yi, (zv, yv) =>
+      math.fmax(zv, 0.0) - zv * yv + math.log(1.0 + math.exp(0.0 - float.abs(zv))))
+      |> list.fold(0.0, (acc, v) => acc + v)
+    out = out + [[s / df]]
+    i = i + 1
+  }
+  matrix.from_lists(out)
+}
+
+// a confident-correct logit (z large positive, y=1) costs ≈ 0.
+test "confident-correct logit has near-zero BCE-with-logits" {
+  let z = matrix.from_lists([[100.0]])
+  let y = matrix.from_lists([[1.0]])
+  let l = bce_with_logits_rows(z, y)
+  assert(float.abs(matrix.get(l, 0, 0)) < 0.0001, "≈ 0")
+}
+
+// a zero logit costs log 2 (chance) regardless of the label.
+test "a zero logit costs log 2 regardless of label" {
+  let z = matrix.from_lists([[0.0]])
+  let y = matrix.from_lists([[0.0]])
+  let l = bce_with_logits_rows(z, y)
+  assert(float.abs(matrix.get(l, 0, 0) - 0.6931471805599453) < 0.000000001, "log 2")
+}

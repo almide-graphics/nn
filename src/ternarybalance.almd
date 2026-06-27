@@ -1,0 +1,44 @@
+// ternary_balance_rows — net polarity of TWN ternary quantization, per row.
+//   Δ_t = 0.7 · (1/D) Σ_j |x_{t,j}|                    (per-row absmean threshold)
+//   code_{t,j} = +1 if x > Δ ; −1 if x < −Δ ; 0 otherwise
+//   out_t = (1/D) Σ_j code_{t,j}  =  (#pos − #neg)/D    → one value per row ∈ [−1,1].
+// The signed counterpart of ternary_density_rows (which averages |code| = the mask): this
+// averages the signed code, so it measures the directional bias of a ternarized row — how
+// far from sign-balanced the kept {−1,+1} weights are (0 = balanced, ±1 = all one sign).
+// A bias-free quantizer keeps this near 0. Differs from mean_sign_rows, which has no
+// dead-zone. Per-row reduction (absmean → signed count → divide by D). Output (T,1).
+
+import float
+
+fn ternary_balance_rows(x: Matrix) -> Matrix = {
+  let rx = matrix.to_lists(x)
+  let (t, d) = matrix.shape(x)
+  let df = int.to_float(d)
+  var out: List[List[Float]] = []
+  var i = 0
+  while i < t {
+    let xi = list.get_or(rx, i, [])
+    let s = xi |> list.fold(0.0, (acc, v) => acc + float.abs(v))
+    let delta = 0.7 * (s / df)
+    let net = xi |> list.fold(0.0, (acc, v) =>
+      acc + (if v > delta then 1.0 else (if v < (0.0 - delta) then 0.0 - 1.0 else 0.0)))
+    out = out + [[net / df]]
+    i = i + 1
+  }
+  matrix.from_lists(out)
+}
+
+// row [3,-4,0.1]: Δ=0.7·(7.1/3)=1.657 → codes {+1,−1,0}, net 0 → balanced polarity 0.
+test "a one-up one-down row has zero net polarity" {
+  let x = matrix.from_lists([[3.0, 0.0 - 4.0, 0.1]])
+  let y = ternary_balance_rows(x)
+  assert_eq(matrix.get(y, 0, 0), 0.0)
+}
+
+// all kept-positive → +1; all kept-negative → −1 (Δ=1.4 on a flat-magnitude-2 row).
+test "all-positive kept row is +1, all-negative is −1" {
+  let yp = ternary_balance_rows(matrix.from_lists([[2.0, 2.0]]))
+  assert_eq(matrix.get(yp, 0, 0), 1.0)
+  let yn = ternary_balance_rows(matrix.from_lists([[0.0 - 2.0, 0.0 - 2.0]]))
+  assert_eq(matrix.get(yn, 0, 0), 0.0 - 1.0)
+}

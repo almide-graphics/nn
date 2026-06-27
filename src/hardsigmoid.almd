@@ -1,0 +1,15 @@
+// hardsigmoid — piecewise-linear sigmoid: clip((x+3)/6, 0, 1). Cheap,
+// quantization-friendly gate (used inside hardswish). Elementwise.
+
+import math
+
+fn hardsigmoid(m: Matrix) -> Matrix =
+  matrix.map(m, (x) => math.fmax(0.0, math.fmin(1.0, (x + 3.0) / 6.0)))
+
+// x ≤ -3 → 0, x = 0 → 0.5, x ≥ 3 → 1.
+test "hardsigmoid clamps to [0,1] around 0.5" {
+  let y = hardsigmoid(matrix.from_lists([[-5.0, 0.0, 5.0]]))
+  assert_eq(matrix.get(y, 0, 0), 0.0)
+  assert_eq(matrix.get(y, 0, 1), 0.5)
+  assert_eq(matrix.get(y, 0, 2), 1.0)
+}

@@ -1,0 +1,20 @@
+// half_softsign — ½·x/(1+|x|). A softsign scaled to (-0.5, 0.5): odd, smooth,
+// with the same unit slope-halved-to-½ at 0 and gentle polynomial saturation —
+// a half-amplitude bounded activation. Elementwise.
+
+import math
+
+fn half_softsign(m: Matrix) -> Matrix =
+  matrix.map(m, (x) => 0.5 * x / (1.0 + float.abs(x)))
+
+test "half_softsign at zero is zero" {
+  let y = half_softsign(matrix.from_lists([[0.0]]))
+  assert_eq(matrix.get(y, 0, 0), 0.0)
+}
+
+// ½·(1/2)=0.25 at x=1; odd → -0.25 at x=-1.
+test "half_softsign odd quarter at one" {
+  let y = half_softsign(matrix.from_lists([[1.0, -1.0]]))
+  assert_eq(matrix.get(y, 0, 0), 0.25)
+  assert_eq(matrix.get(y, 0, 1), -0.25)
+}

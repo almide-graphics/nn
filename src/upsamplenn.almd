@@ -1,0 +1,46 @@
+// upsample_nearest_x2_rows — nearest-neighbour upsampling ×2 along each row:
+//   out_{t,2j} = out_{t,2j+1} = x_{t,j}   for j = 0 … D−1   → (T, 2D).
+// Each feature is repeated twice, doubling the width — the decoder-side inverse of the k=2 pools
+// (the only op here that *grows* the row). It is the nearest-neighbour upsample / repeat-interleave
+// used in U-Nets and image decoders to undo a stride-2 downsample. Distinct from every reduction or
+// equal-width map: the output shape is (T, 2D). No interpolation, no parameters. Output (T, 2D).
+
+fn upsample_nearest_x2_rows(x: Matrix) -> Matrix = {
+  let rx = matrix.to_lists(x)
+  let (t, d) = matrix.shape(x)
+  var out: List[List[Float]] = []
+  var i = 0
+  while i < t {
+    let xi = list.get_or(rx, i, [])
+    var row: List[Float] = []
+    var j = 0
+    while j < d {
+      let v = list.get_or(xi, j, 0.0)
+      row = row + [v, v]
+      j = j + 1
+    }
+    out = out + [row]
+    i = i + 1
+  }
+  matrix.from_lists(out)
+}
+
+// each element is repeated twice: [1,2] → [1,1,2,2].
+test "upsample-x2 repeats each element twice" {
+  let x = matrix.from_lists([[1.0, 2.0]])
+  let y = upsample_nearest_x2_rows(x)
+  assert_eq(matrix.get(y, 0, 0), 1.0)
+  assert_eq(matrix.get(y, 0, 1), 1.0)
+  assert_eq(matrix.get(y, 0, 2), 2.0)
+  assert_eq(matrix.get(y, 0, 3), 2.0)
+}
+
+// negatives carry through unchanged: [5,−3] → [5,5,−3,−3].
+test "upsample-x2 preserves values including negatives" {
+  let x = matrix.from_lists([[5.0, 0.0 - 3.0]])
+  let y = upsample_nearest_x2_rows(x)
+  assert_eq(matrix.get(y, 0, 0), 5.0)
+  assert_eq(matrix.get(y, 0, 1), 5.0)
+  assert_eq(matrix.get(y, 0, 2), 0.0 - 3.0)
+  assert_eq(matrix.get(y, 0, 3), 0.0 - 3.0)
+}

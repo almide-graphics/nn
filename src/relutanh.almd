@@ -1,0 +1,21 @@
+// relu_tanh — max(0, tanh(x)). A one-sided saturating gate: 0 for x≤0, then
+// tanh(x) rising to 1. The positive half of tanh (ReLU-of-tanh). tanh via exp.
+// Elementwise.
+
+import math
+
+fn relu_tanh(m: Matrix) -> Matrix =
+  matrix.map(m, (x) => math.fmax(0.0, 2.0 / (1.0 + math.exp(0.0 - 2.0 * x)) - 1.0))
+
+// 0 for x≤0 (incl. 0).
+test "relu_tanh is zero for x<=0" {
+  let y = relu_tanh(matrix.from_lists([[-3.0, 0.0]]))
+  assert_eq(matrix.get(y, 0, 0), 0.0)
+  assert_eq(matrix.get(y, 0, 1), 0.0)
+}
+
+// tanh(1) for x=1.
+test "relu_tanh is tanh for x>0" {
+  let y = relu_tanh(matrix.from_lists([[1.0]]))
+  assert(float.abs(matrix.get(y, 0, 0) - 0.7615941559557649) < 0.000000001, "tanh(1)")
+}

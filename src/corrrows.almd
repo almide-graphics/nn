@@ -1,0 +1,47 @@
+// corr_rows — row-wise Pearson correlation coefficient of two matrices:
+//
+//   ā_r = mean a_rj,  cov = (1/D)Σ(a-ā)(b-b̄),  var = (1/D)Σ(·-mean)²
+//   corr_r = cov / ( √var_a · √var_b )
+//
+// One value per row → output (T,1). The scale-invariant linear association in
+// [-1,1] (corr(a,a)=1, corr(a,-a)=-1); CKA / feature-alignment building block.
+// Two-input, multi-pass row reduction.
+
+import math
+
+fn corr_rows(a: Matrix, b: Matrix) -> Matrix = {
+  let ra = matrix.to_lists(a)
+  let rb = matrix.to_lists(b)
+  let (rows, d) = matrix.shape(a)
+  let df = int.to_float(d)
+  var out: List[List[Float]] = []
+  var n = 0
+  while n < rows {
+    let an = list.get_or(ra, n, [])
+    let bn = list.get_or(rb, n, [])
+    let ma = (an |> list.fold(0.0, (acc, v) => acc + v)) / df
+    let mb = (bn |> list.fold(0.0, (acc, v) => acc + v)) / df
+    let cov = (list.zip_with(an, bn, (x, y) => (x - ma) * (y - mb)) |> list.fold(0.0, (acc, v) => acc + v)) / df
+    let va = (an |> list.fold(0.0, (acc, v) => acc + (v - ma) * (v - ma))) / df
+    let vb = (bn |> list.fold(0.0, (acc, v) => acc + (v - mb) * (v - mb))) / df
+    let corr = cov / (math.sqrt(va) * math.sqrt(vb))
+    out = out + [[corr]]
+    n = n + 1
+  }
+  matrix.from_lists(out)
+}
+
+// corr(a, a) = 1 (non-constant a).
+test "corr of a row with itself is one" {
+  let a = matrix.from_lists([[1.0, 2.0, 3.0, 4.0]])
+  let y = corr_rows(a, a)
+  assert(float.abs(matrix.get(y, 0, 0) - 1.0) < 0.000000001, "= 1")
+}
+
+// corr(a, -a) = -1.
+test "corr of a with negated a is minus one" {
+  let a = matrix.from_lists([[1.0, 2.0, 3.0, 4.0]])
+  let b = matrix.from_lists([[0.0 - 1.0, 0.0 - 2.0, 0.0 - 3.0, 0.0 - 4.0]])
+  let y = corr_rows(a, b)
+  assert(float.abs(matrix.get(y, 0, 0) + 1.0) < 0.000000001, "= -1")
+}

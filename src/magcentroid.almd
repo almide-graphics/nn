@@ -1,0 +1,45 @@
+// magnitude_centroid_rows — per-row magnitude-weighted index centroid (axis=1):
+//   out_t = ( Σ_j j·|x_{t,j}| ) / ( Σ_j |x_{t,j}| + ε )   → (T,1), ∈ [0, D−1].
+// The "centre of mass" of a row's magnitude profile along the feature axis — the spectral-centroid
+// analogue that says *where* the energy sits (low index = energy at the front, high index = at the
+// back). Distinct from soft_argmax_rows, which is the expected index under a softmax of x; this is
+// the expected index under the |x|-magnitude distribution (no softmax, no exponentiation), so it is
+// a different weighting of the same positions. The +ε guards an all-zero row. Output (T,1).
+
+import float
+
+fn magnitude_centroid_rows(x: Matrix) -> Matrix = {
+  let rx = matrix.to_lists(x)
+  let (t, d) = matrix.shape(x)
+  var out: List[List[Float]] = []
+  var i = 0
+  while i < t {
+    let xi = list.get_or(rx, i, [])
+    var num = 0.0
+    var den = 0.0
+    var j = 0
+    while j < d {
+      let a = float.abs(list.get_or(xi, j, 0.0))
+      num = num + int.to_float(j) * a
+      den = den + a
+      j = j + 1
+    }
+    out = out + [[num / (den + 0.000000000001)]]
+    i = i + 1
+  }
+  matrix.from_lists(out)
+}
+
+// energy concentrated at index 2: centroid = 2.
+test "magnitude centroid points at the dominant index" {
+  let x = matrix.from_lists([[0.0, 0.0, 5.0, 0.0]])
+  let y = magnitude_centroid_rows(x)
+  assert(float.abs(matrix.get(y, 0, 0) - 2.0) < 0.0000001, "10/5=2")
+}
+
+// symmetric magnitude at indices 0 and 3: centroid is the middle 1.5.
+test "magnitude centroid of a symmetric magnitude is the middle" {
+  let x = matrix.from_lists([[1.0, 0.0, 0.0, 1.0]])
+  let y = magnitude_centroid_rows(x)
+  assert(float.abs(matrix.get(y, 0, 0) - 1.5) < 0.0000001, "(0+3)/2=1.5")
+}

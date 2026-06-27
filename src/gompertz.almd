@@ -1,0 +1,20 @@
+// gompertz — exp(-exp(-x)). The Gompertz / double-exponential sigmoid: bounded
+// in (0,1) but asymmetric (approaches 1 faster than 0), unlike the symmetric
+// logistic. Used for growth-curve / ordinal gating. Elementwise.
+
+import math
+
+fn gompertz(m: Matrix) -> Matrix =
+  matrix.map(m, (x) => math.exp(0.0 - math.exp(0.0 - x)))
+
+// gompertz(0) = exp(-1).
+test "gompertz at zero is exp minus one" {
+  let y = gompertz(matrix.from_lists([[0.0]]))
+  assert(float.abs(matrix.get(y, 0, 0) - 0.36787944117144233) < 0.000000001, "e⁻¹")
+}
+
+// large positive → 1.
+test "gompertz large positive approaches 1" {
+  let y = gompertz(matrix.from_lists([[30.0]]))
+  assert(float.abs(matrix.get(y, 0, 0) - 1.0) < 0.000000001, "→ 1")
+}

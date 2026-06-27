@@ -1,0 +1,22 @@
+// triangular — max(0, 1 - |x|). The triangular (Bartlett) window / linear B-spline
+// bump: 1 at 0, linearly to 0 at |x|=1, exactly 0 beyond. Even, compact support.
+// Elementwise.
+
+import math
+
+fn triangular(m: Matrix) -> Matrix =
+  matrix.map(m, (x) => math.fmax(0.0, 1.0 - float.abs(x)))
+
+// peak 1 at 0; 1-0.5=0.5 at 0.5.
+test "triangular peak and slope" {
+  let y = triangular(matrix.from_lists([[0.0, 0.5]]))
+  assert_eq(matrix.get(y, 0, 0), 1.0)
+  assert_eq(matrix.get(y, 0, 1), 0.5)
+}
+
+// exactly 0 at and beyond |x|=1.
+test "triangular zero outside unit" {
+  let y = triangular(matrix.from_lists([[1.0, -2.0]]))
+  assert_eq(matrix.get(y, 0, 0), 0.0)
+  assert_eq(matrix.get(y, 0, 1), 0.0)
+}

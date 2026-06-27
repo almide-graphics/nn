@@ -1,0 +1,50 @@
+// delta_rule_diag — DeltaNet update in diagonal (per-channel) form:
+//
+//   pred_t = s_{t-1} ⊙ k_t                         (current readout)
+//   s_t    = s_{t-1} + β_t ⊙ (v_t - pred_t) ⊙ k_t  (write the prediction error)
+//
+// The delta rule writes the *error* (v − prediction) rather than v itself, so
+// it overwrites stale associations instead of just accumulating — the key
+// difference from gla/retnet/scan. β_t ∈ [0,1] is the write strength. Output is
+// the state sequence S_t (T,D). k,v,β are all (T,D); O(1) state per channel.
+
+fn delta_rule_diag(k: Matrix, v: Matrix, beta: Matrix) -> Matrix = {
+  let rk = matrix.to_lists(k)
+  let rv = matrix.to_lists(v)
+  let rb = matrix.to_lists(beta)
+  let (t, d) = matrix.shape(k)
+  var s: List[Float] = list.range(0, d) |> list.map((_) => 0.0)
+  var out: List[List[Float]] = []
+  var n = 0
+  while n < t {
+    let kn = list.get_or(rk, n, [])
+    let vn = list.get_or(rv, n, [])
+    let bn = list.get_or(rb, n, [])
+    let pred = list.zip_with(s, kn, (ss, kk) => ss * kk)
+    let resid = list.zip_with(vn, pred, (vv, pp) => vv - pp)
+    let be = list.zip_with(bn, resid, (bb, ee) => bb * ee)
+    let upd = list.zip_with(be, kn, (x, kk) => x * kk)
+    s = list.zip_with(s, upd, (ss, uu) => ss + uu)
+    out = out + [s]
+    n = n + 1
+  }
+  matrix.from_lists(out)
+}
+
+// β=0 → no write → state stays zero.
+test "delta_rule zero-beta is no-op" {
+  let k = matrix.from_lists([[0.5], [2.0]])
+  let v = matrix.from_lists([[9.0], [3.0]])
+  let y = delta_rule_diag(k, v, matrix.from_lists([[0.0], [0.0]]))
+  assert_eq(matrix.get(y, 0, 0), 0.0)
+  assert_eq(matrix.get(y, 1, 0), 0.0)
+}
+
+// β=1, k=1 → full write of the error each step → s_t = v_t.
+test "delta_rule full write stores v" {
+  let k = matrix.from_lists([[1.0], [1.0]])
+  let v = matrix.from_lists([[3.0], [7.0]])
+  let y = delta_rule_diag(k, v, matrix.from_lists([[1.0], [1.0]]))
+  assert_eq(matrix.get(y, 0, 0), 3.0)
+  assert_eq(matrix.get(y, 1, 0), 7.0)
+}

@@ -1,0 +1,20 @@
+// softplus_half — ½·softplus(x). A gentler smooth ReLU: monotone, ≥0, ≈0 for
+// x≪0 and ≈½x for x≫0 (half the asymptotic slope). softplus via the stable
+// max+log1p_exp_neg form. Elementwise.
+
+import math
+
+fn softplus_half(m: Matrix) -> Matrix =
+  matrix.map(m, (x) => 0.5 * (math.fmax(x, 0.0) + math.log(1.0 + math.exp(0.0 - float.abs(x)))))
+
+// ½·softplus(0) = ½·log2.
+test "softplus_half at zero is half log2" {
+  let y = softplus_half(matrix.from_lists([[0.0]]))
+  assert(float.abs(matrix.get(y, 0, 0) - 0.34657359027997264) < 0.000000001, "½log2")
+}
+
+// ≈ ½x on the right (softplus(30)≈30 → 15).
+test "softplus_half approaches half x on the right" {
+  let y = softplus_half(matrix.from_lists([[30.0]]))
+  assert(float.abs(matrix.get(y, 0, 0) - 15.0) < 0.000000001, "≈ 15")
+}

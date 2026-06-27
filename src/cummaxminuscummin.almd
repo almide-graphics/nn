@@ -1,0 +1,44 @@
+// cummax_minus_cummin_rows — running range (peak-to-trough span) over time:
+//   out_{t,j} = max_{i≤t} x_{i,j} − min_{i≤t} x_{i,j}   (elementwise per channel).
+// The width of the expanding envelope between cummax and cummin — how much a channel has
+// swung over its history so far. Always ≥ 0 and non-decreasing in t; row 0 is all zeros.
+// Two running accumulators (max and min) both seeded from the first row. O(T), O(D)
+// state. Output (T,D).
+
+import math
+
+fn cummax_minus_cummin_rows(x: Matrix) -> Matrix = {
+  let rx = matrix.to_lists(x)
+  let (t, _d) = matrix.shape(x)
+  let first = list.get_or(rx, 0, [])
+  var hi: List[Float] = first
+  var lo: List[Float] = first
+  var out: List[List[Float]] = []
+  var i = 0
+  while i < t {
+    let xi = list.get_or(rx, i, [])
+    hi = list.zip_with(hi, xi, (a, b) => math.fmax(a, b))
+    lo = list.zip_with(lo, xi, (a, b) => math.fmin(a, b))
+    out = out + [list.zip_with(hi, lo, (a, b) => a - b)]
+    i = i + 1
+  }
+  matrix.from_lists(out)
+}
+
+// column 0 = [3,1,4,2]: cummax=[3,3,4,4], cummin=[3,1,1,1], range=[0,2,3,3].
+test "cummax-minus-cummin is the running peak-to-trough span" {
+  let x = matrix.from_lists([[3.0], [1.0], [4.0], [2.0]])
+  let y = cummax_minus_cummin_rows(x)
+  assert_eq(matrix.get(y, 0, 0), 0.0)
+  assert_eq(matrix.get(y, 1, 0), 2.0)
+  assert_eq(matrix.get(y, 2, 0), 3.0)
+  assert_eq(matrix.get(y, 3, 0), 3.0)
+}
+
+// the first row sets both extremes, so its span is zero everywhere.
+test "cummax-minus-cummin starts at zero on the first row" {
+  let x = matrix.from_lists([[0.0 - 2.0, 5.0], [7.0, 0.0 - 1.0]])
+  let y = cummax_minus_cummin_rows(x)
+  assert_eq(matrix.get(y, 0, 0), 0.0)
+  assert_eq(matrix.get(y, 0, 1), 0.0)
+}

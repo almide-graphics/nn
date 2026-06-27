@@ -1,0 +1,18 @@
+// half_square — ½x². The L2 / squared-error loss kernel (also the Gaussian
+// negative-log-likelihood term, whose gradient is exactly x). Even, convex.
+// Distinct from square_act (the ½ factor matters for the gradient). Elementwise.
+
+fn half_square(m: Matrix) -> Matrix =
+  matrix.map(m, (x) => 0.5 * x * x)
+
+test "half_square at zero is zero" {
+  let y = half_square(matrix.from_lists([[0.0]]))
+  assert_eq(matrix.get(y, 0, 0), 0.0)
+}
+
+// 0.5·4 = 2 at x=2; even.
+test "half_square at 2 and even" {
+  let y = half_square(matrix.from_lists([[2.0, -2.0]]))
+  assert_eq(matrix.get(y, 0, 0), 2.0)
+  assert_eq(matrix.get(y, 0, 1), 2.0)
+}

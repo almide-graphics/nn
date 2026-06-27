@@ -1,0 +1,56 @@
+// quant_error_rows — the residual left by BitNet b1 (1-bit) quantization.
+//   β = (1 / (T·D)) Σ_{t,j} |x_{t,j}|                  (per-tensor absmean scale)
+//   out_{t,j} = x_{t,j} − β · sign⁺(x_{t,j}),   sign⁺(v) = +1 if v ≥ 0 else −1
+// What the straight-through estimator hides: the gap between a weight and its
+// dequantized 1-bit code β·sign⁺(x) (op `bitnet_quant_scaled_rows`). Its magnitude is
+// the per-coordinate quantization noise a BitNet layer injects — the thing QAT learns
+// to keep small. math.sign is Int-only, so the binary sign is written directly. Two
+// passes (absmean over all elements, then per-element residual). Output (T,D).
+
+import float
+
+fn quant_error_rows(x: Matrix) -> Matrix = {
+  let rx = matrix.to_lists(x)
+  let (t, d) = matrix.shape(x)
+  let n = int.to_float(t * d)
+  // pass 1: sum of absolute values over the whole tensor → absmean scale β.
+  var total = 0.0
+  var p = 0
+  while p < t {
+    let xp = list.get_or(rx, p, [])
+    let s = xp |> list.fold(0.0, (acc, v) => acc + float.abs(v))
+    total = total + s
+    p = p + 1
+  }
+  let beta = total / n
+  // pass 2: residual x − β·sign⁺(x) (zero → x − β, BitNet convention).
+  var out: List[List[Float]] = []
+  var i = 0
+  while i < t {
+    let xi = list.get_or(rx, i, [])
+    let row = xi |> list.map((v) => v - beta * (if v >= 0.0 then 1.0 else 0.0 - 1.0))
+    out = out + [row]
+    i = i + 1
+  }
+  matrix.from_lists(out)
+}
+
+// β = mean|x| = (3+1+2+0)/4 = 1.5. residual = x − 1.5·sign⁺(x):
+//   3→1.5, 1→−0.5, −2→−0.5, 0→(0−1.5)=−1.5.
+test "quant-error is x minus its dequantized 1-bit code" {
+  let x = matrix.from_lists([[3.0, 1.0], [0.0 - 2.0, 0.0]])
+  let y = quant_error_rows(x)
+  assert_eq(matrix.get(y, 0, 0), 1.5)
+  assert_eq(matrix.get(y, 0, 1), 0.0 - 0.5)
+  assert_eq(matrix.get(y, 1, 0), 0.0 - 0.5)
+  assert_eq(matrix.get(y, 1, 1), 0.0 - 1.5)
+}
+
+// adding the code back to the error recovers x exactly: err + β·sign⁺ = x.
+// here β = mean|x| = (4+2)/2 = 3, code = [+3, −3], so err = [1, 1].
+test "quant-error plus the code reconstructs the input" {
+  let x = matrix.from_lists([[4.0, 0.0 - 2.0]])
+  let y = quant_error_rows(x)
+  assert_eq(matrix.get(y, 0, 0), 1.0)
+  assert_eq(matrix.get(y, 0, 1), 1.0)
+}

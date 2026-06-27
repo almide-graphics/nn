@@ -1,0 +1,39 @@
+// cumsum_clip_neg_rows — cumulative sum of the negative part over time (down the rows):
+//   out_t = Σ_{i≤t} min(x_i, 0)   (elementwise per channel).
+// The running total of negative contributions — positives are clipped to 0 before
+// accumulating. The "losses-only" running sum of a sequence; mirror of
+// cumsum_clip0_rows. Monotonically non-increasing. O(T), O(D) state. Output (T,D).
+
+import math
+
+fn cumsum_clip_neg_rows(x: Matrix) -> Matrix = {
+  let rx = matrix.to_lists(x)
+  let (t, d) = matrix.shape(x)
+  var acc: List[Float] = list.range(0, d) |> list.map((_) => 0.0)
+  var out: List[List[Float]] = []
+  var i = 0
+  while i < t {
+    let xi = list.get_or(rx, i, [])
+    acc = list.zip_with(acc, xi, (a, b) => a + math.fmin(b, 0.0))
+    out = out + [acc]
+    i = i + 1
+  }
+  matrix.from_lists(out)
+}
+
+// [2,-1,-3] → negative parts 0,-1,-3 accumulate to 0,-1,-4.
+test "cumsum-clip-neg accumulates only the negative part" {
+  let x = matrix.from_lists([[2.0], [0.0 - 1.0], [0.0 - 3.0]])
+  let y = cumsum_clip_neg_rows(x)
+  assert_eq(matrix.get(y, 0, 0), 0.0)
+  assert_eq(matrix.get(y, 1, 0), 0.0 - 1.0)
+  assert_eq(matrix.get(y, 2, 0), 0.0 - 4.0)
+}
+
+// an all-positive column accumulates to 0 throughout.
+test "cumsum-clip-neg is zero on an all-positive channel" {
+  let x = matrix.from_lists([[1.0], [4.0]])
+  let y = cumsum_clip_neg_rows(x)
+  assert_eq(matrix.get(y, 0, 0), 0.0)
+  assert_eq(matrix.get(y, 1, 0), 0.0)
+}

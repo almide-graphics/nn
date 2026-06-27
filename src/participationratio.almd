@@ -1,0 +1,41 @@
+// participation_ratio_rows — the participation ratio (effective dimensionality) of each row (axis=1):
+//   out_t = (Σ_j x_{t,j}²)² / (Σ_j x_{t,j}⁴ + ε)        ∈ [1, D],  (T,1).
+// The inverse participation ratio's reciprocal: how many coordinates effectively carry the
+// row's energy — D when the energy is spread evenly, → 1 when one coordinate dominates. A
+// concentration / effective-rank gauge from a 2nd-vs-4th-moment ratio, distinct in functional
+// form from gini_coeff_rows (all-pairs), hoyer_sparsity_rows (L1/L2) and magnitude_entropy_rows
+// (information). Sign-blind. The +ε guards an all-zero row. Per-row reduction. Output (T,1).
+
+import float
+
+fn participation_ratio_rows(x: Matrix) -> Matrix = {
+  let rx = matrix.to_lists(x)
+  let (t, _) = matrix.shape(x)
+  var out: List[List[Float]] = []
+  var i = 0
+  while i < t {
+    let xi = list.get_or(rx, i, [])
+    let s2 = xi |> list.fold(0.0, (acc, v) => acc + v * v)
+    let s4 = xi |> list.fold(0.0, (acc, v) => {
+      let v2 = v * v
+      acc + v2 * v2
+    })
+    out = out + [[s2 * s2 / (s4 + 0.000000000001)]]
+    i = i + 1
+  }
+  matrix.from_lists(out)
+}
+
+// energy spread evenly over D coordinates → participation ratio D; D=4 → 4.
+test "uniform magnitudes give participation ratio D" {
+  let x = matrix.from_lists([[1.0, 1.0, 1.0, 1.0]])
+  let y = participation_ratio_rows(x)
+  assert(float.abs(matrix.get(y, 0, 0) - 4.0) < 0.000000001, "PR = D = 4")
+}
+
+// all energy in one coordinate → participation ratio 1.
+test "a single-nonzero row has participation ratio 1" {
+  let x = matrix.from_lists([[5.0, 0.0, 0.0, 0.0]])
+  let y = participation_ratio_rows(x)
+  assert(float.abs(matrix.get(y, 0, 0) - 1.0) < 0.000000001, "PR = 1")
+}

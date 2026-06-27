@@ -1,0 +1,56 @@
+// record_count_rows — running count of record highs over time (down the rows, per channel):
+//   out_{t,j} = #{ i ≤ t : x_{i,j} > max(x_{0,j} … x_{i-1,j}) }   (the first entry always counts) → (T,D).
+// Counts how many times a new running maximum has been set up to step t — the "record statistics" of
+// a sequence (e.g. how often a training loss reached a new best, or a signal a new peak). The first
+// element is a record by definition, so the count starts at 1 and increments on each strict
+// improvement. Distinct from cummax_rows (the record value), cumargmax_rows (its position) and
+// cumcount_pos_rows (a sign tally): this is the count of improvement events. One O(D) carry of
+// (best value, count) scanned over time; strict ">" so plateaus don't recount. Integer-valued, non-
+// decreasing. Output (T,D).
+
+fn record_count_rows(x: Matrix) -> Matrix = {
+  let rx = matrix.to_lists(x)
+  let (t, d) = matrix.shape(x)
+  var best = list.get_or(rx, 0, [])
+  var cnt: List[Float] = list.range(0, d) |> list.map((_) => 1.0)
+  var out: List[List[Float]] = []
+  var i = 0
+  while i < t {
+    let xi = list.get_or(rx, i, [])
+    var nb: List[Float] = []
+    var nc: List[Float] = []
+    var j = 0
+    while j < d {
+      let xv = list.get_or(xi, j, 0.0)
+      let bv = list.get_or(best, j, 0.0)
+      let cv = list.get_or(cnt, j, 0.0)
+      let upd = xv > bv
+      nb = nb + [if upd then xv else bv]
+      nc = nc + [if upd then cv + 1.0 else cv]
+      j = j + 1
+    }
+    best = nb
+    cnt = nc
+    out = out + [cnt]
+    i = i + 1
+  }
+  matrix.from_lists(out)
+}
+
+// an increasing column sets a record every step → [1,2,3].
+test "record count of an increasing column increments every step" {
+  let x = matrix.from_lists([[1.0], [2.0], [3.0]])
+  let y = record_count_rows(x)
+  assert_eq(matrix.get(y, 0, 0), 1.0)
+  assert_eq(matrix.get(y, 1, 0), 2.0)
+  assert_eq(matrix.get(y, 2, 0), 3.0)
+}
+
+// a decreasing column: only the first entry is a record → [1,1,1].
+test "record count of a decreasing column stays at one" {
+  let x = matrix.from_lists([[3.0], [2.0], [1.0]])
+  let y = record_count_rows(x)
+  assert_eq(matrix.get(y, 0, 0), 1.0)
+  assert_eq(matrix.get(y, 1, 0), 1.0)
+  assert_eq(matrix.get(y, 2, 0), 1.0)
+}

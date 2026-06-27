@@ -1,0 +1,43 @@
+// soft_and_not_rows — the differentiable inhibition gate A ∧ ¬B, elementwise (2-input):
+//   out_{t,j} = a·(1 − b)   for a, b ∈ [0,1]   → (T,D).
+// Reading a, b as independent Bernoulli probabilities, this is P(a AND NOT b) — the "a, but not b"
+// inhibition gate, one of the sixteen differentiable-logic (difflogic) gates and a natural circuit
+// primitive (b vetoes a). Asymmetric and non-complementary (not a 1−gate): its truth table
+// [0,0,1,0] is distinct from AND, OR, XOR and from the NAND/NOR/XNOR complements. High only when a
+// is on and b is off; at a=b=½ it is ¼. Output (T,D).
+
+import float
+
+fn soft_and_not_rows(a: Matrix, b: Matrix) -> Matrix = {
+  let ra = matrix.to_lists(a)
+  let rb = matrix.to_lists(b)
+  let (t, _) = matrix.shape(a)
+  var out: List[List[Float]] = []
+  var i = 0
+  while i < t {
+    let ai = list.get_or(ra, i, [])
+    let bi = list.get_or(rb, i, [])
+    out = out + [list.zip_with(ai, bi, (av, bv) => av * (1.0 - bv))]
+    i = i + 1
+  }
+  matrix.from_lists(out)
+}
+
+// truth table of A∧¬B: 0,0→0  0,1→0  1,0→1  1,1→0.
+test "soft-and-not reduces to the A∧¬B truth table at boolean corners" {
+  let a = matrix.from_lists([[0.0, 0.0, 1.0, 1.0]])
+  let b = matrix.from_lists([[0.0, 1.0, 0.0, 1.0]])
+  let y = soft_and_not_rows(a, b)
+  assert_eq(matrix.get(y, 0, 0), 0.0)
+  assert_eq(matrix.get(y, 0, 1), 0.0)
+  assert_eq(matrix.get(y, 0, 2), 1.0)
+  assert_eq(matrix.get(y, 0, 3), 0.0)
+}
+
+// at a = b = ½: ½·(1 − ½) = ¼.
+test "soft-and-not at p=0.5 is one quarter" {
+  let a = matrix.from_lists([[0.5]])
+  let b = matrix.from_lists([[0.5]])
+  let y = soft_and_not_rows(a, b)
+  assert(float.abs(matrix.get(y, 0, 0) - 0.25) < 0.000000001, "0.25")
+}

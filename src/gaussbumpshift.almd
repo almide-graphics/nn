@@ -1,0 +1,20 @@
+// gaussian_bump_shift — exp(-(x+1)²). A Gaussian RBF centered at -1 (mirror of
+// exp_neg_sq_shift). Paired with the +1-centered bump it forms a 2-atom RBF
+// basis. Peaks at x=-1, symmetric about it. Elementwise.
+
+import math
+
+fn gaussian_bump_shift(m: Matrix) -> Matrix =
+  matrix.map(m, (x) => math.exp(0.0 - (x + 1.0) * (x + 1.0)))
+
+test "gaussian_bump_shift peaks at one when x=-1" {
+  let y = gaussian_bump_shift(matrix.from_lists([[-1.0]]))
+  assert_eq(matrix.get(y, 0, 0), 1.0)
+}
+
+// symmetric about x=-1: values at 0 and -2 are both exp(-1).
+test "gaussian_bump_shift symmetric about minus one" {
+  let y = gaussian_bump_shift(matrix.from_lists([[0.0, -2.0]]))
+  assert(float.abs(matrix.get(y, 0, 0) - 0.36787944117144233) < 0.000000001, "e⁻¹")
+  assert(float.abs(matrix.get(y, 0, 1) - 0.36787944117144233) < 0.000000001, "sym")
+}

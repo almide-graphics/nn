@@ -1,0 +1,39 @@
+// harmonic_mean_abs_rows — the harmonic mean of each row's magnitudes (axis=1):
+//   out_t = D / Σ_j ( 1 / (|x_{t,j}| + ε) )            → one value per row, (T,1).
+// The third Pythagorean mean of |x|, completing the trio with mean_abs_rows (arithmetic) and
+// signed_geomean_rows (geometric): HM ≤ GM ≤ AM, and the harmonic mean is dominated by the
+// smallest magnitudes (it collapses toward 0 if any coordinate is tiny). A
+// sensitivity / bottleneck statistic. Sign-blind. The +ε guards the reciprocal of a near-zero
+// entry. Per-row reduction (sum of reciprocals, then D over it). Output (T,1).
+
+import float
+
+fn harmonic_mean_abs_rows(x: Matrix) -> Matrix = {
+  let rx = matrix.to_lists(x)
+  let (t, d) = matrix.shape(x)
+  let df = int.to_float(d)
+  var out: List[List[Float]] = []
+  var i = 0
+  while i < t {
+    let xi = list.get_or(rx, i, [])
+    let inv = xi |> list.fold(0.0, (acc, v) => acc + 1.0 / (float.abs(v) + 0.000000000001))
+    out = out + [[df / inv]]
+    i = i + 1
+  }
+  matrix.from_lists(out)
+}
+
+// harmonic mean of equal magnitudes is that magnitude: HM[2,2,2,2] = 2.
+test "harmonic mean of equal magnitudes equals that magnitude" {
+  let x = matrix.from_lists([[2.0, 2.0, 2.0, 2.0]])
+  let y = harmonic_mean_abs_rows(x)
+  assert(float.abs(matrix.get(y, 0, 0) - 2.0) < 0.000000001, "HM=2")
+}
+
+// HM[1,2] = 2/(1 + 1/2) = 4/3 (< arithmetic mean 1.5); sign-blind.
+test "harmonic mean of [1,2] is 4/3 and is sign-blind" {
+  let yp = harmonic_mean_abs_rows(matrix.from_lists([[1.0, 2.0]]))
+  assert(float.abs(matrix.get(yp, 0, 0) - 1.3333333333333333) < 0.0000001, "4/3")
+  let yn = harmonic_mean_abs_rows(matrix.from_lists([[0.0 - 1.0, 0.0 - 2.0]]))
+  assert(float.abs(matrix.get(yn, 0, 0) - 1.3333333333333333) < 0.0000001, "sign-blind")
+}

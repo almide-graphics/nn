@@ -1,0 +1,39 @@
+// abs_cumsum_rows — cumulative sum of absolute values over time (down the rows):
+//   out_t = Σ_{i≤t} |x_i|   (elementwise per channel).
+// The running total-variation / L1 path-length of each channel; monotone
+// non-decreasing (a magnitude-accumulating counterpart of cumsum_rows).
+// O(T), O(D) state. Output (T,D).
+
+import float
+
+fn abs_cumsum_rows(x: Matrix) -> Matrix = {
+  let rx = matrix.to_lists(x)
+  let (t, d) = matrix.shape(x)
+  var acc: List[Float] = list.range(0, d) |> list.map((_) => 0.0)
+  var out: List[List[Float]] = []
+  var i = 0
+  while i < t {
+    let xi = list.get_or(rx, i, [])
+    acc = list.zip_with(acc, xi, (a, b) => a + float.abs(b))
+    out = out + [acc]
+    i = i + 1
+  }
+  matrix.from_lists(out)
+}
+
+// magnitudes of [1,-2,3] (single channel) accumulate to [1,3,6].
+test "abs cumsum accumulates magnitudes down rows" {
+  let x = matrix.from_lists([[1.0], [0.0 - 2.0], [3.0]])
+  let y = abs_cumsum_rows(x)
+  assert_eq(matrix.get(y, 0, 0), 1.0)
+  assert_eq(matrix.get(y, 1, 0), 3.0)
+  assert_eq(matrix.get(y, 2, 0), 6.0)
+}
+
+// per channel: [[-1,2],[-3,-4]] → row1 = [1+3, 2+4] = [4,6].
+test "abs cumsum works per channel" {
+  let x = matrix.from_lists([[0.0 - 1.0, 2.0], [0.0 - 3.0, 0.0 - 4.0]])
+  let y = abs_cumsum_rows(x)
+  assert_eq(matrix.get(y, 1, 0), 4.0)
+  assert_eq(matrix.get(y, 1, 1), 6.0)
+}

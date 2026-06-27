@@ -1,0 +1,23 @@
+// softplus_squared — softplus(x)². A smooth, ≥0, asymptotically-quadratic-on-the-
+// -right penalty (≈0 for x≪0, ≈x² for x≫0) — a one-sided squared loss with a
+// soft knee. softplus via the stable max+log1p_exp_neg form. Elementwise.
+
+import math
+
+fn softplus_squared(m: Matrix) -> Matrix =
+  matrix.map(m, (x) => {
+    let s = math.fmax(x, 0.0) + math.log(1.0 + math.exp(0.0 - float.abs(x)))
+    s * s
+  })
+
+// softplus(0)=log2 → squared = log2².
+test "softplus_squared at zero is log2 squared" {
+  let y = softplus_squared(matrix.from_lists([[0.0]]))
+  assert(float.abs(matrix.get(y, 0, 0) - 0.48045301391820133) < 0.000000001, "log2²")
+}
+
+// ≈ x² on the right (softplus(30)≈30 → 900).
+test "softplus_squared approaches x squared on the right" {
+  let y = softplus_squared(matrix.from_lists([[30.0]]))
+  assert(float.abs(matrix.get(y, 0, 0) - 900.0) < 0.000000001, "≈ 900")
+}

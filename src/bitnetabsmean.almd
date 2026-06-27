@@ -1,0 +1,63 @@
+// bitnet_absmean_rows — BitNet b1.58 absmean ternary quantization (Ma et al. 2024).
+//   γ = (1 / (T·D)) Σ_{t,j} |x_{t,j}|          (per-tensor absmean scale)
+//   u_{t,j} = x_{t,j} / γ
+//   out_{t,j} = +1 if u_{t,j} >  0.5
+//               −1 if u_{t,j} < −0.5
+//                0 otherwise
+// The 1.58-bit weight substrate of BitNet b1.58: scale the whole tensor by its mean
+// magnitude, then snap each entry to the nearest of {−1,0,1}. round() is unavailable,
+// so the rounding is expressed directly as a ±0.5 threshold on u. Two passes (absmean
+// over all elements, then per-element threshold). Exact integer outputs. Output (T,D).
+
+import float
+
+fn bitnet_absmean_rows(x: Matrix) -> Matrix = {
+  let rx = matrix.to_lists(x)
+  let (t, d) = matrix.shape(x)
+  let n = int.to_float(t * d)
+  // pass 1: sum of absolute values over the whole tensor.
+  var total = 0.0
+  var p = 0
+  while p < t {
+    let xp = list.get_or(rx, p, [])
+    let s = xp |> list.fold(0.0, (acc, v) => acc + float.abs(v))
+    total = total + s
+    p = p + 1
+  }
+  let gamma = total / n
+  // pass 2: scale by γ and snap to {−1,0,1} via a ±0.5 threshold on u = x/γ.
+  var out: List[List[Float]] = []
+  var i = 0
+  while i < t {
+    let xi = list.get_or(rx, i, [])
+    let row = xi |> list.map((v) => {
+      let u = v / gamma
+      if u > 0.5 then 1.0 else (if u < (0.0 - 0.5) then 0.0 - 1.0 else 0.0)
+    })
+    out = out + [row]
+    i = i + 1
+  }
+  matrix.from_lists(out)
+}
+
+// γ = mean|x| = (2+2+0+0)/4 = 1. u = x: 2→+1, −2→−1, 0.4→0 (|0.4|<0.5), 0→0.
+test "bitnet-absmean snaps to ternary against the tensor absmean scale" {
+  let x = matrix.from_lists([[2.0, 0.0 - 2.0], [0.4, 0.0]])
+  let y = bitnet_absmean_rows(x)
+  assert_eq(matrix.get(y, 0, 0), 1.0)
+  assert_eq(matrix.get(y, 0, 1), 0.0 - 1.0)
+  assert_eq(matrix.get(y, 1, 0), 0.0)
+  assert_eq(matrix.get(y, 1, 1), 0.0)
+}
+
+// every output sits in {−1,0,1}, so q·q ∈ {0,1} and (q·q)·(q·q − 1) = 0 always.
+test "bitnet-absmean outputs are exactly ternary" {
+  let x = matrix.from_lists([[3.0, 0.0 - 1.0, 0.05]])
+  let y = bitnet_absmean_rows(x)
+  let a = matrix.get(y, 0, 0)
+  let b = matrix.get(y, 0, 1)
+  let c = matrix.get(y, 0, 2)
+  assert_eq((a * a) * ((a * a) - 1.0), 0.0)
+  assert_eq((b * b) * ((b * b) - 1.0), 0.0)
+  assert_eq((c * c) * ((c * c) - 1.0), 0.0)
+}

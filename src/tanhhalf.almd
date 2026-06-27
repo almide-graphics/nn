@@ -1,0 +1,20 @@
+// tanh_half — ½·tanh(x). An odd squashing activation bounded in (-0.5, 0.5):
+// half-amplitude tanh, useful as a small-output gate/residual scale. tanh via
+// exp. Elementwise.
+
+import math
+
+fn tanh_half(m: Matrix) -> Matrix =
+  matrix.map(m, (x) => 0.5 * (2.0 / (1.0 + math.exp(0.0 - 2.0 * x)) - 1.0))
+
+test "tanh_half at zero is zero" {
+  let y = tanh_half(matrix.from_lists([[0.0]]))
+  assert_eq(matrix.get(y, 0, 0), 0.0)
+}
+
+// saturates +0.5 / -0.5; odd.
+test "tanh_half saturates half and odd" {
+  let y = tanh_half(matrix.from_lists([[30.0, -30.0]]))
+  assert(float.abs(matrix.get(y, 0, 0) - 0.5) < 0.000000001, "→ 0.5")
+  assert(float.abs(matrix.get(y, 0, 1) + 0.5) < 0.000000001, "→ -0.5")
+}

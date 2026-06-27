@@ -1,0 +1,15 @@
+// rsqrt — reciprocal square root of magnitude: 1/√(|x|+1e-6). The normalizer
+// kernel behind RMSNorm / variance scaling (eps-stabilized, even in x).
+// Elementwise.
+
+import math
+
+fn rsqrt(m: Matrix) -> Matrix =
+  matrix.map(m, (x) => 1.0 / math.sqrt(float.abs(x) + 0.000001))
+
+// rsqrt(±100) ≈ 1/10 = 0.1 (eps perturbation < 1e-9 at this scale); even in x.
+test "rsqrt of 100 is ~0.1 and even" {
+  let y = rsqrt(matrix.from_lists([[100.0, -100.0]]))
+  assert(float.abs(matrix.get(y, 0, 0) - 0.1) < 0.000000001, "≈ 0.1")
+  assert(float.abs(matrix.get(y, 0, 1) - 0.1) < 0.000000001, "even")
+}

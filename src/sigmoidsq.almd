@@ -1,0 +1,24 @@
+// sigmoid_squared — σ(x)². A delayed/sharpened logistic gate (between σ and
+// cube_sigmoid in steepness): bounded in (0,1), 0.25 at the origin, later
+// turn-on than σ. Elementwise.
+
+import math
+
+fn sigmoid_squared(m: Matrix) -> Matrix =
+  matrix.map(m, (x) => {
+    let s = 1.0 / (1.0 + math.exp(0.0 - x))
+    s * s
+  })
+
+// σ(0)² = 0.25.
+test "sigmoid_squared at zero is a quarter" {
+  let y = sigmoid_squared(matrix.from_lists([[0.0]]))
+  assert_eq(matrix.get(y, 0, 0), 0.25)
+}
+
+// saturates 0 / 1.
+test "sigmoid_squared saturates 1 and 0" {
+  let y = sigmoid_squared(matrix.from_lists([[30.0, -30.0]]))
+  assert(float.abs(matrix.get(y, 0, 0) - 1.0) < 0.000000001, "→ 1")
+  assert(float.abs(matrix.get(y, 0, 1)) < 0.000000001, "→ 0")
+}

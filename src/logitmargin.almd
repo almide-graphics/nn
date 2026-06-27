@@ -1,0 +1,41 @@
+// logit_margin_rows — the top-1 minus top-2 gap of each row (axis=1):
+//   m1_t = max_j x_{t,j},   m2_t = max_{j : x_{t,j} < m1_t} x_{t,j},   out_t = m1 − m2   (T,1).
+// The decision margin: how far the winning logit leads the runner-up — a scale-aware
+// confidence / separability score (large = decisive, ~0 = a near-tie). Distinct from
+// softmax_max_rows (a probability) and max_rows (the top value alone); this needs the second
+// largest, found in one pass without a sort (track the max strictly below m1, sentinel −1e38).
+// For a unique row maximum (generic for continuous inputs) it is the true top-1/top-2 gap and
+// is ≥ 0. Output (T,1).
+
+import float
+import math
+
+fn logit_margin_rows(x: Matrix) -> Matrix = {
+  let rx = matrix.to_lists(x)
+  let (t, _) = matrix.shape(x)
+  var out: List[List[Float]] = []
+  var i = 0
+  while i < t {
+    let xi = list.get_or(rx, i, [])
+    let m1 = xi |> list.fold(0.0 - 1.0e38, (acc, v) => math.fmax(acc, v))
+    let m2 = xi |> list.fold(0.0 - 1.0e38, (acc, v) => if v < m1 then math.fmax(acc, v) else acc)
+    out = out + [[m1 - m2]]
+    i = i + 1
+  }
+  matrix.from_lists(out)
+}
+
+// [1,5,3]: top1=5, top2=3 → margin 2.
+test "logit margin is top1 minus top2" {
+  let x = matrix.from_lists([[1.0, 5.0, 3.0]])
+  let y = logit_margin_rows(x)
+  assert(float.abs(matrix.get(y, 0, 0) - 2.0) < 0.000000001, "5−3=2")
+}
+
+// per row: [10,2,8]→10−8=2; [0,−5,−9]→0−(−5)=5.
+test "logit margin is computed independently per row" {
+  let x = matrix.from_lists([[10.0, 2.0, 8.0], [0.0, 0.0 - 5.0, 0.0 - 9.0]])
+  let y = logit_margin_rows(x)
+  assert(float.abs(matrix.get(y, 0, 0) - 2.0) < 0.000000001, "10−8=2")
+  assert(float.abs(matrix.get(y, 1, 0) - 5.0) < 0.000000001, "0−(−5)=5")
+}

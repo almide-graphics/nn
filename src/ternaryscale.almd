@@ -1,0 +1,45 @@
+// ternary_scale_rows — the per-row TWN scale factor α (one value per row, (T,1)).
+//   Δ_t = 0.7 · (1/D) Σ_j |x_{t,j}|                      (per-row absmean threshold)
+//   α_t = mean of |x_{t,j}| over the kept entries {j : |x_{t,j}| > Δ_t}
+//       = (Σ_{kept} |x|) / (#kept),   α_t = 0 if the row keeps nothing.
+// The optimal scaling coefficient of TWN (Li & Liu 2016): the value each surviving
+// ±1 weight is multiplied by so that α·ternary best matches the row. `ternary_scaled_rows`
+// scatters this α back across the row; this op exposes α itself, the layer's learned
+// step size. Per-row reduction (absmean → α). Output (T,1).
+
+import float
+
+fn ternary_scale_rows(x: Matrix) -> Matrix = {
+  let rx = matrix.to_lists(x)
+  let (t, d) = matrix.shape(x)
+  let df = int.to_float(d)
+  var out: List[List[Float]] = []
+  var i = 0
+  while i < t {
+    let xi = list.get_or(rx, i, [])
+    let s = xi |> list.fold(0.0, (acc, v) => acc + float.abs(v))
+    let delta = 0.7 * (s / df)
+    let count = xi |> list.fold(0.0, (acc, v) =>
+      acc + (if float.abs(v) > delta then 1.0 else 0.0))
+    let above = xi |> list.fold(0.0, (acc, v) =>
+      acc + (if float.abs(v) > delta then float.abs(v) else 0.0))
+    let alpha = if count > 0.0 then above / count else 0.0
+    out = out + [[alpha]]
+    i = i + 1
+  }
+  matrix.from_lists(out)
+}
+
+// row [3,-4,0.1]: mean|x|=2.366..., Δ=1.656 → kept {3,4}, α=(3+4)/2=3.5.
+test "ternary-scale averages the kept magnitudes" {
+  let x = matrix.from_lists([[3.0, 0.0 - 4.0, 0.1]])
+  let y = ternary_scale_rows(x)
+  assert_eq(matrix.get(y, 0, 0), 3.5)
+}
+
+// a flat-magnitude row keeps every entry, so α equals that magnitude.
+test "ternary-scale equals the magnitude on a flat row" {
+  let x = matrix.from_lists([[2.0, 0.0 - 2.0]])
+  let y = ternary_scale_rows(x)
+  assert_eq(matrix.get(y, 0, 0), 2.0)
+}

@@ -1,0 +1,19 @@
+// isru — Inverse Square Root Unit: x / √(1 + α·x²) (scalar α>0). Odd,
+// exp-free sigmoid saturating to ±1/√α; α tunes the saturation scale.
+// α=1 recovers inv_sqrt1px2. Elementwise.
+
+import math
+
+fn isru(m: Matrix, alpha: Float) -> Matrix =
+  matrix.map(m, (x) => x / math.sqrt(1.0 + alpha * x * x))
+
+test "isru at zero is zero" {
+  let y = isru(matrix.from_lists([[0.0]]), 2.0)
+  assert_eq(matrix.get(y, 0, 0), 0.0)
+}
+
+// α=4 at x=1 → 1/√5.
+test "isru saturation scaled by alpha" {
+  let y = isru(matrix.from_lists([[1.0]]), 4.0)
+  assert(float.abs(matrix.get(y, 0, 0) - 0.4472135954999579) < 0.000000001, "1/√5")
+}

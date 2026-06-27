@@ -1,0 +1,41 @@
+// ternary_density_rows — the kept-weight density of TWN ternary quantization, per row.
+//   Δ_t = 0.7 · (1/D) Σ_j |x_{t,j}|                  (per-row absmean threshold)
+//   out_t = (1/D) Σ_j [ |x_{t,j}| > Δ_t ]            → one fraction per row, (T,1).
+// The row mean of `ternary_mask_rows`: the share of weights that survive ternarization,
+// i.e. 1 − sparsity. This is the headline compute/footprint number for a ternary layer —
+// how dense the {−1,+1} support stays after the 0.7·E|x| cut. Per-row reduction
+// (absmean → count → divide by D). Output (T,1).
+
+import float
+
+fn ternary_density_rows(x: Matrix) -> Matrix = {
+  let rx = matrix.to_lists(x)
+  let (t, d) = matrix.shape(x)
+  let df = int.to_float(d)
+  var out: List[List[Float]] = []
+  var i = 0
+  while i < t {
+    let xi = list.get_or(rx, i, [])
+    let s = xi |> list.fold(0.0, (acc, v) => acc + float.abs(v))
+    let delta = 0.7 * (s / df)
+    let count = xi |> list.fold(0.0, (acc, v) =>
+      acc + (if float.abs(v) > delta then 1.0 else 0.0))
+    out = out + [[count / df]]
+    i = i + 1
+  }
+  matrix.from_lists(out)
+}
+
+// row [3,-4,0.1,0.05]: mean|x|=1.7875, Δ=1.251 → kept {3,4} → density 2/4 = 0.5.
+test "ternary-density is the fraction of kept weights" {
+  let x = matrix.from_lists([[3.0, 0.0 - 4.0, 0.1, 0.05]])
+  let y = ternary_density_rows(x)
+  assert_eq(matrix.get(y, 0, 0), 0.5)
+}
+
+// a flat-magnitude row keeps every weight → density 1.
+test "ternary-density is one on a flat-magnitude row" {
+  let x = matrix.from_lists([[2.0, 0.0 - 2.0]])
+  let y = ternary_density_rows(x)
+  assert_eq(matrix.get(y, 0, 0), 1.0)
+}

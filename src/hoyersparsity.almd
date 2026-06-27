@@ -1,0 +1,40 @@
+// hoyer_sparsity_rows — Hoyer sparsity of each row (axis=1):
+//   out_t = ( √D − (Σ_j |x_{t,j}|) / (√(Σ_j x_{t,j}²) + ε) ) / (√D − 1)   ∈ [0,1], (T,1).
+// The normalized L1/L2 ratio sparsity (Hoyer 2004): 0 when all magnitudes are equal (fully
+// dense), 1 when a single coordinate is nonzero (maximally sparse). A scale-invariant sparsity
+// gauge widely used in sparse coding / NMF / pruning. Distinct from gini_coeff_abs_rows, which
+// measures concentration via all-pairs differences; this uses the norm ratio. The +ε guards
+// an all-zero row. Per-row reduction (L1 and L2 folds). Output (T,1).
+
+import float
+import math
+
+fn hoyer_sparsity_rows(x: Matrix) -> Matrix = {
+  let rx = matrix.to_lists(x)
+  let (t, d) = matrix.shape(x)
+  let sq = math.sqrt(int.to_float(d))
+  var out: List[List[Float]] = []
+  var i = 0
+  while i < t {
+    let xi = list.get_or(rx, i, [])
+    let l1 = xi |> list.fold(0.0, (acc, v) => acc + float.abs(v))
+    let l2 = math.sqrt(xi |> list.fold(0.0, (acc, v) => acc + v * v))
+    out = out + [[(sq - l1 / (l2 + 0.000000000001)) / (sq - 1.0)]]
+    i = i + 1
+  }
+  matrix.from_lists(out)
+}
+
+// all-equal magnitudes → L1/L2 = √D → Hoyer 0 (fully dense).
+test "an all-equal-magnitude row has zero Hoyer sparsity" {
+  let x = matrix.from_lists([[3.0, 3.0, 3.0, 3.0]])
+  let y = hoyer_sparsity_rows(x)
+  assert(float.abs(matrix.get(y, 0, 0)) < 0.000000001, "equal → 0")
+}
+
+// one nonzero coordinate → L1/L2 = 1 → Hoyer 1 (maximally sparse).
+test "a one-hot row has Hoyer sparsity 1" {
+  let x = matrix.from_lists([[0.0, 0.0, 0.0, 4.0]])
+  let y = hoyer_sparsity_rows(x)
+  assert(float.abs(matrix.get(y, 0, 0) - 1.0) < 0.000000001, "one-hot → 1")
+}

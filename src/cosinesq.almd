@@ -1,0 +1,22 @@
+// cosine_sq — cos²(x). A non-negative periodic activation bounded in [0,1]
+// (= (1+cos2x)/2); the squared-cosine raised window / power-of-cos feature.
+// Even. Elementwise.
+
+import math
+
+fn cosine_sq(m: Matrix) -> Matrix =
+  matrix.map(m, (x) => {
+    let c = math.cos(x)
+    c * c
+  })
+
+test "cosine_sq at zero is one" {
+  let y = cosine_sq(matrix.from_lists([[0.0]]))
+  assert_eq(matrix.get(y, 0, 0), 1.0)
+}
+
+// cos(π/2)=0 → 0.
+test "cosine_sq at pi over two is zero" {
+  let y = cosine_sq(matrix.from_lists([[1.5707963267948966]]))
+  assert(float.abs(matrix.get(y, 0, 0)) < 0.000000001, "→ 0")
+}

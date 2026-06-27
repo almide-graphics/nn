@@ -1,0 +1,21 @@
+// exp_neg_abs_cubed_half — exp(-|x|³/2). A gentler super-Gaussian than
+// exp(-|x|³): even, peaks at 1, with a wider plateau (the ½ scale halves the
+// cubic decay rate) — a flatter-topped, heavy-skirted localization window.
+// Elementwise.
+
+import math
+
+fn exp_neg_abs_cubed_half(m: Matrix) -> Matrix =
+  matrix.map(m, (x) => math.exp(0.0 - 0.5 * float.abs(x * x * x)))
+
+test "exp_neg_abs_cubed_half peaks at one when x=0" {
+  let y = exp_neg_abs_cubed_half(matrix.from_lists([[0.0]]))
+  assert_eq(matrix.get(y, 0, 0), 1.0)
+}
+
+// exp(-½·1)=exp(-0.5) at x=±1; even.
+test "exp_neg_abs_cubed_half at one and even" {
+  let y = exp_neg_abs_cubed_half(matrix.from_lists([[1.0, -1.0]]))
+  assert(float.abs(matrix.get(y, 0, 0) - 0.6065306597126334) < 0.000000001, "e^-0.5")
+  assert(float.abs(matrix.get(y, 0, 1) - 0.6065306597126334) < 0.000000001, "even")
+}

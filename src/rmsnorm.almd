@@ -1,0 +1,38 @@
+// rms_normalize_vec — plain (gain-free) row-wise RMS normalization:
+//
+//   y_r = x_r / √( mean_j x_rj² + 1e-6 )
+//
+// The stdlib's rms_norm_rows takes a learned gamma; this is the bare normalizer
+// (the geometric core), useful for analysis and as a building block.
+
+import math
+
+fn rms_normalize_vec(x: Matrix) -> Matrix = {
+  let rx = matrix.to_lists(x)
+  let (t, d) = matrix.shape(x)
+  let df = int.to_float(d)
+  var out: List[List[Float]] = []
+  var n = 0
+  while n < t {
+    let xn = list.get_or(rx, n, [])
+    let ss = xn |> list.fold(0.0, (acc, v) => acc + v * v)
+    let inv = 1.0 / math.sqrt(ss / df + 0.000001)
+    out = out + [list.map(xn, (v) => v * inv)]
+    n = n + 1
+  }
+  matrix.from_lists(out)
+}
+
+// Constant row → every entry normalizes to ≈ 1.
+test "rms_normalize of constant row is unit" {
+  let y = rms_normalize_vec(matrix.from_lists([[2.0, 2.0, 2.0, 2.0]]))
+  assert(float.abs(matrix.get(y, 0, 0) - 1.0) < 0.0001, "≈ 1")
+  assert(float.abs(matrix.get(y, 0, 3) - 1.0) < 0.0001, "≈ 1")
+}
+
+// RMS of [-5,5] is 5 → output ≈ [-1, 1] (direction/sign preserved).
+test "rms_normalize preserves sign and scale" {
+  let y = rms_normalize_vec(matrix.from_lists([[-5.0, 5.0]]))
+  assert(float.abs(matrix.get(y, 0, 0) + 1.0) < 0.0001, "≈ -1")
+  assert(float.abs(matrix.get(y, 0, 1) - 1.0) < 0.0001, "≈ 1")
+}

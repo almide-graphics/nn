@@ -1,0 +1,19 @@
+// morlet_approx — cos(5x)·exp(-x²/2). A (real, uncorrected) Morlet wavelet: an
+// oscillation under a Gaussian envelope — the time-frequency atom of the
+// continuous wavelet transform. Even, peaks at 1. Elementwise.
+
+import math
+
+fn morlet_approx(m: Matrix) -> Matrix =
+  matrix.map(m, (x) => math.cos(5.0 * x) * math.exp(0.0 - x * x / 2.0))
+
+test "morlet at zero is one" {
+  let y = morlet_approx(matrix.from_lists([[0.0]]))
+  assert_eq(matrix.get(y, 0, 0), 1.0)
+}
+
+// even: cos and the Gaussian envelope are both even.
+test "morlet is even" {
+  let y = morlet_approx(matrix.from_lists([[1.3, -1.3]]))
+  assert(float.abs(matrix.get(y, 0, 0) - matrix.get(y, 0, 1)) < 0.000000001, "even")
+}

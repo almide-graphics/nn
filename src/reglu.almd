@@ -1,0 +1,34 @@
+// reglu — ReGLU gate (the gating half of a ReGLU MLP): x ⊙ relu(g) = x ⊙ max(g,0).
+// Two inputs x, g of equal shape; the gate g masks/scales the value x. (Stdlib
+// has swiglu_gate but not the ReLU-gated variant.) Row-wise zip_with.
+
+import math
+
+fn reglu(x: Matrix, g: Matrix) -> Matrix = {
+  let rx = matrix.to_lists(x)
+  let rg = matrix.to_lists(g)
+  let (t, _) = matrix.shape(x)
+  var out: List[List[Float]] = []
+  var n = 0
+  while n < t {
+    let xn = list.get_or(rx, n, [])
+    let gn = list.get_or(rg, n, [])
+    out = out + [list.zip_with(xn, gn, (xx, gg) => xx * math.fmax(gg, 0.0))]
+    n = n + 1
+  }
+  matrix.from_lists(out)
+}
+
+// g ≤ 0 → gate closed (0); g > 0 → x·g.
+test "reglu gates out non-positive g" {
+  let x = matrix.from_lists([[2.0, 3.0]])
+  let g = matrix.from_lists([[1.0, -1.0]])
+  let y = reglu(x, g)
+  assert_eq(matrix.get(y, 0, 0), 2.0)
+  assert_eq(matrix.get(y, 0, 1), 0.0)
+}
+
+test "reglu positive gate is product" {
+  let y = reglu(matrix.from_lists([[4.0]]), matrix.from_lists([[2.0]]))
+  assert_eq(matrix.get(y, 0, 0), 8.0)
+}

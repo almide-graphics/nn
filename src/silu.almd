@@ -1,0 +1,21 @@
+// silu — SiLU / swish activation: x * sigmoid(x) = x / (1 + exp(-x)).
+// Standalone elementwise op (the matrix stdlib exposes `swiglu_gate` but not a
+// bare silu). Here to show the flywheel verifier generalizes beyond the
+// recurrence family (scan/wkv) to plain activations.
+
+import math
+
+fn silu(m: Matrix) -> Matrix =
+  matrix.map(m, (x) => x / (1.0 + math.exp(0.0 - x)))
+
+test "silu at zero is zero" {
+  let y = silu(matrix.from_lists([[0.0]]))
+  assert_eq(matrix.get(y, 0, 0), 0.0)
+}
+
+// Large positive x → sigmoid≈1 → silu≈x; large negative x → silu≈0.
+test "silu saturates to x and to 0" {
+  let y = silu(matrix.from_lists([[20.0, -20.0]]))
+  assert(float.abs(matrix.get(y, 0, 0) - 20.0) < 0.0001, "silu(+20) ~ 20")
+  assert(float.abs(matrix.get(y, 0, 1)) < 0.0001, "silu(-20) ~ 0")
+}

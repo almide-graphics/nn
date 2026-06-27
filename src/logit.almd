@@ -1,0 +1,20 @@
+// logit — log(x / (1-x)), the inverse of the logistic sigmoid (defined on the
+// open interval (0,1)). Maps a probability to its log-odds. Odd about 0.5.
+// Elementwise.
+
+import math
+
+fn logit(m: Matrix) -> Matrix =
+  matrix.map(m, (x) => math.log(x / (1.0 - x)))
+
+// logit(0.5) = log(1) = 0.
+test "logit at half is zero" {
+  let y = logit(matrix.from_lists([[0.5]]))
+  assert_eq(matrix.get(y, 0, 0), 0.0)
+}
+
+// sigmoid(1)=0.7310585786300049, so logit of it is 1.
+test "logit inverts sigmoid at 1" {
+  let y = logit(matrix.from_lists([[0.7310585786300049]]))
+  assert(float.abs(matrix.get(y, 0, 0) - 1.0) < 0.000000001, "= 1")
+}

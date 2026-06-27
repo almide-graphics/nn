@@ -1,0 +1,20 @@
+// squareplus — algebraic softplus surrogate: (x + √(x²+4)) / 2.
+// Smooth, ReLU-like, but exp-free (cheaper, no overflow). → x for x≫0, → 0 for
+// x≪0, equals 1 at x=0. Elementwise.
+
+import math
+
+fn squareplus(m: Matrix) -> Matrix =
+  matrix.map(m, (x) => (x + math.sqrt(x * x + 4.0)) / 2.0)
+
+// squareplus(0) = (0 + √4)/2 = 1.
+test "squareplus at zero is one" {
+  let y = squareplus(matrix.from_lists([[0.0]]))
+  assert(float.abs(matrix.get(y, 0, 0) - 1.0) < 0.000000001, "= 1")
+}
+
+// squareplus(1.5) = (1.5 + √6.25)/2 = (1.5 + 2.5)/2 = 2.
+test "squareplus(1.5) equals 2" {
+  let y = squareplus(matrix.from_lists([[1.5]]))
+  assert(float.abs(matrix.get(y, 0, 0) - 2.0) < 0.000000001, "= 2")
+}

@@ -1,0 +1,42 @@
+// elementwise_min_rows — elementwise minimum of two matrices:
+//   out_{t,j} = min( a_{t,j}, b_{t,j} )                 → (T,D).
+// The lower-envelope / "keep the weaker signal" merge — the companion of
+// elementwise_max_rows (together they bracket two branches, as in a min-max gate). Distinct
+// from min_rows (a single-input row pool → (T,1)) and from min_prod_rows (a reduction); this
+// is a two-input, shape-preserving elementwise op. Idempotent (min(a,a)=a). Output (T,D).
+
+import math
+
+fn elementwise_min_rows(a: Matrix, b: Matrix) -> Matrix = {
+  let ra = matrix.to_lists(a)
+  let rb = matrix.to_lists(b)
+  let (t, _) = matrix.shape(a)
+  var out: List[List[Float]] = []
+  var i = 0
+  while i < t {
+    let ai = list.get_or(ra, i, [])
+    let bi = list.get_or(rb, i, [])
+    out = out + [list.zip_with(ai, bi, (x, y) => math.fmin(x, y))]
+    i = i + 1
+  }
+  matrix.from_lists(out)
+}
+
+// picks the smaller of each pair: min([1,5,−2],[3,2,−1]) = [1,2,−2].
+test "elementwise-min picks the smaller of each pair" {
+  let a = matrix.from_lists([[1.0, 5.0, 0.0 - 2.0]])
+  let b = matrix.from_lists([[3.0, 2.0, 0.0 - 1.0]])
+  let y = elementwise_min_rows(a, b)
+  assert_eq(matrix.get(y, 0, 0), 1.0)
+  assert_eq(matrix.get(y, 0, 1), 2.0)
+  assert_eq(matrix.get(y, 0, 2), 0.0 - 2.0)
+}
+
+// min(a, a) = a (idempotent), per channel and row.
+test "elementwise-min of a matrix with itself is itself" {
+  let a = matrix.from_lists([[7.0, 0.0 - 3.0], [0.0, 9.0]])
+  let y = elementwise_min_rows(a, a)
+  assert_eq(matrix.get(y, 0, 0), 7.0)
+  assert_eq(matrix.get(y, 0, 1), 0.0 - 3.0)
+  assert_eq(matrix.get(y, 1, 1), 9.0)
+}

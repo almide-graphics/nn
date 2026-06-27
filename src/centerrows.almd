@@ -1,0 +1,44 @@
+// center_rows — mean-centering over time (down the rows):
+//   out_t = x_t − μ,   μ_c = (1/T) Σ_t x_{t,c}  (per-channel time mean).
+// Removes each channel's temporal DC component so every column sums to zero — the
+// centering step of a streaming-statistics / covariance pipeline (axis=0 mean
+// subtraction, distinct from the per-row meanpool). Two passes. Output (T,D).
+
+fn center_rows(x: Matrix) -> Matrix = {
+  let rx = matrix.to_lists(x)
+  let (t, d) = matrix.shape(x)
+  let tf = int.to_float(t)
+  var s: List[Float] = list.range(0, d) |> list.map((_) => 0.0)
+  var i = 0
+  while i < t {
+    let xi = list.get_or(rx, i, [])
+    s = list.zip_with(s, xi, (a, b) => a + b)
+    i = i + 1
+  }
+  let mu = s |> list.map((v) => v / tf)
+  var out: List[List[Float]] = []
+  var j = 0
+  while j < t {
+    let xj = list.get_or(rx, j, [])
+    out = out + [list.zip_with(xj, mu, (a, b) => a - b)]
+    j = j + 1
+  }
+  matrix.from_lists(out)
+}
+
+// single channel mean of [1,3] is 2 → centered [-1,1].
+test "center subtracts the per-channel time mean" {
+  let x = matrix.from_lists([[1.0], [3.0]])
+  let y = center_rows(x)
+  assert_eq(matrix.get(y, 0, 0), 0.0 - 1.0)
+  assert_eq(matrix.get(y, 1, 0), 1.0)
+}
+
+// per channel: means [3,15] → [[-1,-5],[1,5]].
+test "center works per channel" {
+  let x = matrix.from_lists([[2.0, 10.0], [4.0, 20.0]])
+  let y = center_rows(x)
+  assert_eq(matrix.get(y, 0, 1), 0.0 - 5.0)
+  assert_eq(matrix.get(y, 1, 0), 1.0)
+  assert_eq(matrix.get(y, 1, 1), 5.0)
+}

@@ -1,0 +1,42 @@
+// grad_clip_norm_rows — per-row gradient clipping by global L2 norm (max_norm = 1):
+//   n_t = sqrt(Σ_j g_{t,j}²),   scale_t = min(1, 1/(n_t + ε)),   out_{t,j} = g_{t,j}·scale_t → (T,D).
+// The training-stability primitive (clip_grad_norm_): leave a row untouched while its norm is
+// within the budget, and rescale it down to the budget when it exceeds it — preserving direction,
+// only shrinking magnitude. Distinct from l2_normalize_rows (which always rescales to unit norm,
+// even amplifying small rows) and from value clips (hardtanh / clip_symmetric, which clamp each
+// element independently). One reduction (norm) + one broadcast scale. ε guards a zero row.
+// Output (T,D).
+
+import float
+import math
+
+fn grad_clip_norm_rows(g: Matrix) -> Matrix = {
+  let rg = matrix.to_lists(g)
+  let (t, _) = matrix.shape(g)
+  var out: List[List[Float]] = []
+  var i = 0
+  while i < t {
+    let gi = list.get_or(rg, i, [])
+    let n = math.sqrt(gi |> list.fold(0.0, (acc, v) => acc + v * v))
+    let scale = math.fmin(1.0, 1.0 / (n + 0.000000000001))
+    out = out + [gi |> list.map((v) => v * scale)]
+    i = i + 1
+  }
+  matrix.from_lists(out)
+}
+
+// within budget (‖[0.3,0.4]‖ = 0.5 < 1): scale = 1, row unchanged.
+test "a row within the norm budget is left unchanged" {
+  let g = matrix.from_lists([[0.3, 0.4]])
+  let y = grad_clip_norm_rows(g)
+  assert(float.abs(matrix.get(y, 0, 0) - 0.3) < 0.000000001, "unchanged")
+  assert(float.abs(matrix.get(y, 0, 1) - 0.4) < 0.000000001, "unchanged")
+}
+
+// over budget (‖[3,4]‖ = 5 > 1): scale = 1/5 → [0.6, 0.8] (unit norm, same direction).
+test "an over-budget row is rescaled to the unit norm budget" {
+  let g = matrix.from_lists([[3.0, 4.0]])
+  let y = grad_clip_norm_rows(g)
+  assert(float.abs(matrix.get(y, 0, 0) - 0.6) < 0.000000001, "3/5=0.6")
+  assert(float.abs(matrix.get(y, 0, 1) - 0.8) < 0.000000001, "4/5=0.8")
+}

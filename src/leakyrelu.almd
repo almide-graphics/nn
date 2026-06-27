@@ -1,0 +1,15 @@
+// leaky_relu — ReLU with a leaky negative slope: x for x>0, else α·x. α scalar.
+// Elementwise.
+
+fn leaky_relu(m: Matrix, alpha: Float) -> Matrix =
+  matrix.map(m, (x) => if x > 0.0 then x else alpha * x)
+
+test "leaky_relu identity for positive" {
+  let y = leaky_relu(matrix.from_lists([[5.0]]), 0.1)
+  assert_eq(matrix.get(y, 0, 0), 5.0)
+}
+
+test "leaky_relu scales negatives by alpha" {
+  let y = leaky_relu(matrix.from_lists([[-10.0]]), 0.1)
+  assert_eq(matrix.get(y, 0, 0), -1.0)
+}

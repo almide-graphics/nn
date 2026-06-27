@@ -1,0 +1,56 @@
+// margin_ranking_loss_rows — per-row margin (hinge) pairwise ranking loss (3-input):
+//   ℓ = max(0, −y·(a − b) + 1),   y ∈ {−1,+1},   out_t = (1/D) Σ_j ℓ_{t,j}   → (T,1).
+// The hinge-style ranking objective (torch.MarginRankingLoss): for each pair of scores (a, b) with a
+// target sign y (y=+1 means a should rank above b), pay nothing once a beats b by at least the margin
+// (1), and a linearly growing penalty otherwise. It is the margin counterpart to the logistic
+// Bradley–Terry preference (bt_preference_rows) — the two canonical pairwise-ranking losses — and is
+// distinct from hinge_rows (a class-margin loss on score·label) and triplet_loss_rows (a
+// distance-margin loss). max(0,·) is continuous so parity is exact. Output (T,1).
+
+import float
+import math
+
+fn margin_ranking_loss_rows(a: Matrix, b: Matrix, y: Matrix) -> Matrix = {
+  let ra = matrix.to_lists(a)
+  let rb = matrix.to_lists(b)
+  let ry = matrix.to_lists(y)
+  let (t, d) = matrix.shape(a)
+  let df = int.to_float(d)
+  var out: List[List[Float]] = []
+  var i = 0
+  while i < t {
+    let ai = list.get_or(ra, i, [])
+    let bi = list.get_or(rb, i, [])
+    let yi = list.get_or(ry, i, [])
+    var s = 0.0
+    var j = 0
+    while j < d {
+      let av = list.get_or(ai, j, 0.0)
+      let bv = list.get_or(bi, j, 0.0)
+      let yv = list.get_or(yi, j, 0.0)
+      s = s + math.fmax(0.0, 0.0 - yv * (av - bv) + 1.0)
+      j = j + 1
+    }
+    out = out + [[s / df]]
+    i = i + 1
+  }
+  matrix.from_lists(out)
+}
+
+// correctly ranked beyond the margin (a≫b, y=+1) → 0.
+test "a correctly ranked pair beyond the margin has zero loss" {
+  let a = matrix.from_lists([[5.0]])
+  let b = matrix.from_lists([[0.0]])
+  let y = matrix.from_lists([[1.0]])
+  let l = margin_ranking_loss_rows(a, b, y)
+  assert(float.abs(matrix.get(l, 0, 0)) < 0.000000001, "max(0,-4)=0")
+}
+
+// misranked (a<b but y=+1): −1·(0−2)+1 = 3.
+test "a misranked pair incurs margin loss" {
+  let a = matrix.from_lists([[0.0]])
+  let b = matrix.from_lists([[2.0]])
+  let y = matrix.from_lists([[1.0]])
+  let l = margin_ranking_loss_rows(a, b, y)
+  assert(float.abs(matrix.get(l, 0, 0) - 3.0) < 0.000000001, "-1·(-2)+1=3")
+}

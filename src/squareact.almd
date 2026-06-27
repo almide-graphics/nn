@@ -1,0 +1,11 @@
+// square_act — elementwise square: x². A simple even activation / energy term.
+
+fn square_act(m: Matrix) -> Matrix =
+  matrix.map(m, (x) => x * x)
+
+test "square_act squares (even)" {
+  let y = square_act(matrix.from_lists([[3.0, -3.0, 0.0]]))
+  assert_eq(matrix.get(y, 0, 0), 9.0)
+  assert_eq(matrix.get(y, 0, 1), 9.0)
+  assert_eq(matrix.get(y, 0, 2), 0.0)
+}

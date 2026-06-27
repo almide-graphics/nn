@@ -1,0 +1,56 @@
+// zscore_time_rows — per-channel standardization over time (axis=0):
+//   out_t = (x_t − μ) / σ,   μ_c = mean_t x_{t,c},  σ_c = sqrt( mean_t (x_{t,c}−μ_c)² ).
+// Whitens each channel across the time axis to zero mean / unit variance
+// (population std, ddof=0) — the instance-normalization statistic of a sequence,
+// distinct from the per-row layer-norm flavour. Three passes. Output (T,D).
+
+import math
+
+fn zscore_time_rows(x: Matrix) -> Matrix = {
+  let rx = matrix.to_lists(x)
+  let (t, d) = matrix.shape(x)
+  let tf = int.to_float(t)
+  var s: List[Float] = list.range(0, d) |> list.map((_) => 0.0)
+  var i = 0
+  while i < t {
+    let xi = list.get_or(rx, i, [])
+    s = list.zip_with(s, xi, (a, b) => a + b)
+    i = i + 1
+  }
+  let mu = s |> list.map((v) => v / tf)
+  var sq: List[Float] = list.range(0, d) |> list.map((_) => 0.0)
+  var k = 0
+  while k < t {
+    let xk = list.get_or(rx, k, [])
+    let dev2 = list.zip_with(xk, mu, (a, b) => (a - b) * (a - b))
+    sq = list.zip_with(sq, dev2, (a, b) => a + b)
+    k = k + 1
+  }
+  let sigma = sq |> list.map((v) => math.sqrt(v / tf))
+  var out: List[List[Float]] = []
+  var j = 0
+  while j < t {
+    let xj = list.get_or(rx, j, [])
+    let dev = list.zip_with(xj, mu, (a, b) => a - b)
+    out = out + [list.zip_with(dev, sigma, (a, b) => a / b)]
+    j = j + 1
+  }
+  matrix.from_lists(out)
+}
+
+// single channel [1,5]: mu=3, sigma=2 → [-1,1].
+test "zscore standardizes a channel over time" {
+  let x = matrix.from_lists([[1.0], [5.0]])
+  let y = zscore_time_rows(x)
+  assert_eq(matrix.get(y, 0, 0), 0.0 - 1.0)
+  assert_eq(matrix.get(y, 1, 0), 1.0)
+}
+
+// two channels: ch0 mu=1 sigma=1, ch1 mu=3 sigma=2 → rows [-1,-1],[1,1].
+test "zscore works per channel" {
+  let x = matrix.from_lists([[0.0, 1.0], [2.0, 5.0]])
+  let y = zscore_time_rows(x)
+  assert_eq(matrix.get(y, 0, 1), 0.0 - 1.0)
+  assert_eq(matrix.get(y, 1, 0), 1.0)
+  assert_eq(matrix.get(y, 1, 1), 1.0)
+}

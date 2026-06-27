@@ -1,0 +1,15 @@
+// softclamp — clamp x to [lo, hi]: max(lo, min(hi, x)). lo, hi scalars.
+// Generalized hardtanh / bounded activation. Elementwise.
+
+import math
+
+fn softclamp(m: Matrix, lo: Float, hi: Float) -> Matrix =
+  matrix.map(m, (x) => math.fmax(lo, math.fmin(hi, x)))
+
+// x<lo → lo ; lo≤x≤hi → x ; x>hi → hi.
+test "softclamp clamps to [lo,hi]" {
+  let y = softclamp(matrix.from_lists([[-5.0, 0.5, 5.0]]), -1.0, 1.0)
+  assert_eq(matrix.get(y, 0, 0), -1.0)
+  assert_eq(matrix.get(y, 0, 1), 0.5)
+  assert_eq(matrix.get(y, 0, 2), 1.0)
+}

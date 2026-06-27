@@ -1,0 +1,20 @@
+// log1p_abs_half — ½·log(1 + |x|). A gentle even logarithmic penalty (half of
+// log1p_abs): 0 at the origin, ≥0, sub-linear growth that heavily down-weights
+// large residuals. A softer robust loss. Elementwise.
+
+import math
+
+fn log1p_abs_half(m: Matrix) -> Matrix =
+  matrix.map(m, (x) => 0.5 * math.log(1.0 + float.abs(x)))
+
+test "log1p_abs_half at zero is zero" {
+  let y = log1p_abs_half(matrix.from_lists([[0.0]]))
+  assert_eq(matrix.get(y, 0, 0), 0.0)
+}
+
+// ½log(1+(e-1)) = ½log(e) = 0.5 at x=±(e-1); even.
+test "log1p_abs_half half log e and even" {
+  let y = log1p_abs_half(matrix.from_lists([[1.718281828459045, -1.718281828459045]]))
+  assert(float.abs(matrix.get(y, 0, 0) - 0.5) < 0.000000001, "= 0.5")
+  assert(float.abs(matrix.get(y, 0, 1) - 0.5) < 0.000000001, "even")
+}

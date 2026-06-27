@@ -1,0 +1,39 @@
+// cummean_rows — cumulative mean over time (down the rows):
+//   out_t = (1/(t+1)) · Σ_{i≤t} x_i   (elementwise per channel).
+// The running average / expanding-window mean of a sequence (a debiased
+// counterpart of an EMA; cumsum_rows divided by the step count). Keeps a running
+// sum and divides by the count at each step. O(T), O(D) state. Output (T,D).
+
+fn cummean_rows(x: Matrix) -> Matrix = {
+  let rx = matrix.to_lists(x)
+  let (t, d) = matrix.shape(x)
+  var acc: List[Float] = list.range(0, d) |> list.map((_) => 0.0)
+  var out: List[List[Float]] = []
+  var i = 0
+  while i < t {
+    let xi = list.get_or(rx, i, [])
+    acc = list.zip_with(acc, xi, (a, b) => a + b)
+    let cnt = int.to_float(i + 1)
+    let row = acc |> list.map((v) => v / cnt)
+    out = out + [row]
+    i = i + 1
+  }
+  matrix.from_lists(out)
+}
+
+// running mean of [2,4,6] (single channel) → [2,3,4].
+test "cummean is the running average down rows" {
+  let x = matrix.from_lists([[2.0], [4.0], [6.0]])
+  let y = cummean_rows(x)
+  assert_eq(matrix.get(y, 0, 0), 2.0)
+  assert_eq(matrix.get(y, 1, 0), 3.0)
+  assert_eq(matrix.get(y, 2, 0), 4.0)
+}
+
+// per channel: [[2,10],[4,20]] → row1 = [3,15].
+test "cummean works per channel" {
+  let x = matrix.from_lists([[2.0, 10.0], [4.0, 20.0]])
+  let y = cummean_rows(x)
+  assert_eq(matrix.get(y, 1, 0), 3.0)
+  assert_eq(matrix.get(y, 1, 1), 15.0)
+}

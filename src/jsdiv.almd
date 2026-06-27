@@ -1,0 +1,46 @@
+// js_div_rows — row-wise Jensen–Shannon divergence of two probability matrices:
+//
+//   m_rj = (p_rj + q_rj)/2
+//   JS_r = ½·KL(p_r ‖ m_r) + ½·KL(q_r ‖ m_r)
+//        = Σ_j [ ½ p_rj(log p_rj − log m_rj) + ½ q_rj(log q_rj − log m_rj) ]
+//
+// One value per row → output (T,1). The symmetric, bounded (≤ log2) smoothing of
+// KL — used in GAN / contrastive objectives. Assumes positive distribution rows.
+// Two-input row reduction.
+
+import math
+
+fn js_div_rows(p: Matrix, q: Matrix) -> Matrix = {
+  let rp = matrix.to_lists(p)
+  let rq = matrix.to_lists(q)
+  let (t, _) = matrix.shape(p)
+  var out: List[List[Float]] = []
+  var n = 0
+  while n < t {
+    let pn = list.get_or(rp, n, [])
+    let qn = list.get_or(rq, n, [])
+    let js = list.zip_with(pn, qn, (pj, qj) => {
+      let mj = 0.5 * (pj + qj)
+      0.5 * pj * (math.log(pj) - math.log(mj)) + 0.5 * qj * (math.log(qj) - math.log(mj))
+    }) |> list.fold(0.0, (acc, v) => acc + v)
+    out = out + [[js]]
+    n = n + 1
+  }
+  matrix.from_lists(out)
+}
+
+// JS(p ‖ p) = 0 (m = p, both KL terms vanish).
+test "js_div of identical distributions is zero" {
+  let p = matrix.from_lists([[0.2, 0.3, 0.5]])
+  let y = js_div_rows(p, p)
+  assert(float.abs(matrix.get(y, 0, 0)) < 0.000000001, "self-JS 0")
+}
+
+// distinct distributions: 0 < JS < log2.
+test "js_div is positive and below log2 for distinct" {
+  let p = matrix.from_lists([[0.9, 0.1]])
+  let q = matrix.from_lists([[0.1, 0.9]])
+  let y = js_div_rows(p, q)
+  assert(matrix.get(y, 0, 0) > 0.0, "positive")
+  assert(matrix.get(y, 0, 0) < 0.6931471805599454, "≤ log2")
+}

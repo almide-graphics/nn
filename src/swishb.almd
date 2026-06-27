@@ -1,0 +1,19 @@
+// swish_beta — parameterized swish: x · σ(βx) = x / (1 + exp(-βx)).
+// β is a scalar: β=1 recovers SiLU, larger β sharpens toward ReLU. Elementwise.
+
+import math
+
+fn swish_beta(m: Matrix, beta: Float) -> Matrix =
+  matrix.map(m, (x) => x / (1.0 + math.exp(0.0 - beta * x)))
+
+// swish_beta(0, β) = 0 for any β.
+test "swish_beta at zero is zero" {
+  let y = swish_beta(matrix.from_lists([[0.0]]), 1.5)
+  assert_eq(matrix.get(y, 0, 0), 0.0)
+}
+
+// Large positive x → σ(βx) ≈ 1 → swish ≈ x.
+test "swish_beta passes large positive through" {
+  let y = swish_beta(matrix.from_lists([[30.0]]), 1.0)
+  assert(float.abs(matrix.get(y, 0, 0) - 30.0) < 0.000000001, "≈ x for large x")
+}

@@ -1,0 +1,18 @@
+// bipolar_sigmoid — sigmoid rescaled to (-1, 1): 2·σ(x) - 1 = tanh(x/2).
+// Zero-centered logistic; used in classic RNNs. Elementwise.
+
+import math
+
+fn bipolar_sigmoid(m: Matrix) -> Matrix =
+  matrix.map(m, (x) => 2.0 / (1.0 + math.exp(0.0 - x)) - 1.0)
+
+test "bipolar_sigmoid at zero is zero" {
+  let y = bipolar_sigmoid(matrix.from_lists([[0.0]]))
+  assert_eq(matrix.get(y, 0, 0), 0.0)
+}
+
+test "bipolar_sigmoid saturates to plus/minus one" {
+  let y = bipolar_sigmoid(matrix.from_lists([[30.0, -30.0]]))
+  assert(float.abs(matrix.get(y, 0, 0) - 1.0) < 0.000000001, "→ 1")
+  assert(float.abs(matrix.get(y, 0, 1) + 1.0) < 0.000000001, "→ -1")
+}

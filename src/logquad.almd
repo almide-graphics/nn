@@ -1,0 +1,20 @@
+// log_quad — log(1 + x²). Even, ≥0, ≈x² near 0 and ≈2·log|x| far out — the
+// Cauchy/Lorentzian negative-log-likelihood (a robust, sub-quadratic loss).
+// Elementwise.
+
+import math
+
+fn log_quad(m: Matrix) -> Matrix =
+  matrix.map(m, (x) => math.log(1.0 + x * x))
+
+test "log_quad at zero is zero" {
+  let y = log_quad(matrix.from_lists([[0.0]]))
+  assert_eq(matrix.get(y, 0, 0), 0.0)
+}
+
+// even and positive away from 0.
+test "log_quad is even and positive" {
+  let y = log_quad(matrix.from_lists([[2.0, -2.0]]))
+  assert(matrix.get(y, 0, 0) > 0.0, "positive")
+  assert(float.abs(matrix.get(y, 0, 0) - matrix.get(y, 0, 1)) < 0.000000001, "even")
+}

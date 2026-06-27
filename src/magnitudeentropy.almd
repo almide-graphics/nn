@@ -1,0 +1,44 @@
+// magnitude_entropy_rows — Shannon entropy of a row's L1-normalized magnitude distribution (axis=1):
+//   pₘ_j = |x_{t,j}| / (Σ_k |x_{t,k}| + ε),   out_t = −Σ_j pₘ_j·log(pₘ_j + ε)   (nats), (T,1).
+// How spread a row's energy is across its coordinates: maximal (log D) when all magnitudes are
+// equal, → 0 when one coordinate holds all the mass — a concentration / sparsity gauge in
+// information units (the magnitude-distribution analogue of spectral entropy). Sign-blind.
+// Distinct from entropy_rows (which takes an already-normalized probability row), from
+// softmax_entropy_rows (softmax of logits) and sign_entropy_rows (sign distribution); it is the
+// information-theoretic companion to gini_coeff_rows / hoyer_sparsity_rows. Per-row reduction. (T,1).
+
+import float
+import math
+
+fn magnitude_entropy_rows(x: Matrix) -> Matrix = {
+  let rx = matrix.to_lists(x)
+  let (t, _) = matrix.shape(x)
+  var out: List[List[Float]] = []
+  var i = 0
+  while i < t {
+    let xi = list.get_or(rx, i, [])
+    let a = xi |> list.map((v) => float.abs(v))
+    let s = a |> list.fold(0.0, (acc, v) => acc + v)
+    let h = a |> list.fold(0.0, (acc, v) => {
+      let p = v / (s + 0.000000000001)
+      acc + p * math.log(p + 0.000000000001)
+    })
+    out = out + [[0.0 - h]]
+    i = i + 1
+  }
+  matrix.from_lists(out)
+}
+
+// equal magnitudes spread energy uniformly → entropy log(D); D=4 → log 4.
+test "uniform magnitudes give maximal entropy log(D)" {
+  let x = matrix.from_lists([[2.0, 2.0, 2.0, 2.0]])
+  let y = magnitude_entropy_rows(x)
+  assert(float.abs(matrix.get(y, 0, 0) - 1.3862943611198906) < 0.000000001, "log 4")
+}
+
+// all energy in one coordinate → near-zero magnitude entropy (sign-blind).
+test "a single-nonzero row has near-zero magnitude entropy" {
+  let x = matrix.from_lists([[5.0, 0.0, 0.0, 0.0]])
+  let y = magnitude_entropy_rows(x)
+  assert(float.abs(matrix.get(y, 0, 0)) < 0.000001, "concentrated → ≈ 0")
+}

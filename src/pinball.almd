@@ -1,0 +1,51 @@
+// pinball_loss_rows — per-row quantile (pinball) regression loss at τ = 0.7 (2-input):
+//   e = y − ŷ,   ℓ = max(τ·e, (τ−1)·e),   out_t = (1/D) Σ_j ℓ_{t,j}   → (T,1).
+// The asymmetric absolute loss minimized by the τ-th conditional quantile: under-prediction (e>0)
+// is weighted by τ, over-prediction (e<0) by 1−τ. With τ=0.7 the model is pushed to predict the 70th
+// percentile (under-shooting costs 0.7·|e|, over-shooting 0.3·|e|). Distinct from the symmetric
+// regressors here — smooth_l1 / mse / mae / logcosh — which penalize ±errors equally; the asymmetry
+// is the whole point (prediction intervals, quantile regression). max(τe,(τ−1)e) is continuous at
+// e=0, so parity is exact. Output (T,1).
+
+import float
+import math
+
+fn pinball_loss_rows(y: Matrix, yhat: Matrix) -> Matrix = {
+  let ry = matrix.to_lists(y)
+  let rh = matrix.to_lists(yhat)
+  let (t, d) = matrix.shape(y)
+  let df = int.to_float(d)
+  var out: List[List[Float]] = []
+  var i = 0
+  while i < t {
+    let yi = list.get_or(ry, i, [])
+    let hi = list.get_or(rh, i, [])
+    let s = list.zip_with(yi, hi, (yv, hv) => {
+      let e = yv - hv
+      math.fmax(0.7 * e, (0.7 - 1.0) * e)
+    }) |> list.fold(0.0, (acc, v) => acc + v)
+    out = out + [[s / df]]
+    i = i + 1
+  }
+  matrix.from_lists(out)
+}
+
+// perfect predictions cost nothing.
+test "pinball loss is zero for perfect predictions" {
+  let y = matrix.from_lists([[5.0, 1.0]])
+  let yhat = matrix.from_lists([[5.0, 1.0]])
+  let l = pinball_loss_rows(y, yhat)
+  assert(float.abs(matrix.get(l, 0, 0)) < 0.000000001, "0")
+}
+
+// asymmetry at τ=0.7: under-prediction e=+1 costs 0.7, over-prediction e=−1 costs 0.3.
+test "pinball loss penalizes under- and over-prediction asymmetrically" {
+  let yu = matrix.from_lists([[1.0]])
+  let hu = matrix.from_lists([[0.0]])
+  let lu = pinball_loss_rows(yu, hu)
+  assert(float.abs(matrix.get(lu, 0, 0) - 0.7) < 0.000000001, "τ·1 = 0.7")
+  let yo = matrix.from_lists([[0.0]])
+  let ho = matrix.from_lists([[1.0]])
+  let lo = pinball_loss_rows(yo, ho)
+  assert(float.abs(matrix.get(lo, 0, 0) - 0.3) < 0.000000001, "(1−τ)·1 = 0.3")
+}

@@ -1,0 +1,37 @@
+// mean_abs_dev_rows — mean absolute deviation of each row from its own mean (axis=1):
+//   μ_t = (1/D) Σ_j x_{t,j},   out_t = (1/D) Σ_j |x_{t,j} − μ_t|   → one value per row, (T,1).
+// The L1 dispersion of a row: average distance from the mean. The robust-flavoured sibling
+// of variance_rows / std_rows (which use the squared L2 deviation) — less sensitive to
+// outliers. Distinct from mean_abs_rows, which averages |x| about zero (uncentered). Two
+// passes (mean, then mean of absolute deviations). Output (T,1).
+
+import float
+
+fn mean_abs_dev_rows(x: Matrix) -> Matrix = {
+  let rx = matrix.to_lists(x)
+  let (t, d) = matrix.shape(x)
+  let df = int.to_float(d)
+  var out: List[List[Float]] = []
+  var i = 0
+  while i < t {
+    let xi = list.get_or(rx, i, [])
+    let mean = (xi |> list.fold(0.0, (acc, v) => acc + v)) / df
+    let s = xi |> list.fold(0.0, (acc, v) => acc + float.abs(v - mean))
+    out = out + [[s / df]]
+    i = i + 1
+  }
+  matrix.from_lists(out)
+}
+
+// [1,2,3,4]: μ=2.5, |dev|=[1.5,0.5,0.5,1.5], mean = 4/4 = 1.
+test "mean-abs-dev is the average absolute deviation from the row mean" {
+  let x = matrix.from_lists([[1.0, 2.0, 3.0, 4.0]])
+  let y = mean_abs_dev_rows(x)
+  assert(float.abs(matrix.get(y, 0, 0) - 1.0) < 0.000000001, "= 1")
+}
+
+// a constant row has no spread → zero mean absolute deviation.
+test "a constant row has zero mean absolute deviation" {
+  let y = mean_abs_dev_rows(matrix.from_lists([[5.0, 5.0, 5.0]]))
+  assert(float.abs(matrix.get(y, 0, 0)) < 0.000000001, "constant → 0")
+}

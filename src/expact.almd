@@ -1,0 +1,17 @@
+// exponential_act — elementwise exp(x). Positive, multiplicative activation /
+// kernel feature. Keep inputs moderate to avoid overflow. Elementwise.
+
+import math
+
+fn exponential_act(m: Matrix) -> Matrix =
+  matrix.map(m, (x) => math.exp(x))
+
+test "exp at zero is one" {
+  let y = exponential_act(matrix.from_lists([[0.0]]))
+  assert_eq(matrix.get(y, 0, 0), 1.0)
+}
+
+test "exp at one is e" {
+  let y = exponential_act(matrix.from_lists([[1.0]]))
+  assert(float.abs(matrix.get(y, 0, 0) - 2.718281828459045) < 0.000000001, "= e")
+}

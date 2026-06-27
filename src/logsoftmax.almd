@@ -1,0 +1,28 @@
+// log_softmax — row-wise log-softmax, numerically stable:
+//   logsoftmax(x)_j = x_j - ( m + log Σ_i exp(x_i - m) ),  m = max_i x_i.
+// The standard classification / decode-head op (matrix stdlib has softmax_rows
+// but not its log form).
+
+import math
+
+fn log_softmax(x: Matrix) -> Matrix = {
+  let rx = matrix.to_lists(x)
+  let (t, _) = matrix.shape(x)
+  var out: List[List[Float]] = []
+  var i = 0
+  while i < t {
+    let xi = list.get_or(rx, i, [])
+    let mx = xi |> list.fold(-1.0e38, (acc, v) => math.fmax(acc, v))
+    let sumexp = xi |> list.fold(0.0, (acc, v) => acc + math.exp(v - mx))
+    let lse = mx + math.log(sumexp)
+    out = out + [list.map(xi, (v) => v - lse)]
+    i = i + 1
+  }
+  matrix.from_lists(out)
+}
+
+// Uniform logits → each output is -log(n). n=2 → -ln2.
+test "log_softmax uniform is -log n" {
+  let y = log_softmax(matrix.from_lists([[0.0, 0.0]]))
+  assert(float.abs(matrix.get(y, 0, 0) + 0.6931471805599453) < 0.000000001, "-ln2")
+}

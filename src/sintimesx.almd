@@ -1,0 +1,20 @@
+// sin_times_x — x·sin(x). An even, growing oscillation (product of the odd x and
+// odd sin): 0 at the origin, envelope expanding like |x|. A modulated periodic
+// feature. Elementwise.
+
+import math
+
+fn sin_times_x(m: Matrix) -> Matrix =
+  matrix.map(m, (x) => x * math.sin(x))
+
+test "sin_times_x at zero is zero" {
+  let y = sin_times_x(matrix.from_lists([[0.0]]))
+  assert_eq(matrix.get(y, 0, 0), 0.0)
+}
+
+// (π/2)·sin(π/2) = π/2; even.
+test "sin_times_x at pi over two and even" {
+  let y = sin_times_x(matrix.from_lists([[1.5707963267948966, -1.5707963267948966]]))
+  assert(float.abs(matrix.get(y, 0, 0) - 1.5707963267948966) < 0.000000001, "π/2")
+  assert(float.abs(matrix.get(y, 0, 1) - 1.5707963267948966) < 0.000000001, "even")
+}

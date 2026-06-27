@@ -1,0 +1,23 @@
+// abs_times_tanh — |x|·tanh(x). An ODD activation (f(-x)=-f(x)): behaves like
+// x·|x| (signed-square) near 0 and asymptotes to ≈x far out — a self-curvature-
+// limited odd response. tanh via exp. Elementwise.
+
+import math
+
+fn abs_times_tanh(m: Matrix) -> Matrix =
+  matrix.map(m, (x) => {
+    let t = 2.0 / (1.0 + math.exp(0.0 - 2.0 * x)) - 1.0
+    float.abs(x) * t
+  })
+
+test "abs_times_tanh at zero is zero" {
+  let y = abs_times_tanh(matrix.from_lists([[0.0]]))
+  assert_eq(matrix.get(y, 0, 0), 0.0)
+}
+
+// odd: 2·tanh(2) at x=2, negated at x=-2.
+test "abs_times_tanh odd at two" {
+  let y = abs_times_tanh(matrix.from_lists([[2.0, -2.0]]))
+  assert(float.abs(matrix.get(y, 0, 0) - 1.9280551601516338) < 0.000000001, "2·tanh2")
+  assert(float.abs(matrix.get(y, 0, 1) + 1.9280551601516338) < 0.000000001, "odd")
+}

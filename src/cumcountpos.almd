@@ -1,0 +1,40 @@
+// cumcount_pos_rows — running count of positive entries over time (down the rows):
+//   out_t = Σ_{i≤t} [ x_i > 0 ]   (elementwise per channel, integer-valued).
+// How many times each channel has been strictly positive up to step t — a causal firing /
+// activation tally (e.g. how often a ReLU-like unit has fired so far). Monotone
+// non-decreasing. Distinct from cumsum_sign_rows, which accumulates the signed ±1 vote
+// (#pos − #neg); this counts only the positives, ignoring negatives and zeros. Cumsum of a
+// strict-positivity indicator. O(T), O(D) state. Output (T,D).
+
+fn cumcount_pos_rows(x: Matrix) -> Matrix = {
+  let rx = matrix.to_lists(x)
+  let (t, d) = matrix.shape(x)
+  var acc: List[Float] = list.range(0, d) |> list.map((_) => 0.0)
+  var out: List[List[Float]] = []
+  var i = 0
+  while i < t {
+    let xi = list.get_or(rx, i, [])
+    acc = list.zip_with(acc, xi, (a, v) => a + (if v > 0.0 then 1.0 else 0.0))
+    out = out + [acc]
+    i = i + 1
+  }
+  matrix.from_lists(out)
+}
+
+// column [1,−2,3]: positives at t=0 and t=2 → running count [1,1,2].
+test "cumcount-pos accumulates the count of positive entries over time" {
+  let x = matrix.from_lists([[1.0], [0.0 - 2.0], [3.0]])
+  let y = cumcount_pos_rows(x)
+  assert_eq(matrix.get(y, 0, 0), 1.0)
+  assert_eq(matrix.get(y, 1, 0), 1.0)
+  assert_eq(matrix.get(y, 2, 0), 2.0)
+}
+
+// per channel, zeros and negatives are not counted: [[5,0],[−1,2]] → col0 [1,1], col1 [0,1].
+test "cumcount-pos is per channel and excludes zeros and negatives" {
+  let x = matrix.from_lists([[5.0, 0.0], [0.0 - 1.0, 2.0]])
+  let y = cumcount_pos_rows(x)
+  assert_eq(matrix.get(y, 1, 0), 1.0)
+  assert_eq(matrix.get(y, 1, 1), 1.0)
+  assert_eq(matrix.get(y, 0, 1), 0.0)
+}

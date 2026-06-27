@@ -1,0 +1,13 @@
+// sign_act — elementwise sign: +1 for x>0, -1 for x<0, 0 for x=0. Written with
+// explicit branches (not math.sign) to guarantee a Float result and match
+// np.sign exactly. The straight-through-style gate used in quantization.
+
+fn sign_act(m: Matrix) -> Matrix =
+  matrix.map(m, (x) => if x > 0.0 then 1.0 else (if x < 0.0 then 0.0 - 1.0 else 0.0))
+
+test "sign_act gives -1 / 0 / 1" {
+  let y = sign_act(matrix.from_lists([[3.0, -2.0, 0.0]]))
+  assert_eq(matrix.get(y, 0, 0), 1.0)
+  assert_eq(matrix.get(y, 0, 1), -1.0)
+  assert_eq(matrix.get(y, 0, 2), 0.0)
+}

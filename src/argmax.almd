@@ -1,0 +1,44 @@
+// argmax_rows — per-row hard argmax: the integer index of each row's maximum (axis=1):
+//   out_t = argmax_j x_{t,j}   (first index on ties)   → (T,1), integer-valued.
+// The classification prediction / hard selection index of a row. Distinct from hardmax_rows (a
+// one-hot mask of shape (T,D)), from soft_argmax_rows (the differentiable softmax-expected index, a
+// continuous value) and from cumargmax_rows (the running argmax down the time axis). A single scan
+// tracking the best value and its index; the strict ">" update keeps the earliest index on ties,
+// matching numpy's argmax. Output (T,1).
+
+fn argmax_rows(x: Matrix) -> Matrix = {
+  let rx = matrix.to_lists(x)
+  let (t, d) = matrix.shape(x)
+  var out: List[List[Float]] = []
+  var i = 0
+  while i < t {
+    let xi = list.get_or(rx, i, [])
+    var bestv = list.get_or(xi, 0, 0.0)
+    var besti = 0
+    var j = 1
+    while j < d {
+      let v = list.get_or(xi, j, 0.0)
+      besti = if v > bestv then j else besti
+      bestv = if v > bestv then v else bestv
+      j = j + 1
+    }
+    out = out + [[int.to_float(besti)]]
+    i = i + 1
+  }
+  matrix.from_lists(out)
+}
+
+// index of the row maximum: [1,5,3,2] → 1.
+test "argmax returns the index of the row maximum" {
+  let x = matrix.from_lists([[1.0, 5.0, 3.0, 2.0]])
+  let y = argmax_rows(x)
+  assert_eq(matrix.get(y, 0, 0), 1.0)
+}
+
+// maxima at the ends: row0 max at last (3), row1 max at first (0).
+test "argmax handles maxima at the ends" {
+  let x = matrix.from_lists([[1.0, 2.0, 3.0, 4.0], [9.0, 1.0, 1.0, 1.0]])
+  let y = argmax_rows(x)
+  assert_eq(matrix.get(y, 0, 0), 3.0)
+  assert_eq(matrix.get(y, 1, 0), 0.0)
+}

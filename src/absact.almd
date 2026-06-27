@@ -1,0 +1,13 @@
+// abs_act — elementwise absolute value |x|. Even activation; used in some
+// modulus-feature nets. (uses float.abs — the Float magnitude, not math.abs
+// which is Int.)
+
+fn abs_act(m: Matrix) -> Matrix =
+  matrix.map(m, (x) => float.abs(x))
+
+test "abs_act takes magnitude" {
+  let y = abs_act(matrix.from_lists([[-3.0, 3.0, 0.0]]))
+  assert_eq(matrix.get(y, 0, 0), 3.0)
+  assert_eq(matrix.get(y, 0, 1), 3.0)
+  assert_eq(matrix.get(y, 0, 2), 0.0)
+}

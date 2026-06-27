@@ -1,0 +1,99 @@
+// scan — diagonal linear recurrence, the shared core of SSM/Mamba selective
+// scan and RWKV time-mixing:
+//
+//     state_t = a_t ⊙ state_{t-1} + b_t ⊙ x_t        (elementwise, per channel)
+//     y_t     = state_t
+//
+// a, b, x are (T, D): row t is the per-channel decay / input-gate / input at
+// timestep t. The "selective" part (deriving a_t, b_t from x_t) lives upstream;
+// this is the pure recurrence kernel the matrix stdlib does not provide.
+//
+// The inference path is inherently sequential (O(T)) — exactly the shape that
+// maps onto nagare Stream<T> and onto sequential logic (gates + state register).
+
+fn scan_diag(a: Matrix, b: Matrix, x: Matrix) -> Matrix = {
+  let ra = matrix.to_lists(a)
+  let rb = matrix.to_lists(b)
+  let rx = matrix.to_lists(x)
+  let (t, d) = matrix.shape(x)
+  var state: List[Float] = list.range(0, d) |> list.map((_) => 0.0)
+  var out: List[List[Float]] = []
+  var i = 0
+  while i < t {
+    let ai = list.get_or(ra, i, [])
+    let bi = list.get_or(rb, i, [])
+    let xi = list.get_or(rx, i, [])
+    let bx = list.zip_with(bi, xi, (p, q) => p * q)
+    let decayed = list.zip_with(ai, state, (p, q) => p * q)
+    let ns = list.zip_with(decayed, bx, (p, q) => p + q)
+    state = ns
+    out = out + [ns]
+    i = i + 1
+  }
+  matrix.from_lists(out)
+}
+
+// Hand-checked: T=2, D=2, a=[[.5,0],[.5,2]], b=ones, x=[[2,3],[4,5]]
+//   t0: bx=[2,3]  decayed=[0,0]            state=[2,3]
+//   t1: bx=[4,5]  decayed=[.5*2,2*3]=[1,6] state=[1+4,6+5]=[5,11]
+test "scan_diag two-step recurrence" {
+  let a = matrix.from_lists([[0.5, 0.0], [0.5, 2.0]])
+  let b = matrix.from_lists([[1.0, 1.0], [1.0, 1.0]])
+  let x = matrix.from_lists([[2.0, 3.0], [4.0, 5.0]])
+  let y = scan_diag(a, b, x)
+  assert_eq(matrix.get(y, 0, 0), 2.0)
+  assert_eq(matrix.get(y, 0, 1), 3.0)
+  assert_eq(matrix.get(y, 1, 0), 5.0)
+  assert_eq(matrix.get(y, 1, 1), 11.0)
+}
+
+// Zero decay (a=0) collapses to the pointwise gate b⊙x at every step.
+test "scan_diag zero-decay is memoryless" {
+  let a = matrix.from_lists([[0.0, 0.0], [0.0, 0.0]])
+  let b = matrix.from_lists([[2.0, 0.5], [3.0, 0.25]])
+  let x = matrix.from_lists([[1.0, 4.0], [2.0, 8.0]])
+  let y = scan_diag(a, b, x)
+  assert_eq(matrix.get(y, 0, 0), 2.0)
+  assert_eq(matrix.get(y, 1, 1), 2.0)
+}
+
+// Unit decay (a=1), zero input after t0 → state is held indefinitely (memory).
+test "scan_diag unit-decay holds state" {
+  let a = matrix.from_lists([[1.0], [1.0], [1.0]])
+  let b = matrix.from_lists([[1.0], [0.0], [0.0]])
+  let x = matrix.from_lists([[7.0], [9.0], [9.0]])
+  let y = scan_diag(a, b, x)
+  assert_eq(matrix.get(y, 0, 0), 7.0)
+  assert_eq(matrix.get(y, 2, 0), 7.0)
+}
+
+// Independent oracle: numpy float64 reference (same methodology as the
+// model-level gate in tools/compare_logits.py, at op granularity). numpy and
+// Almide compute scan_diag on identical exact-literal inputs via their own f64
+// arithmetic; agreement to 1e-9 is the op-level parity receipt — the thing that
+// makes this a verified breadth artifact rather than a self-test.
+test "scan_diag matches numpy float64 reference" {
+  let a = matrix.from_lists([[0.9, 0.5, 0.1], [0.8, 0.6, 0.2], [0.7, 0.4, 0.3], [0.5, 0.5, 0.5]])
+  let b = matrix.from_lists([[1.0, 1.0, 1.0], [0.5, 0.5, 0.5], [1.0, 0.0, 1.0], [0.25, 0.75, 0.5]])
+  let x = matrix.from_lists([[1.0, 2.0, 3.0], [4.0, -1.0, 0.5], [2.0, 2.0, -2.0], [3.0, 1.0, 1.0]])
+  let y = scan_diag(a, b, x)
+  // numpy 1.26.4 reference (tools/.venv), row-major:
+  let ref = [
+    1.0, 2.0, 3.0,
+    2.8, 0.7, 0.8500000000000001,
+    3.96, 0.27999999999999997, -1.745,
+    2.73, 0.89, -0.37250000000000005
+  ]
+  var r = 0
+  while r < 4 {
+    var c = 0
+    while c < 3 {
+      let got = matrix.get(y, r, c)
+      let want = list.get_or(ref, r * 3 + c, 0.0)
+      assert(float.abs(got - want) < 0.000000001, "scan_diag cell vs numpy mismatch")
+      c = c + 1
+    }
+    r = r + 1
+  }
+}
+

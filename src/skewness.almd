@@ -1,0 +1,44 @@
+// skewness_rows — population skewness (3rd standardized moment) of each row (axis=1):
+//   μ  = (1/D) Σ_j x_j,   m2 = (1/D) Σ_j (x_j−μ)²,   m3 = (1/D) Σ_j (x_j−μ)³
+//   out_t = m3 / (σ³ + ε),   σ = √m2                  → one value per row, (T,1).
+// The asymmetry of a row's distribution: 0 for a symmetric row, >0 when the right tail is
+// longer, <0 when the left tail is. The 3rd-moment companion to mean_rows / variance_rows /
+// std — an activation-distribution diagnostic (e.g. detecting one-sided / dying units). The
+// +ε guards a constant row (σ=0, m3=0) to 0. Two passes (mean, then the 2nd/3rd central
+// moments). Output (T,1).
+
+import float
+import math
+
+fn skewness_rows(x: Matrix) -> Matrix = {
+  let rx = matrix.to_lists(x)
+  let (t, d) = matrix.shape(x)
+  let df = int.to_float(d)
+  var out: List[List[Float]] = []
+  var i = 0
+  while i < t {
+    let xi = list.get_or(rx, i, [])
+    let mean = (xi |> list.fold(0.0, (acc, v) => acc + v)) / df
+    let m2 = (xi |> list.fold(0.0, (acc, v) => acc + (v - mean) * (v - mean))) / df
+    let m3 = (xi |> list.fold(0.0, (acc, v) => acc + (v - mean) * (v - mean) * (v - mean))) / df
+    let sd = math.sqrt(m2)
+    out = out + [[m3 / (sd * sd * sd + 0.000000000001)]]
+    i = i + 1
+  }
+  matrix.from_lists(out)
+}
+
+// a symmetric row has equal tails → zero third central moment → zero skewness.
+test "a symmetric row has zero skewness" {
+  let x = matrix.from_lists([[0.0 - 2.0, 0.0, 2.0]])
+  let y = skewness_rows(x)
+  assert(float.abs(matrix.get(y, 0, 0)) < 0.000000001, "symmetric → 0")
+}
+
+// [0,0,0,4]: μ=1, m2=3, m3=6 → skew = 6/(3√3) = 2/√3 ≈ 1.1547; constant row → 0 (ε guard).
+test "a right-skewed row is positively skewed; a constant row is zero" {
+  let yr = skewness_rows(matrix.from_lists([[0.0, 0.0, 0.0, 4.0]]))
+  assert(float.abs(matrix.get(yr, 0, 0) - 1.1547005383792515) < 0.000000001, "2/√3")
+  let yc = skewness_rows(matrix.from_lists([[5.0, 5.0, 5.0]]))
+  assert(float.abs(matrix.get(yc, 0, 0)) < 0.000000001, "constant → 0 (eps guard)")
+}

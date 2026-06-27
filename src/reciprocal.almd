@@ -1,0 +1,12 @@
+// reciprocal — elementwise 1/x. Multiplicative inverse (callers must keep x≠0).
+// Used in normalization / gating denominators. Elementwise.
+
+fn reciprocal(m: Matrix) -> Matrix =
+  matrix.map(m, (x) => 1.0 / x)
+
+test "reciprocal inverts" {
+  let y = reciprocal(matrix.from_lists([[2.0, -4.0, 1.0]]))
+  assert_eq(matrix.get(y, 0, 0), 0.5)
+  assert_eq(matrix.get(y, 0, 1), -0.25)
+  assert_eq(matrix.get(y, 0, 2), 1.0)
+}

@@ -1,0 +1,47 @@
+// triplet_loss_rows — per-row triplet margin loss (metric learning, 3-input):
+//   d_ap = ‖a − p‖,   d_an = ‖a − n‖,   out_t = max(0, d_ap − d_an + 1)   → one loss per row, (T,1).
+// The metric-learning objective: push the anchor a closer to its positive p than to its negative
+// n by at least the margin (here 1). Zero once the triplet is "easy" (positive already nearer by
+// the margin), positive while it is violated. Uses Euclidean distances; distinct from the
+// pointwise/probabilistic losses (ce/focal/mse) and from hinge_rows (a 2-input class-margin loss)
+// — this is a 3-input relative-distance margin. Output (T,1).
+
+import float
+import math
+
+fn triplet_loss_rows(a: Matrix, p: Matrix, n: Matrix) -> Matrix = {
+  let ra = matrix.to_lists(a)
+  let rp = matrix.to_lists(p)
+  let rn = matrix.to_lists(n)
+  let (t, _) = matrix.shape(a)
+  var out: List[List[Float]] = []
+  var i = 0
+  while i < t {
+    let ai = list.get_or(ra, i, [])
+    let pi = list.get_or(rp, i, [])
+    let ni = list.get_or(rn, i, [])
+    let dap = math.sqrt(list.zip_with(ai, pi, (x, y) => (x - y) * (x - y)) |> list.fold(0.0, (acc, v) => acc + v))
+    let dan = math.sqrt(list.zip_with(ai, ni, (x, y) => (x - y) * (x - y)) |> list.fold(0.0, (acc, v) => acc + v))
+    out = out + [[math.fmax(0.0, dap - dan + 1.0)]]
+    i = i + 1
+  }
+  matrix.from_lists(out)
+}
+
+// easy triplet: positive coincides with anchor (d_ap=0), negative far (d_an=5) → loss 0.
+test "an easy triplet has zero loss" {
+  let a = matrix.from_lists([[0.0, 0.0]])
+  let p = matrix.from_lists([[0.0, 0.0]])
+  let n = matrix.from_lists([[3.0, 4.0]])
+  let z = triplet_loss_rows(a, p, n)
+  assert(float.abs(matrix.get(z, 0, 0)) < 0.000000001, "0−5+1 < 0 → 0")
+}
+
+// violated triplet: positive far (d_ap=5), negative on anchor (d_an=0) → loss 5−0+1 = 6.
+test "a violated triplet incurs loss d_ap − d_an + margin" {
+  let a = matrix.from_lists([[0.0, 0.0]])
+  let p = matrix.from_lists([[3.0, 4.0]])
+  let n = matrix.from_lists([[0.0, 0.0]])
+  let z = triplet_loss_rows(a, p, n)
+  assert(float.abs(matrix.get(z, 0, 0) - 6.0) < 0.000000001, "5−0+1=6")
+}

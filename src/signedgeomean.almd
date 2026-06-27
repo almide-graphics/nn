@@ -1,0 +1,43 @@
+// signed_geomean_rows — sign-aware geometric mean over each row (axis=1):
+//   s_t   = Π_j sign(x_{t,j})                          (overall sign of the product)
+//   g_t   = exp( (1/D) Σ_j log|x_{t,j}| )  =  (Π_j |x_{t,j}|)^{1/D}   (geometric mean)
+//   out_t = s_t · g_t                                  → one value per row, (T,1).
+// The geometric mean of magnitudes, carrying the sign of the product — a multiplicative
+// (log-domain) row summary, complementing the additive mean. Unlike the arithmetic mean it
+// is dominated by the smallest magnitudes, so it is a sensitivity / spectral-radius-style
+// statistic. Computed in the log domain (sum of logs / D, then exp) to avoid overflow of
+// the raw product. Per-row reduction. Output (T,1).
+
+import float
+import math
+
+fn signed_geomean_rows(x: Matrix) -> Matrix = {
+  let rx = matrix.to_lists(x)
+  let (t, d) = matrix.shape(x)
+  let df = int.to_float(d)
+  var out: List[List[Float]] = []
+  var i = 0
+  while i < t {
+    let xi = list.get_or(rx, i, [])
+    let sgn = xi |> list.fold(1.0, (acc, v) =>
+      acc * (if v > 0.0 then 1.0 else (if v < 0.0 then 0.0 - 1.0 else 0.0)))
+    let logsum = xi |> list.fold(0.0, (acc, v) => acc + math.log(float.abs(v)))
+    out = out + [[sgn * math.exp(logsum / df)]]
+    i = i + 1
+  }
+  matrix.from_lists(out)
+}
+
+// row [2,8]: geomean = (2·8)^{1/2} = 4, both positive → +4.
+test "signed-geomean of [2,8] is +4, the root of the product" {
+  let x = matrix.from_lists([[2.0, 8.0]])
+  let y = signed_geomean_rows(x)
+  assert(float.abs(matrix.get(y, 0, 0) - 4.0) < 0.000000001, "sqrt(16)=4")
+}
+
+// one negative flips the sign: row [−2,8] → magnitude 4, sign − → −4.
+test "signed-geomean carries the sign of the product" {
+  let x = matrix.from_lists([[0.0 - 2.0, 8.0]])
+  let y = signed_geomean_rows(x)
+  assert(float.abs(matrix.get(y, 0, 0) - (0.0 - 4.0)) < 0.000000001, "−sqrt(16)=−4")
+}

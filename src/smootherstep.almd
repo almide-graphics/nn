@@ -1,0 +1,19 @@
+// smootherstep — Perlin's improved S-curve: clamp x to [0,1] then
+// 6c⁵-15c⁴+10c³. Ramps 0→1 with zero 1st AND 2nd derivatives at both ends (C²),
+// smoother than smoothstep. Elementwise.
+
+import math
+
+fn smootherstep(m: Matrix) -> Matrix =
+  matrix.map(m, (x) => {
+    let c = math.fmax(0.0, math.fmin(1.0, x))
+    c * c * c * (c * (c * 6.0 - 15.0) + 10.0)
+  })
+
+// clamps below 0 and above 1; symmetric value 0.5 at x=0.5.
+test "smootherstep clamps and is half at midpoint" {
+  let y = smootherstep(matrix.from_lists([[-1.0, 0.5, 2.0]]))
+  assert_eq(matrix.get(y, 0, 0), 0.0)
+  assert_eq(matrix.get(y, 0, 1), 0.5)
+  assert_eq(matrix.get(y, 0, 2), 1.0)
+}

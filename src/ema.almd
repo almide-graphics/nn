@@ -1,0 +1,39 @@
+// ema — exponential moving average (per-channel smoothing):
+//
+//   h_t = α ⊙ h_{t-1} + (1 - α) ⊙ x_t       α ∈ [0,1) per channel
+//
+// A convex smoothing recurrence: α near 1 = long memory / heavy smoothing,
+// α near 0 = pass-through. x = (T,D), α = (D,). O(1) state per channel.
+
+fn ema(x: Matrix, alpha: List[Float]) -> Matrix = {
+  let rx = matrix.to_lists(x)
+  let (t, d) = matrix.shape(x)
+  var h: List[Float] = list.range(0, d) |> list.map((_) => 0.0)
+  var out: List[List[Float]] = []
+  var n = 0
+  while n < t {
+    let xn = list.get_or(rx, n, [])
+    let keep = list.zip_with(alpha, h, (a, hh) => a * hh)
+    let take = list.zip_with(alpha, xn, (a, xx) => (1.0 - a) * xx)
+    h = list.zip_with(keep, take, (p, q) => p + q)
+    out = out + [h]
+    n = n + 1
+  }
+  matrix.from_lists(out)
+}
+
+// α=0 → no smoothing: h_t = x_t.
+test "ema alpha zero passes input through" {
+  let x = matrix.from_lists([[3.0], [7.0]])
+  let y = ema(x, [0.0])
+  assert_eq(matrix.get(y, 0, 0), 3.0)
+  assert_eq(matrix.get(y, 1, 0), 7.0)
+}
+
+// α=1 → input never enters: state stays at its initial zero.
+test "ema alpha one holds initial state" {
+  let x = matrix.from_lists([[3.0], [7.0]])
+  let y = ema(x, [1.0])
+  assert_eq(matrix.get(y, 0, 0), 0.0)
+  assert_eq(matrix.get(y, 1, 0), 0.0)
+}

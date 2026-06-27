@@ -1,0 +1,43 @@
+// gla_diag — Gated Linear Attention in fully-diagonal form (per channel):
+//
+//   h_t = a_t ⊙ h_{t-1} + k_t ⊙ v_t        (gated recurrent state)
+//   o_t = q_t ⊙ h_t                         (gated readout)
+//
+// This is the attention-free linear-attention recurrence: scan_diag's state
+// recurrence (src/scan.almd) plus a query-gated readout. q,k,v,a are all (T,D).
+// O(1) state per channel — constant memory streaming, no KV-cache.
+
+fn gla_diag(q: Matrix, k: Matrix, v: Matrix, a: Matrix) -> Matrix = {
+  let rq = matrix.to_lists(q)
+  let rk = matrix.to_lists(k)
+  let rv = matrix.to_lists(v)
+  let ra = matrix.to_lists(a)
+  let (t, d) = matrix.shape(q)
+  var h: List[Float] = list.range(0, d) |> list.map((_) => 0.0)
+  var out: List[List[Float]] = []
+  var i = 0
+  while i < t {
+    let qi = list.get_or(rq, i, [])
+    let ki = list.get_or(rk, i, [])
+    let vi = list.get_or(rv, i, [])
+    let ai = list.get_or(ra, i, [])
+    let decayed = list.zip_with(ai, h, (p, s) => p * s)
+    let kv = list.zip_with(ki, vi, (p, s) => p * s)
+    h = list.zip_with(decayed, kv, (p, s) => p + s)
+    let oi = list.zip_with(qi, h, (p, s) => p * s)
+    out = out + [oi]
+    i = i + 1
+  }
+  matrix.from_lists(out)
+}
+
+// a=0 → memoryless: h_t = k_t⊙v_t, so o_t = q_t⊙k_t⊙v_t.
+test "gla_diag zero-decay is memoryless gated product" {
+  let q = matrix.from_lists([[2.0], [3.0]])
+  let k = matrix.from_lists([[1.0], [4.0]])
+  let v = matrix.from_lists([[5.0], [0.5]])
+  let a = matrix.from_lists([[0.0], [0.0]])
+  let y = gla_diag(q, k, v, a)
+  assert_eq(matrix.get(y, 0, 0), 10.0)
+  assert_eq(matrix.get(y, 1, 0), 6.0)
+}

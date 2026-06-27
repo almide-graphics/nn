@@ -1,0 +1,37 @@
+// cumprod_rows — cumulative product over time (down the rows):
+//   out_t = Π_{i≤t} x_i   (elementwise per channel).
+// The product analogue of cumsum_rows; the running gain of a multiplicative
+// recurrence (e.g. cumulative discount factors / gate products in linear RNNs).
+// Seeds the state with ones. O(T), O(D) state. Output (T,D).
+
+fn cumprod_rows(x: Matrix) -> Matrix = {
+  let rx = matrix.to_lists(x)
+  let (t, d) = matrix.shape(x)
+  var acc: List[Float] = list.range(0, d) |> list.map((_) => 1.0)
+  var out: List[List[Float]] = []
+  var i = 0
+  while i < t {
+    let xi = list.get_or(rx, i, [])
+    acc = list.zip_with(acc, xi, (a, b) => a * b)
+    out = out + [acc]
+    i = i + 1
+  }
+  matrix.from_lists(out)
+}
+
+// running product of [2,3,2] (single channel) → [2,6,12].
+test "cumprod accumulates the running product down rows" {
+  let x = matrix.from_lists([[2.0], [3.0], [2.0]])
+  let y = cumprod_rows(x)
+  assert_eq(matrix.get(y, 0, 0), 2.0)
+  assert_eq(matrix.get(y, 1, 0), 6.0)
+  assert_eq(matrix.get(y, 2, 0), 12.0)
+}
+
+// per channel: [[2,5],[3,2]] → row1 = [6,10].
+test "cumprod works per channel" {
+  let x = matrix.from_lists([[2.0, 5.0], [3.0, 2.0]])
+  let y = cumprod_rows(x)
+  assert_eq(matrix.get(y, 1, 0), 6.0)
+  assert_eq(matrix.get(y, 1, 1), 10.0)
+}

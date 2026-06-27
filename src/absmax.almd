@@ -1,0 +1,29 @@
+// abs_max_rows — largest magnitude per row → (T,1). The per-row L∞ norm; the
+// scale used by absmax / per-row quantization. |x| is non-negative so 0 seeds
+// the fold.
+
+import math
+
+fn abs_max_rows(x: Matrix) -> Matrix = {
+  let rx = matrix.to_lists(x)
+  let (t, _) = matrix.shape(x)
+  var out: List[List[Float]] = []
+  var n = 0
+  while n < t {
+    let xn = list.get_or(rx, n, [])
+    let m = xn |> list.fold(0.0, (acc, v) => math.fmax(acc, float.abs(v)))
+    out = out + [[m]]
+    n = n + 1
+  }
+  matrix.from_lists(out)
+}
+
+test "abs_max picks the largest magnitude" {
+  let y = abs_max_rows(matrix.from_lists([[3.0, -5.0, 2.0]]))
+  assert_eq(matrix.get(y, 0, 0), 5.0)
+}
+
+test "abs_max of all-negative row" {
+  let y = abs_max_rows(matrix.from_lists([[-7.0, -2.0]]))
+  assert_eq(matrix.get(y, 0, 0), 7.0)
+}

@@ -1,0 +1,32 @@
+// entropy_rows — Shannon entropy of each probability row (nats):
+//   H_r = -Σ_j p_rj · log(p_rj + 1e-12)
+// p rows are distributions (non-negative, sum to 1). Output (T,1). Used for
+// confidence / regularization heads.
+
+import math
+
+fn entropy_rows(p: Matrix) -> Matrix = {
+  let rp = matrix.to_lists(p)
+  let (t, _) = matrix.shape(p)
+  var out: List[List[Float]] = []
+  var n = 0
+  while n < t {
+    let pn = list.get_or(rp, n, [])
+    let h = pn |> list.fold(0.0, (acc, v) => acc + v * math.log(v + 0.000000000001))
+    out = out + [[0.0 - h]]
+    n = n + 1
+  }
+  matrix.from_lists(out)
+}
+
+// Uniform distribution → entropy = log(n).
+test "entropy of uniform equals log n" {
+  let y = entropy_rows(matrix.from_lists([[0.5, 0.5]]))
+  assert(float.abs(matrix.get(y, 0, 0) - 0.6931471805599453) < 0.000000001, "log 2")
+}
+
+// One-hot (certain) → entropy ≈ 0.
+test "entropy of one-hot is zero" {
+  let y = entropy_rows(matrix.from_lists([[1.0, 0.0, 0.0]]))
+  assert(float.abs(matrix.get(y, 0, 0)) < 0.000000001, "≈ 0")
+}

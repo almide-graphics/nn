@@ -1,0 +1,44 @@
+// soft_cross_entropy_rows — cross-entropy between two probability distributions (2-input):
+//   out_t = − Σ_j p_{t,j}·log(q_{t,j} + ε)   for prob rows p (target), q (predicted)   → (T,1).
+// The forward cross-entropy H(p, q) of soft labels: both inputs are already-normalized distributions
+// (no internal softmax), so it scores a predicted distribution q against a *soft* target p. Distinct
+// from cross_entropy_rows (= celoss, which softmaxes raw logits against a target) and from kl_div_rows
+// (which subtracts the target's own entropy, H(p,q) = KL(p‖q) + H(p)). It is the loss used in
+// knowledge distillation with temperature-softened teacher labels and in label-smoothing analysis.
+// H(p, uniform) = log D; H(p, p) = the entropy of p. The +ε guards a zero in q. Output (T,1).
+
+import float
+import math
+
+fn soft_cross_entropy_rows(p: Matrix, q: Matrix) -> Matrix = {
+  let rp = matrix.to_lists(p)
+  let rq = matrix.to_lists(q)
+  let (t, _) = matrix.shape(p)
+  var out: List[List[Float]] = []
+  var i = 0
+  while i < t {
+    let pi = list.get_or(rp, i, [])
+    let qi = list.get_or(rq, i, [])
+    let s = list.zip_with(pi, qi, (pv, qv) => pv * math.log(qv + 0.000000000001))
+      |> list.fold(0.0, (acc, v) => acc + v)
+    out = out + [[0.0 - s]]
+    i = i + 1
+  }
+  matrix.from_lists(out)
+}
+
+// cross-entropy against a uniform q is log D regardless of p (here D=4 → log 4).
+test "soft cross-entropy with a uniform q is log D" {
+  let p = matrix.from_lists([[0.5, 0.5, 0.0, 0.0]])
+  let q = matrix.from_lists([[0.25, 0.25, 0.25, 0.25]])
+  let y = soft_cross_entropy_rows(p, q)
+  assert(float.abs(matrix.get(y, 0, 0) - 1.3862943611198906) < 0.000001, "log 4")
+}
+
+// cross-entropy of a distribution with itself is its (Shannon) entropy: H([½,½]) = log 2.
+test "soft cross-entropy with itself is the entropy" {
+  let p = matrix.from_lists([[0.5, 0.5]])
+  let q = matrix.from_lists([[0.5, 0.5]])
+  let y = soft_cross_entropy_rows(p, q)
+  assert(float.abs(matrix.get(y, 0, 0) - 0.6931471805599453) < 0.000001, "log 2")
+}

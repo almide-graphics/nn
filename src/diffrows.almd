@@ -1,0 +1,39 @@
+// diff_rows — first difference over time (down the rows):
+//   out_0 = 0,  out_t = x_t − x_{t-1}   (t ≥ 1).
+// The discrete derivative / z⁻¹ high-pass of a sequence (inverse of cumsum_rows
+// up to the leading term); the per-step change signal. Carries the previous row
+// forward and subtracts. O(T), O(D) state. Output (T,D).
+
+fn diff_rows(x: Matrix) -> Matrix = {
+  let rx = matrix.to_lists(x)
+  let (t, d) = matrix.shape(x)
+  let zero = list.range(0, d) |> list.map((_) => 0.0)
+  var prev: List[Float] = zero
+  var out: List[List[Float]] = []
+  var i = 0
+  while i < t {
+    let xi = list.get_or(rx, i, [])
+    let row = if i == 0 then zero else list.zip_with(xi, prev, (a, b) => a - b)
+    out = out + [row]
+    prev = xi
+    i = i + 1
+  }
+  matrix.from_lists(out)
+}
+
+// first differences of [2,5,3] (single channel) → [0,3,-2].
+test "diff is the first difference with zero at the start" {
+  let x = matrix.from_lists([[2.0], [5.0], [3.0]])
+  let y = diff_rows(x)
+  assert_eq(matrix.get(y, 0, 0), 0.0)
+  assert_eq(matrix.get(y, 1, 0), 3.0)
+  assert_eq(matrix.get(y, 2, 0), 0.0 - 2.0)
+}
+
+// constant sequence → all zeros.
+test "diff of a constant sequence is zero" {
+  let x = matrix.from_lists([[4.0], [4.0], [4.0]])
+  let y = diff_rows(x)
+  assert_eq(matrix.get(y, 1, 0), 0.0)
+  assert_eq(matrix.get(y, 2, 0), 0.0)
+}

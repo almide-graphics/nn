@@ -1,0 +1,18 @@
+// expsin — exp(sin(x)). A strictly-positive 2π-periodic activation bounded in
+// [1/e, e]; a smooth bump train (Gabor-free oscillatory feature). Elementwise.
+
+import math
+
+fn expsin(m: Matrix) -> Matrix =
+  matrix.map(m, (x) => math.exp(math.sin(x)))
+
+test "expsin at zero is one" {
+  let y = expsin(matrix.from_lists([[0.0]]))
+  assert_eq(matrix.get(y, 0, 0), 1.0)
+}
+
+// sin(π/2)=1 → exp(1)=e.
+test "expsin at pi over two is e" {
+  let y = expsin(matrix.from_lists([[1.5707963267948966]]))
+  assert(float.abs(matrix.get(y, 0, 0) - 2.718281828459045) < 0.000000001, "= e")
+}

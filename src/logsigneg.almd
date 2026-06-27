@@ -1,0 +1,21 @@
+// log_sigmoid_neg — log σ(-x) = -softplus(x), the stable (max + log1p_exp_neg)
+// form. The log-probability of the *negative* class in a binary logistic head;
+// the companion of logsigmoid. ≤0, →-x for x≫0, →0 for x≪0. Elementwise.
+
+import math
+
+fn log_sigmoid_neg(m: Matrix) -> Matrix =
+  matrix.map(m, (x) => 0.0 - (math.fmax(x, 0.0) + math.log(1.0 + math.exp(0.0 - float.abs(x)))))
+
+// log σ(0) = -log2.
+test "log_sigmoid_neg at zero is minus log2" {
+  let y = log_sigmoid_neg(matrix.from_lists([[0.0]]))
+  assert(float.abs(matrix.get(y, 0, 0) + 0.6931471805599453) < 0.000000001, "-log2")
+}
+
+// → -x for large +, → 0 for large -.
+test "log_sigmoid_neg saturation" {
+  let y = log_sigmoid_neg(matrix.from_lists([[30.0, -30.0]]))
+  assert(float.abs(matrix.get(y, 0, 0) + 30.0) < 0.000000001, "→ -x")
+  assert(float.abs(matrix.get(y, 0, 1)) < 0.000000001, "→ 0")
+}

@@ -1,0 +1,38 @@
+// std_rows — row-wise population standard deviation:
+//
+//   std_r = √( (1/D) · Σ_j (x_rj − mean_r)² )
+//
+// One value per row → output (T,1). The √ of variance_rows; a per-row spread /
+// normalization statistic (used in LayerNorm-style scaling). Two-pass row
+// reduction: row mean, then mean squared deviation.
+
+import math
+
+fn std_rows(x: Matrix) -> Matrix = {
+  let rx = matrix.to_lists(x)
+  let (t, d) = matrix.shape(x)
+  let df = int.to_float(d)
+  var out: List[List[Float]] = []
+  var n = 0
+  while n < t {
+    let xn = list.get_or(rx, n, [])
+    let s = xn |> list.fold(0.0, (acc, v) => acc + v)
+    let mu = s / df
+    let ss = xn |> list.fold(0.0, (acc, v) => acc + (v - mu) * (v - mu))
+    out = out + [[math.sqrt(ss / df)]]
+    n = n + 1
+  }
+  matrix.from_lists(out)
+}
+
+// constant row has zero spread.
+test "std of a constant row is zero" {
+  let y = std_rows(matrix.from_lists([[5.0, 5.0, 5.0, 5.0]]))
+  assert_eq(matrix.get(y, 0, 0), 0.0)
+}
+
+// [1,3]: mean 2, var 1 → std 1.
+test "std of one three is one" {
+  let y = std_rows(matrix.from_lists([[1.0, 3.0]]))
+  assert(float.abs(matrix.get(y, 0, 0) - 1.0) < 0.000000001, "= 1")
+}

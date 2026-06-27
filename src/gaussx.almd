@@ -1,0 +1,20 @@
+// gaussian_times_x — x·exp(-x²/2). An odd, Gaussian-windowed identity (the first
+// Hermite function up to scale): linear near 0, peaks at ±1, decays to 0.
+// Elementwise.
+
+import math
+
+fn gaussian_times_x(m: Matrix) -> Matrix =
+  matrix.map(m, (x) => x * math.exp(0.0 - x * x / 2.0))
+
+test "gaussian_times_x at zero is zero" {
+  let y = gaussian_times_x(matrix.from_lists([[0.0]]))
+  assert_eq(matrix.get(y, 0, 0), 0.0)
+}
+
+// 1·e^-0.5 at x=1; odd.
+test "gaussian_times_x at 1 and odd" {
+  let y = gaussian_times_x(matrix.from_lists([[1.0, -1.0]]))
+  assert(float.abs(matrix.get(y, 0, 0) - 0.6065306597126334) < 0.000000001, "e^-0.5")
+  assert(float.abs(matrix.get(y, 0, 1) + 0.6065306597126334) < 0.000000001, "odd")
+}

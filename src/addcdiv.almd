@@ -1,0 +1,54 @@
+// addcdiv_rows — elementwise fused add-and-divide of three matrices (3-input):
+//   out_{t,j} = a_{t,j} + b_{t,j} / (c_{t,j} + ε)   → (T,D).
+// The divide-companion of fma (torch.addcdiv): accumulate a scaled quotient into a running tensor.
+// It is exactly the Adam parameter step read-out — θ ← θ − lr·m̂/(√v̂ + ε) has this a + b/c shape —
+// and any "add b, attenuated by c" update. Distinct from fma_rows (a·b + c, a multiply-add) and from
+// rmsprop_update_rows (b/(√v+ε) alone, 2-input, no additive term). The divisor c is a non-negative
+// denominator; +ε is the numerical floor. Built from one fused pass. Output (T,D).
+
+import float
+
+fn addcdiv_rows(a: Matrix, b: Matrix, c: Matrix) -> Matrix = {
+  let ra = matrix.to_lists(a)
+  let rb = matrix.to_lists(b)
+  let rc = matrix.to_lists(c)
+  let (t, d) = matrix.shape(a)
+  var out: List[List[Float]] = []
+  var i = 0
+  while i < t {
+    let ai = list.get_or(ra, i, [])
+    let bi = list.get_or(rb, i, [])
+    let ci = list.get_or(rc, i, [])
+    var row: List[Float] = []
+    var j = 0
+    while j < d {
+      let av = list.get_or(ai, j, 0.0)
+      let bv = list.get_or(bi, j, 0.0)
+      let cv = list.get_or(ci, j, 0.0)
+      row = row + [av + bv / (cv + 0.000000000001)]
+      j = j + 1
+    }
+    out = out + [row]
+    i = i + 1
+  }
+  matrix.from_lists(out)
+}
+
+// a + b/c elementwise: 2 + 3/1 = 5,  0 + 6/2 = 3.
+test "addcdiv computes a + b/c" {
+  let a = matrix.from_lists([[2.0, 0.0]])
+  let b = matrix.from_lists([[3.0, 6.0]])
+  let c = matrix.from_lists([[1.0, 2.0]])
+  let y = addcdiv_rows(a, b, c)
+  assert(float.abs(matrix.get(y, 0, 0) - 5.0) < 0.0000001, "2+3/1=5")
+  assert(float.abs(matrix.get(y, 0, 1) - 3.0) < 0.0000001, "0+6/2=3")
+}
+
+// a large divisor makes the quotient vanish → result ≈ a.
+test "addcdiv approaches a for a large divisor" {
+  let a = matrix.from_lists([[5.0]])
+  let b = matrix.from_lists([[1.0]])
+  let c = matrix.from_lists([[1000000.0]])
+  let y = addcdiv_rows(a, b, c)
+  assert(float.abs(matrix.get(y, 0, 0) - 5.0) < 0.0001, "≈5")
+}

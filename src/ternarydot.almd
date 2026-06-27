@@ -1,0 +1,49 @@
+// ternary_dot_rows — row-wise TWN ternary inner product of two matrices.
+//   Δa_t = 0.7·(1/D)Σ_j|a_{t,j}|,  Δb_t = 0.7·(1/D)Σ_j|b_{t,j}|   (each row's own threshold)
+//   code(x,Δ) = +1 if x>Δ ; −1 if x<−Δ ; 0 otherwise
+//   out_t = Σ_j code(a_{t,j})·code(b_{t,j})            → one integer score per row, (T,1).
+// The ternary "beyond matmul" primitive: once both operands are TWN-quantized to {−1,0,1},
+// the dot collapses to (#aligned − #opposed) over the kept weights — no multipliers, and
+// dead-zone (pruned) coordinates contribute 0. The row reduction of hadamard_ternary_rows
+// and the ternary sibling of binary_dot_rows (which has no dead-zone). Codes use each row's
+// 0.7·E|x| cut. Two-input row reduction. Output (T,1).
+
+import float
+
+fn ternary_dot_rows(a: Matrix, b: Matrix) -> Matrix = {
+  let ra = matrix.to_lists(a)
+  let rb = matrix.to_lists(b)
+  let (t, d) = matrix.shape(a)
+  let df = int.to_float(d)
+  var out: List[List[Float]] = []
+  var i = 0
+  while i < t {
+    let ai = list.get_or(ra, i, [])
+    let bi = list.get_or(rb, i, [])
+    let da = 0.7 * ((ai |> list.fold(0.0, (acc, v) => acc + float.abs(v))) / df)
+    let db = 0.7 * ((bi |> list.fold(0.0, (acc, v) => acc + float.abs(v))) / df)
+    let dot = list.zip_with(ai, bi, (u, v) => {
+      let cu = if u > da then 1.0 else (if u < (0.0 - da) then 0.0 - 1.0 else 0.0)
+      let cv = if v > db then 1.0 else (if v < (0.0 - db) then 0.0 - 1.0 else 0.0)
+      cu * cv
+    }) |> list.fold(0.0, (acc, p) => acc + p)
+    out = out + [[dot]]
+    i = i + 1
+  }
+  matrix.from_lists(out)
+}
+
+// a → codes [+1,−1,0] (Δa≈1.657); b all-large-positive → [+1,+1,+1]; products [+1,−1,0] → dot 0.
+test "ternary-dot sums the ternary-code products" {
+  let a = matrix.from_lists([[3.0, 0.0 - 4.0, 0.1]])
+  let b = matrix.from_lists([[5.0, 5.0, 5.0]])
+  let y = ternary_dot_rows(a, b)
+  assert_eq(matrix.get(y, 0, 0), 0.0)
+}
+
+// a with itself → Σ code² = number of kept (nonzero) weights: [+1,−1,0] → 2.
+test "ternary-dot of a row with itself counts its kept support" {
+  let a = matrix.from_lists([[3.0, 0.0 - 4.0, 0.1]])
+  let y = ternary_dot_rows(a, a)
+  assert_eq(matrix.get(y, 0, 0), 2.0)
+}

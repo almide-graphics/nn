@@ -1,0 +1,53 @@
+// hadamard_ternary_rows — elementwise product of the two matrices' TWN ternary codes.
+//   Δa_t = 0.7·(1/D)Σ_j|a_{t,j}|,  Δb_t = 0.7·(1/D)Σ_j|b_{t,j}|   (each row's own threshold)
+//   code(x,Δ) = +1 if x>Δ ; −1 if x<−Δ ; 0 otherwise
+//   out_{t,j} = code(a_{t,j})·code(b_{t,j})  ∈ {−1, 0, 1}
+// The ternary analogue of hadamard_sign_rows: the per-coordinate term of a TWN ternary
+// inner product — the "beyond matmul" primitive where a multiply collapses to a ternary
+// agreement (+1 same nonzero direction, −1 opposed, 0 if either side is pruned to the
+// dead-zone). Summing a row gives the ternary dot. Codes use each row's 0.7·E|x| cut.
+// Two-input; one pass per row for the two thresholds, then an elementwise product. (T,D).
+
+import float
+
+fn hadamard_ternary_rows(a: Matrix, b: Matrix) -> Matrix = {
+  let ra = matrix.to_lists(a)
+  let rb = matrix.to_lists(b)
+  let (t, d) = matrix.shape(a)
+  let df = int.to_float(d)
+  var out: List[List[Float]] = []
+  var i = 0
+  while i < t {
+    let ai = list.get_or(ra, i, [])
+    let bi = list.get_or(rb, i, [])
+    let da = 0.7 * ((ai |> list.fold(0.0, (acc, v) => acc + float.abs(v))) / df)
+    let db = 0.7 * ((bi |> list.fold(0.0, (acc, v) => acc + float.abs(v))) / df)
+    let row = list.zip_with(ai, bi, (u, v) => {
+      let cu = if u > da then 1.0 else (if u < (0.0 - da) then 0.0 - 1.0 else 0.0)
+      let cv = if v > db then 1.0 else (if v < (0.0 - db) then 0.0 - 1.0 else 0.0)
+      cu * cv
+    })
+    out = out + [row]
+    i = i + 1
+  }
+  matrix.from_lists(out)
+}
+
+// a → codes [+1,−1,0] (Δa≈1.657); b all-large-positive → [+1,+1,+1]; product [+1,−1,0].
+test "hadamard-ternary is the product of the two ternary codes" {
+  let a = matrix.from_lists([[3.0, 0.0 - 4.0, 0.1]])
+  let b = matrix.from_lists([[5.0, 5.0, 5.0]])
+  let y = hadamard_ternary_rows(a, b)
+  assert_eq(matrix.get(y, 0, 0), 1.0)
+  assert_eq(matrix.get(y, 0, 1), 0.0 - 1.0)
+  assert_eq(matrix.get(y, 0, 2), 0.0)
+}
+
+// a with itself → code² = 1 wherever kept, 0 in the dead-zone → the kept-support mask.
+test "hadamard-ternary of a matrix with itself is its kept-support mask" {
+  let a = matrix.from_lists([[3.0, 0.0 - 4.0, 0.1]])
+  let y = hadamard_ternary_rows(a, a)
+  assert_eq(matrix.get(y, 0, 0), 1.0)
+  assert_eq(matrix.get(y, 0, 1), 1.0)
+  assert_eq(matrix.get(y, 0, 2), 0.0)
+}

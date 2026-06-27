@@ -1,0 +1,40 @@
+// cummean_abs_rows — cumulative mean of absolute value over time (down the rows):
+//   out_t = (1/(t+1)) · Σ_{i≤t} |x_i|   (elementwise per channel).
+// The running mean-absolute / expanding-window L1 strength of a sequence. Keeps a
+// running sum of magnitudes and divides by the step count. O(T), O(D) state.
+// Output (T,D).
+
+import float
+
+fn cummean_abs_rows(x: Matrix) -> Matrix = {
+  let rx = matrix.to_lists(x)
+  let (t, d) = matrix.shape(x)
+  var acc: List[Float] = list.range(0, d) |> list.map((_) => 0.0)
+  var out: List[List[Float]] = []
+  var i = 0
+  while i < t {
+    let xi = list.get_or(rx, i, [])
+    acc = list.zip_with(acc, xi, (a, b) => a + float.abs(b))
+    let cnt = int.to_float(i + 1)
+    out = out + [acc |> list.map((v) => v / cnt)]
+    i = i + 1
+  }
+  matrix.from_lists(out)
+}
+
+// |x| of [2,-4,3] running mean: 2, (2+4)/2=3, (2+4+3)/3=3.
+test "cummean abs is the running mean magnitude" {
+  let x = matrix.from_lists([[2.0], [0.0 - 4.0], [3.0]])
+  let y = cummean_abs_rows(x)
+  assert_eq(matrix.get(y, 0, 0), 2.0)
+  assert_eq(matrix.get(y, 1, 0), 3.0)
+  assert_eq(matrix.get(y, 2, 0), 3.0)
+}
+
+// per channel: [[-2,6],[4,2]] → row1 = [(2+4)/2, (6+2)/2] = [3,4].
+test "cummean abs works per channel" {
+  let x = matrix.from_lists([[0.0 - 2.0, 6.0], [4.0, 2.0]])
+  let y = cummean_abs_rows(x)
+  assert_eq(matrix.get(y, 1, 0), 3.0)
+  assert_eq(matrix.get(y, 1, 1), 4.0)
+}

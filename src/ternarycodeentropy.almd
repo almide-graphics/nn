@@ -1,0 +1,47 @@
+// ternary_code_entropy_rows — Shannon entropy of a row's TWN ternary code distribution (axis=1):
+//   Δ_t = 0.7·(1/D)Σ_j|x|,  f₊ = #{x>Δ}/D,  f₋ = #{x<−Δ}/D,  f₀ = 1 − f₊ − f₋
+//   out_t = −( f₊·log(f₊+ε) + f₋·log(f₋+ε) + f₀·log(f₀+ε) )   (nats), (T,1).
+// How evenly a row uses the three ternary symbols {−1,0,+1} after TWN quantization: 0 when
+// every weight maps to one code, maximal (log 3) when the codes split evenly — a code-
+// utilization / capacity diagnostic for ternary layers. Distinct from ternary_density_rows
+// (kept fraction f₊+f₋), ternary_balance_rows (net polarity f₊−f₋) and sign_entropy_rows
+// (a 2-symbol sign entropy with no dead-zone). Per-row reduction. Output (T,1).
+
+import float
+import math
+
+fn ternary_code_entropy_rows(x: Matrix) -> Matrix = {
+  let rx = matrix.to_lists(x)
+  let (t, d) = matrix.shape(x)
+  let df = int.to_float(d)
+  var out: List[List[Float]] = []
+  var i = 0
+  while i < t {
+    let xi = list.get_or(rx, i, [])
+    let s = xi |> list.fold(0.0, (acc, v) => acc + float.abs(v))
+    let delta = 0.7 * (s / df)
+    let cpos = xi |> list.fold(0.0, (acc, v) => acc + (if v > delta then 1.0 else 0.0))
+    let cneg = xi |> list.fold(0.0, (acc, v) => acc + (if v < (0.0 - delta) then 1.0 else 0.0))
+    let fpos = cpos / df
+    let fneg = cneg / df
+    let fzero = 1.0 - fpos - fneg
+    let h = 0.0 - (fpos * math.log(fpos + 0.000000000001) + fneg * math.log(fneg + 0.000000000001) + fzero * math.log(fzero + 0.000000000001))
+    out = out + [[h]]
+    i = i + 1
+  }
+  matrix.from_lists(out)
+}
+
+// row [3,−4,0.1]: Δ≈1.657 → one +1, one −1, one 0 → uniform over 3 codes → entropy log 3.
+test "balanced ternary codes (one each) give maximal entropy log 3" {
+  let x = matrix.from_lists([[3.0, 0.0 - 4.0, 0.1]])
+  let y = ternary_code_entropy_rows(x)
+  assert(float.abs(matrix.get(y, 0, 0) - 1.0986122886681098) < 0.000000001, "log 3")
+}
+
+// all weights map to the same code → zero code entropy.
+test "an all-one-code row has zero ternary-code entropy" {
+  let x = matrix.from_lists([[5.0, 5.0, 5.0]])
+  let y = ternary_code_entropy_rows(x)
+  assert(float.abs(matrix.get(y, 0, 0)) < 0.000001, "all same code → ≈ 0")
+}

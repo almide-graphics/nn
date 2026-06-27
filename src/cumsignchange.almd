@@ -1,0 +1,51 @@
+// cumsum_sign_change_rows — running zero-crossing count over time (down the rows):
+//   out_0 = 0,   out_t = Σ_{i≤t} [ sign(x_i) ≠ sign(x_{i-1}) ]   (t ≥ 1, per channel).
+// The cumulative version of sign_change_rows: each channel's tally of how many times
+// it has flipped sign so far. The final row is the total zero-crossing count of the
+// sequence (the un-normalized zero-crossing rate, a cheap pitch/activity feature and the
+// lifetime sign-flip count a BitNet weight would log). Monotone non-decreasing, integer-
+// valued. Carries the previous row, scores the flip in {0,1}, accumulates. O(T), O(D)
+// state. Output (T,D).
+
+import float
+
+fn cumsum_sign_change_rows(x: Matrix) -> Matrix = {
+  let rx = matrix.to_lists(x)
+  let (t, d) = matrix.shape(x)
+  let zero = list.range(0, d) |> list.map((_) => 0.0)
+  var prev: List[Float] = list.get_or(rx, 0, [])
+  var acc: List[Float] = list.range(0, d) |> list.map((_) => 0.0)
+  var out: List[List[Float]] = []
+  var i = 0
+  while i < t {
+    let xi = list.get_or(rx, i, [])
+    let flip = if i == 0 then zero else list.zip_with(prev, xi, (p, c) => {
+      let sp = if p > 0.0 then 1.0 else (if p < 0.0 then 0.0 - 1.0 else 0.0)
+      let sc = if c > 0.0 then 1.0 else (if c < 0.0 then 0.0 - 1.0 else 0.0)
+      if float.abs(sp - sc) < 0.5 then 0.0 else 1.0
+    })
+    acc = list.zip_with(acc, flip, (a, b) => a + b)
+    out = out + [acc]
+    prev = xi
+    i = i + 1
+  }
+  matrix.from_lists(out)
+}
+
+// column 0 = [1,-2,-3,4]: signs [+,−,−,+] flip at t=1 and t=3 → running count [0,1,1,2].
+test "running zero-crossing count accumulates each flip" {
+  let x = matrix.from_lists([[1.0], [0.0 - 2.0], [0.0 - 3.0], [4.0]])
+  let y = cumsum_sign_change_rows(x)
+  assert_eq(matrix.get(y, 0, 0), 0.0)
+  assert_eq(matrix.get(y, 1, 0), 1.0)
+  assert_eq(matrix.get(y, 2, 0), 1.0)
+  assert_eq(matrix.get(y, 3, 0), 2.0)
+}
+
+// per channel: col0 [+,−,+] flips twice; col1 [+,+,+] never → final row = [2,0].
+test "per-channel final row is each channel's total flip count" {
+  let x = matrix.from_lists([[1.0, 1.0], [0.0 - 1.0, 2.0], [1.0, 3.0]])
+  let y = cumsum_sign_change_rows(x)
+  assert_eq(matrix.get(y, 2, 0), 2.0)
+  assert_eq(matrix.get(y, 2, 1), 0.0)
+}

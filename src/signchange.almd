@@ -1,0 +1,49 @@
+// sign_change_rows — zero-crossing indicator over time (down the rows):
+//   out_0 = 0,   out_t = 1 if sign(x_t) ≠ sign(x_{t-1})  else 0   (t ≥ 1).
+// Marks the steps where a channel flips sign — the discrete zero crossings of a sequence,
+// whose density is the classic zero-crossing rate (a cheap pitch/activity feature and the
+// sign-flip count a BitNet weight would log over training). Carries the previous row
+// forward and compares signs; sign codes (both in {−1,0,1}) are compared by |s_p − s_c|
+// < 0.5 for "equal". Row 0 has no predecessor, so it is all zeros. Output (T,D).
+
+import float
+
+fn sign_change_rows(x: Matrix) -> Matrix = {
+  let rx = matrix.to_lists(x)
+  let (t, d) = matrix.shape(x)
+  let zero = list.range(0, d) |> list.map((_) => 0.0)
+  var prev: List[Float] = list.get_or(rx, 0, [])
+  var out: List[List[Float]] = []
+  var i = 0
+  while i < t {
+    let xi = list.get_or(rx, i, [])
+    let row = if i == 0 then zero else list.zip_with(prev, xi, (p, c) => {
+      let sp = if p > 0.0 then 1.0 else (if p < 0.0 then 0.0 - 1.0 else 0.0)
+      let sc = if c > 0.0 then 1.0 else (if c < 0.0 then 0.0 - 1.0 else 0.0)
+      if float.abs(sp - sc) < 0.5 then 0.0 else 1.0
+    })
+    out = out + [row]
+    prev = xi
+    i = i + 1
+  }
+  matrix.from_lists(out)
+}
+
+// column 0 = [1,-2,-3,4]: signs [+,−,−,+] → flips at t=1 and t=3.
+test "sign-change marks the zero crossings" {
+  let x = matrix.from_lists([[1.0], [0.0 - 2.0], [0.0 - 3.0], [4.0]])
+  let y = sign_change_rows(x)
+  assert_eq(matrix.get(y, 0, 0), 0.0)
+  assert_eq(matrix.get(y, 1, 0), 1.0)
+  assert_eq(matrix.get(y, 2, 0), 0.0)
+  assert_eq(matrix.get(y, 3, 0), 1.0)
+}
+
+// a constant-sign column never crosses → all zeros.
+test "sign-change is zero on a sign-stable column" {
+  let x = matrix.from_lists([[2.0], [5.0], [1.0]])
+  let y = sign_change_rows(x)
+  assert_eq(matrix.get(y, 0, 0), 0.0)
+  assert_eq(matrix.get(y, 1, 0), 0.0)
+  assert_eq(matrix.get(y, 2, 0), 0.0)
+}

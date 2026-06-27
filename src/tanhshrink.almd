@@ -1,0 +1,18 @@
+// tanhshrink — x - tanh(x). Passes large |x| through (≈ x∓1) while suppressing
+// small values; the residual of a tanh gate. tanh built from exp. Elementwise.
+
+import math
+
+fn tanhshrink(m: Matrix) -> Matrix =
+  matrix.map(m, (x) => x - (2.0 / (1.0 + math.exp(0.0 - 2.0 * x)) - 1.0))
+
+test "tanhshrink at zero is zero" {
+  let y = tanhshrink(matrix.from_lists([[0.0]]))
+  assert_eq(matrix.get(y, 0, 0), 0.0)
+}
+
+// Large positive → tanh≈1 → x-1.
+test "tanhshrink large positive is x minus 1" {
+  let y = tanhshrink(matrix.from_lists([[30.0]]))
+  assert(float.abs(matrix.get(y, 0, 0) - 29.0) < 0.000000001, "= x-1")
+}

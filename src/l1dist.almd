@@ -1,0 +1,40 @@
+// l1_dist_rows — row-wise Manhattan (L1) distance of two matrices:
+//
+//   dist_r = Σ_j |a_rj − b_rj|
+//
+// One value per row → output (T,1). The taxicab / cityblock metric (sum, not
+// mean — distinct from mae_rows); sparse-friendly distance. Two-input row
+// reduction.
+
+import float
+
+fn l1_dist_rows(a: Matrix, b: Matrix) -> Matrix = {
+  let ra = matrix.to_lists(a)
+  let rb = matrix.to_lists(b)
+  let (t, _) = matrix.shape(a)
+  var out: List[List[Float]] = []
+  var n = 0
+  while n < t {
+    let an = list.get_or(ra, n, [])
+    let bn = list.get_or(rb, n, [])
+    let s = list.zip_with(an, bn, (x, y) => float.abs(x - y)) |> list.fold(0.0, (acc, v) => acc + v)
+    out = out + [[s]]
+    n = n + 1
+  }
+  matrix.from_lists(out)
+}
+
+// dist(a, a) = 0.
+test "l1 distance of identical rows is zero" {
+  let a = matrix.from_lists([[1.0, 2.0, 3.0, 4.0]])
+  let y = l1_dist_rows(a, a)
+  assert_eq(matrix.get(y, 0, 0), 0.0)
+}
+
+// |1|+|3| = 4.
+test "l1 distance of zero to one-three is four" {
+  let a = matrix.from_lists([[0.0, 0.0]])
+  let b = matrix.from_lists([[1.0, 3.0]])
+  let y = l1_dist_rows(a, b)
+  assert_eq(matrix.get(y, 0, 0), 4.0)
+}

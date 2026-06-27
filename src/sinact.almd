@@ -1,0 +1,17 @@
+// sin_act — elementwise sin(x). Periodic activation (SIREN-style implicit
+// representations). Elementwise.
+
+import math
+
+fn sin_act(m: Matrix) -> Matrix =
+  matrix.map(m, (x) => math.sin(x))
+
+test "sin at zero is zero" {
+  let y = sin_act(matrix.from_lists([[0.0]]))
+  assert_eq(matrix.get(y, 0, 0), 0.0)
+}
+
+test "sin at pi/2 is one" {
+  let y = sin_act(matrix.from_lists([[1.5707963267948966]]))
+  assert(float.abs(matrix.get(y, 0, 0) - 1.0) < 0.000000001, "= 1")
+}

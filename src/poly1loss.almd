@@ -1,0 +1,48 @@
+// poly1_loss_rows — per-row PolyLoss (poly-1) against a target distribution (Leng et al. 2022):
+//   logp_j = x_j − (m + log Σ_i exp(x_i−m)),  p_j = exp(logp_j),  m = max_i x_i
+//   ce_t = −Σ_j target·logp,   p_t = Σ_j target·p
+//   out_t = ce_t + (1 − p_t)                            → one loss per row, (T,1).
+// Cross-entropy plus its leading Taylor residual ε₁·(1 − p_t) (here ε₁ = 1): expanding CE in
+// powers of (1 − p_t), poly-1 keeps and re-weights the first term, which empirically improves
+// calibration/accuracy over plain CE. Distinct from cross_entropy_rows (the extra (1−p_t)
+// term) and from focal_loss_rows (additive vs multiplicative reweighting). Same stable
+// log-softmax core as cross_entropy_rows. Two-input row reduction. Output (T,1).
+
+import float
+import math
+
+fn poly1_loss_rows(logits: Matrix, target: Matrix) -> Matrix = {
+  let rl = matrix.to_lists(logits)
+  let rt = matrix.to_lists(target)
+  let (t, _) = matrix.shape(logits)
+  var out: List[List[Float]] = []
+  var n = 0
+  while n < t {
+    let ln = list.get_or(rl, n, [])
+    let tn = list.get_or(rt, n, [])
+    let mx = ln |> list.fold(0.0 - 1.0e38, (acc, v) => math.fmax(acc, v))
+    let sumexp = ln |> list.fold(0.0, (acc, v) => acc + math.exp(v - mx))
+    let lse = mx + math.log(sumexp)
+    let ce = list.zip_with(tn, ln, (tt, xx) => tt * (xx - lse)) |> list.fold(0.0, (acc, v) => acc + v)
+    let pt = list.zip_with(tn, ln, (tt, xx) => tt * math.exp(xx - lse)) |> list.fold(0.0, (acc, v) => acc + v)
+    out = out + [[(0.0 - ce) + (1.0 - pt)]]
+    n = n + 1
+  }
+  matrix.from_lists(out)
+}
+
+// uniform logits [0,0], one-hot target [1,0]: CE=log2, p_t=0.5 → poly1 = log2 + 0.5.
+test "poly1 loss adds the (1−p_t) Taylor term to cross-entropy" {
+  let logits = matrix.from_lists([[0.0, 0.0]])
+  let target = matrix.from_lists([[1.0, 0.0]])
+  let y = poly1_loss_rows(logits, target)
+  assert(float.abs(matrix.get(y, 0, 0) - 1.1931471805599452) < 0.000000001, "log2 + 0.5")
+}
+
+// a confident correct prediction → CE≈0 and (1−p_t)≈0 → loss ≈ 0.
+test "poly1 loss of a confident correct prediction is near zero" {
+  let logits = matrix.from_lists([[100.0, 0.0]])
+  let target = matrix.from_lists([[1.0, 0.0]])
+  let y = poly1_loss_rows(logits, target)
+  assert(float.abs(matrix.get(y, 0, 0)) < 0.000001, "confident → ≈ 0")
+}

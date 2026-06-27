@@ -1,0 +1,18 @@
+// recip_1px4 — 1/(1+x⁴). A flatter-topped, sharper-shouldered Lorentzian-like
+// bump (Butterworth-order-2 shape): even, peaks at 1, decays like x⁻⁴.
+// Elementwise.
+
+fn recip_1px4(m: Matrix) -> Matrix =
+  matrix.map(m, (x) => 1.0 / (1.0 + x * x * x * x))
+
+test "recip_1px4 peaks at one when x=0" {
+  let y = recip_1px4(matrix.from_lists([[0.0]]))
+  assert_eq(matrix.get(y, 0, 0), 1.0)
+}
+
+// 1/(1+1)=0.5 at x=1; even.
+test "recip_1px4 at 1 and even" {
+  let y = recip_1px4(matrix.from_lists([[1.0, -1.0]]))
+  assert_eq(matrix.get(y, 0, 0), 0.5)
+  assert_eq(matrix.get(y, 0, 1), 0.5)
+}

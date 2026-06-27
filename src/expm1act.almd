@@ -1,0 +1,17 @@
+// expm1_act — exp(x) - 1. Zero-centered exponential (the negative-saturation
+// branch of ELU is α·expm1). Keep inputs moderate. Elementwise.
+
+import math
+
+fn expm1_act(m: Matrix) -> Matrix =
+  matrix.map(m, (x) => math.exp(x) - 1.0)
+
+test "expm1 at zero is zero" {
+  let y = expm1_act(matrix.from_lists([[0.0]]))
+  assert_eq(matrix.get(y, 0, 0), 0.0)
+}
+
+test "expm1 at one is e-1" {
+  let y = expm1_act(matrix.from_lists([[1.0]]))
+  assert(float.abs(matrix.get(y, 0, 0) - 1.718281828459045) < 0.000000001, "= e-1")
+}

@@ -1,0 +1,21 @@
+// cloglog — 1 - exp(-exp(x)). The complementary log-log link (the CDF of the
+// Gumbel distribution): an asymmetric (0,1) sigmoid that approaches 0 slowly and
+// 1 abruptly — the mirror of gompertz. Elementwise.
+
+import math
+
+fn cloglog(m: Matrix) -> Matrix =
+  matrix.map(m, (x) => 1.0 - math.exp(0.0 - math.exp(x)))
+
+// cloglog(0) = 1 - 1/e.
+test "cloglog at zero is 1 minus 1 over e" {
+  let y = cloglog(matrix.from_lists([[0.0]]))
+  assert(float.abs(matrix.get(y, 0, 0) - 0.6321205588285577) < 0.000000001, "1-1/e")
+}
+
+// → 1 for large +, → 0 for large -.
+test "cloglog saturates 1 and 0" {
+  let y = cloglog(matrix.from_lists([[4.0, -30.0]]))
+  assert(float.abs(matrix.get(y, 0, 0) - 1.0) < 0.000000001, "→ 1")
+  assert(float.abs(matrix.get(y, 0, 1)) < 0.000000001, "→ 0")
+}

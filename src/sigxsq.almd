@@ -1,0 +1,23 @@
+// sigmoid_times_x_sq — x²·σ(x). A sigmoid-gated quadratic: ≈0 for x≪0, ≈x² for
+// x≫0 — a smooth one-sided squared response (the SiLU idea applied to x²).
+// Elementwise.
+
+import math
+
+fn sigmoid_times_x_sq(m: Matrix) -> Matrix =
+  matrix.map(m, (x) => {
+    let s = 1.0 / (1.0 + math.exp(0.0 - x))
+    x * x * s
+  })
+
+test "sigmoid_times_x_sq at zero is zero" {
+  let y = sigmoid_times_x_sq(matrix.from_lists([[0.0]]))
+  assert_eq(matrix.get(y, 0, 0), 0.0)
+}
+
+// → x² for large +, → 0 for large -.
+test "sigmoid_times_x_sq saturation" {
+  let y = sigmoid_times_x_sq(matrix.from_lists([[30.0, -30.0]]))
+  assert(float.abs(matrix.get(y, 0, 0) - 900.0) < 0.000000001, "→ x²")
+  assert(float.abs(matrix.get(y, 0, 1)) < 0.000000001, "→ 0")
+}

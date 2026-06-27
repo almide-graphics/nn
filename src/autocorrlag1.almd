@@ -1,0 +1,47 @@
+// autocorr_lag1_rows — lag-1 autocorrelation of each row (axis=1):
+//   μ_t = (1/D) Σ_j x_{t,j},   d_j = x_{t,j} − μ_t
+//   out_t = ( Σ_{j=0}^{D-2} d_j·d_{j+1} ) / ( Σ_j d_j² + ε )   ∈ [−1, 1]-ish, (T,1).
+// How correlated a row is with itself shifted by one position — a smoothness / serial-structure
+// measure: ≈ +1 for a slowly varying (monotone) row, negative for an alternating one, ≈ 0 for
+// white noise. The normalized lag-1 sample autocovariance; distinct from lag1_rows (a plain
+// shift) and from cov/corr (cross-series). Two passes (mean/centering, then adjacent products
+// over the squared norm). The +ε guards a constant row. Output (T,1).
+
+import float
+
+fn autocorr_lag1_rows(x: Matrix) -> Matrix = {
+  let rx = matrix.to_lists(x)
+  let (t, d) = matrix.shape(x)
+  let df = int.to_float(d)
+  var out: List[List[Float]] = []
+  var i = 0
+  while i < t {
+    let xi = list.get_or(rx, i, [])
+    let mean = (xi |> list.fold(0.0, (acc, v) => acc + v)) / df
+    let dc = xi |> list.map((v) => v - mean)
+    let den = dc |> list.fold(0.0, (acc, v) => acc + v * v)
+    var num = 0.0
+    var j = 0
+    while j < d - 1 {
+      num = num + list.get_or(dc, j, 0.0) * list.get_or(dc, j + 1, 0.0)
+      j = j + 1
+    }
+    out = out + [[num / (den + 0.000000000001)]]
+    i = i + 1
+  }
+  matrix.from_lists(out)
+}
+
+// smooth ramp [1,2,3,4]: μ=2.5, d=[−1.5,−0.5,0.5,1.5]; num=1.25, den=5 → 0.25 (positive).
+test "a smooth ramp has positive lag-1 autocorrelation" {
+  let x = matrix.from_lists([[1.0, 2.0, 3.0, 4.0]])
+  let y = autocorr_lag1_rows(x)
+  assert(float.abs(matrix.get(y, 0, 0) - 0.25) < 0.000000001, "1.25/5")
+}
+
+// alternating [1,−1,1,−1]: μ=0, num=−3, den=4 → −0.75 (negative).
+test "an alternating row has negative lag-1 autocorrelation" {
+  let x = matrix.from_lists([[1.0, 0.0 - 1.0, 1.0, 0.0 - 1.0]])
+  let y = autocorr_lag1_rows(x)
+  assert(float.abs(matrix.get(y, 0, 0) - (0.0 - 0.75)) < 0.000000001, "−3/4")
+}

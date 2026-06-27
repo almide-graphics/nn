@@ -1,0 +1,20 @@
+// abs_smooth — √(x² + ε), ε=1e-4. The Charbonnier (smooth-ℓ1) penalty: a
+// differentiable |x| with no kink at 0 — ≈|x| for large |x|, ≈ε^½ + x²/(2ε^½)
+// near 0. Even, convex. Elementwise.
+
+import math
+
+fn abs_smooth(m: Matrix) -> Matrix =
+  matrix.map(m, (x) => math.sqrt(x * x + 0.0001))
+
+// √(1e-4) = 0.01 at x=0.
+test "abs_smooth at zero is epsilon root" {
+  let y = abs_smooth(matrix.from_lists([[0.0]]))
+  assert(float.abs(matrix.get(y, 0, 0) - 0.01) < 0.000000001, "= 0.01")
+}
+
+// even.
+test "abs_smooth is even" {
+  let y = abs_smooth(matrix.from_lists([[3.0, -3.0]]))
+  assert(float.abs(matrix.get(y, 0, 0) - matrix.get(y, 0, 1)) < 0.000000001, "even")
+}

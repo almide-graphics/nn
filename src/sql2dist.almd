@@ -1,0 +1,38 @@
+// squared_l2_dist_rows — row-wise squared Euclidean distance of two matrices:
+//
+//   dist_r = Σ_j (a_rj − b_rj)²
+//
+// One value per row → output (T,1). The (cheaper, root-free) squared distance —
+// the argument to RBF/Gaussian kernels and the k-means objective. Distinct from
+// mse_rows (no 1/D) and l2_dist_rows (no √). Two-input row reduction.
+
+fn squared_l2_dist_rows(a: Matrix, b: Matrix) -> Matrix = {
+  let ra = matrix.to_lists(a)
+  let rb = matrix.to_lists(b)
+  let (t, _) = matrix.shape(a)
+  var out: List[List[Float]] = []
+  var n = 0
+  while n < t {
+    let an = list.get_or(ra, n, [])
+    let bn = list.get_or(rb, n, [])
+    let ss = list.zip_with(an, bn, (x, y) => (x - y) * (x - y)) |> list.fold(0.0, (acc, v) => acc + v)
+    out = out + [[ss]]
+    n = n + 1
+  }
+  matrix.from_lists(out)
+}
+
+// dist(a, a) = 0.
+test "squared l2 of identical rows is zero" {
+  let a = matrix.from_lists([[1.0, 2.0, 3.0, 4.0]])
+  let y = squared_l2_dist_rows(a, a)
+  assert_eq(matrix.get(y, 0, 0), 0.0)
+}
+
+// 3²+4² = 25.
+test "squared l2 of zero to three-four is twenty-five" {
+  let a = matrix.from_lists([[0.0, 0.0]])
+  let b = matrix.from_lists([[3.0, 4.0]])
+  let y = squared_l2_dist_rows(a, b)
+  assert_eq(matrix.get(y, 0, 0), 25.0)
+}

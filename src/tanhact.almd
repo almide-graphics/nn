@@ -1,0 +1,19 @@
+// tanh_act — hyperbolic tangent activation, expressed via exp (no math.tanh in
+// stdlib): tanh(x) = 2/(1 + exp(-2x)) - 1. Matches np.tanh to f64 precision.
+// Elementwise.
+
+import math
+
+fn tanh_act(m: Matrix) -> Matrix =
+  matrix.map(m, (x) => 2.0 / (1.0 + math.exp(0.0 - 2.0 * x)) - 1.0)
+
+test "tanh_act at zero is zero" {
+  let y = tanh_act(matrix.from_lists([[0.0]]))
+  assert_eq(matrix.get(y, 0, 0), 0.0)
+}
+
+test "tanh_act saturates to plus/minus one" {
+  let y = tanh_act(matrix.from_lists([[20.0, -20.0]]))
+  assert(float.abs(matrix.get(y, 0, 0) - 1.0) < 0.000000001, "→ 1")
+  assert(float.abs(matrix.get(y, 0, 1) + 1.0) < 0.000000001, "→ -1")
+}

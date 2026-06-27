@@ -1,0 +1,27 @@
+// global_meanpool_rows — mean over each row → (T,1). The simplest pooling /
+// reduction head; building block for attention pooling and readouts.
+
+fn global_meanpool_rows(x: Matrix) -> Matrix = {
+  let rx = matrix.to_lists(x)
+  let (t, d) = matrix.shape(x)
+  let df = int.to_float(d)
+  var out: List[List[Float]] = []
+  var n = 0
+  while n < t {
+    let xn = list.get_or(rx, n, [])
+    let s = xn |> list.fold(0.0, (acc, v) => acc + v)
+    out = out + [[s / df]]
+    n = n + 1
+  }
+  matrix.from_lists(out)
+}
+
+test "meanpool of constant row is that constant" {
+  let y = global_meanpool_rows(matrix.from_lists([[5.0, 5.0, 5.0, 5.0]]))
+  assert_eq(matrix.get(y, 0, 0), 5.0)
+}
+
+test "meanpool computes the average" {
+  let y = global_meanpool_rows(matrix.from_lists([[1.0, 2.0, 3.0, 4.0]]))
+  assert_eq(matrix.get(y, 0, 0), 2.5)
+}

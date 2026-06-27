@@ -1,0 +1,21 @@
+// logsigmoid — log σ(x), numerically stable via -softplus(-x):
+//   logσ(x) = -( max(-x,0) + log(1 + exp(-|x|)) )
+// The log-probability head for binary classification / BCE. Elementwise.
+
+import math
+
+fn logsigmoid(m: Matrix) -> Matrix =
+  matrix.map(m, (x) =>
+    0.0 - (math.fmax(0.0 - x, 0.0) + math.log(1.0 + math.exp(0.0 - float.abs(x)))))
+
+// logσ(0) = log(0.5) = -log2.
+test "logsigmoid at zero is minus log2" {
+  let y = logsigmoid(matrix.from_lists([[0.0]]))
+  assert(float.abs(matrix.get(y, 0, 0) + 0.6931471805599453) < 0.000000001, "= -log2")
+}
+
+// Large positive → σ→1 → logσ→0.
+test "logsigmoid large positive approaches zero" {
+  let y = logsigmoid(matrix.from_lists([[30.0]]))
+  assert(float.abs(matrix.get(y, 0, 0)) < 0.000000001, "≈ 0")
+}

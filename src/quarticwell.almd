@@ -1,0 +1,23 @@
+// quartic_well — (x²-1)². The canonical symmetric double-well potential: even,
+// ≥0, two minima at x=±1 (value 0) separated by a barrier of height 1 at x=0.
+// A bistable energy landscape / spontaneous-symmetry-breaking feature.
+// Elementwise.
+
+fn quartic_well(m: Matrix) -> Matrix =
+  matrix.map(m, (x) => {
+    let s = x * x - 1.0
+    s * s
+  })
+
+// minima at x=±1 are exactly 0.
+test "quartic_well minima at plus minus one" {
+  let y = quartic_well(matrix.from_lists([[1.0, -1.0]]))
+  assert_eq(matrix.get(y, 0, 0), 0.0)
+  assert_eq(matrix.get(y, 0, 1), 0.0)
+}
+
+// barrier at x=0 is 1.
+test "quartic_well barrier at zero is one" {
+  let y = quartic_well(matrix.from_lists([[0.0]]))
+  assert_eq(matrix.get(y, 0, 0), 1.0)
+}

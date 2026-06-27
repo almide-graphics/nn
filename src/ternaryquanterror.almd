@@ -1,0 +1,55 @@
+// ternary_quant_error_rows — the residual left by TWN ternary quantization, per row.
+//   Δ_t = 0.7 · (1/D) Σ_j |x_{t,j}|                      (per-row absmean threshold)
+//   α_t = mean of |x| over the kept entries {j : |x_{t,j}| > Δ_t}
+//   q_{t,j} = α_t · (+1 if x>Δ_t,  −1 if x<−Δ_t,  else 0)   (the dequantized ternary weight)
+//   out_{t,j} = x_{t,j} − q_{t,j}
+// The ternary analog of quant_error_rows (which binarizes): what α·ternary throws away
+// in each row — the quantization noise a TWN layer injects, and the term QAT shrinks.
+// Per-row 4-pass (absmean → α → scatter q → subtract). Output (T,D).
+
+import float
+
+fn ternary_quant_error_rows(x: Matrix) -> Matrix = {
+  let rx = matrix.to_lists(x)
+  let (t, d) = matrix.shape(x)
+  let df = int.to_float(d)
+  var out: List[List[Float]] = []
+  var i = 0
+  while i < t {
+    let xi = list.get_or(rx, i, [])
+    let s = xi |> list.fold(0.0, (acc, v) => acc + float.abs(v))
+    let delta = 0.7 * (s / df)
+    let count = xi |> list.fold(0.0, (acc, v) =>
+      acc + (if float.abs(v) > delta then 1.0 else 0.0))
+    let above = xi |> list.fold(0.0, (acc, v) =>
+      acc + (if float.abs(v) > delta then float.abs(v) else 0.0))
+    let alpha = if count > 0.0 then above / count else 0.0
+    let row = xi |> list.map((v) => {
+      let q = if v > delta then alpha else (if v < (0.0 - delta) then 0.0 - alpha else 0.0)
+      v - q
+    })
+    out = out + [row]
+    i = i + 1
+  }
+  matrix.from_lists(out)
+}
+
+// row [3,-4,0.1,0.05]: mean|x|=1.7875, Δ=1.25125 → kept {3,4}, α=3.5.
+//   q=[3.5,-3.5,0,0], residual=[3-3.5, -4+3.5, 0.1, 0.05]=[-0.5,-0.5,0.1,0.05].
+test "ternary-quant-error is x minus its dequantized ternary code" {
+  let x = matrix.from_lists([[3.0, 0.0 - 4.0, 0.1, 0.05]])
+  let y = ternary_quant_error_rows(x)
+  assert(float.abs(matrix.get(y, 0, 0) - (0.0 - 0.5)) < 0.000000001, "x0 residual")
+  assert(float.abs(matrix.get(y, 0, 1) - (0.0 - 0.5)) < 0.000000001, "x1 residual")
+  assert(float.abs(matrix.get(y, 0, 2) - 0.1) < 0.000000001, "x2 kept as-is")
+  assert(float.abs(matrix.get(y, 0, 3) - 0.05) < 0.000000001, "x3 kept as-is")
+}
+
+// on a flat-magnitude row every entry is kept and α equals that magnitude,
+// so q reconstructs x exactly and the residual is zero.
+test "ternary-quant-error is zero on a flat-magnitude row" {
+  let x = matrix.from_lists([[2.0, 0.0 - 2.0]])
+  let y = ternary_quant_error_rows(x)
+  assert(float.abs(matrix.get(y, 0, 0)) < 0.000000001, "x0 residual 0")
+  assert(float.abs(matrix.get(y, 0, 1)) < 0.000000001, "x1 residual 0")
+}

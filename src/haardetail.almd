@@ -1,0 +1,47 @@
+// haar_detail_x2_rows — level-1 Haar wavelet detail (high-pass) coefficients along each row:
+//   out_{t,j} = (x_{t,2j} − x_{t,2j+1}) / 2   for j = 0 … D/2−1   → (T, D/2).
+// The high-frequency half of one Haar wavelet step: where avg_pool1d_k2_rows is the approximation
+// (low-pass, (a+b)/2), this is the detail (high-pass, (a−b)/2) — together they are the full level-1
+// Haar transform / a lossless multi-resolution split. It vanishes on locally-constant pairs and
+// fires at edges, so it is the per-window discrete derivative used in wavelet compression and
+// edge detection. Distinct from the pools (a difference, not max/avg/min) and from diff_rows (which
+// differences over time, axis=0; this differences adjacent features and downsamples). Output (T, D/2).
+
+import float
+
+fn haar_detail_x2_rows(x: Matrix) -> Matrix = {
+  let rx = matrix.to_lists(x)
+  let (t, d) = matrix.shape(x)
+  var out: List[List[Float]] = []
+  var i = 0
+  while i < t {
+    let xi = list.get_or(rx, i, [])
+    var row: List[Float] = []
+    var j = 0
+    while j < d {
+      let a = list.get_or(xi, j, 0.0)
+      let b = list.get_or(xi, j + 1, 0.0)
+      row = row + [(a - b) / 2.0]
+      j = j + 2
+    }
+    out = out + [row]
+    i = i + 1
+  }
+  matrix.from_lists(out)
+}
+
+// detail of each pair: [4,2,1,5] → [(4−2)/2, (1−5)/2] = [1, −2].
+test "haar detail is the half-difference of each adjacent pair" {
+  let x = matrix.from_lists([[4.0, 2.0, 1.0, 5.0]])
+  let y = haar_detail_x2_rows(x)
+  assert(float.abs(matrix.get(y, 0, 0) - 1.0) < 0.000000001, "(4−2)/2=1")
+  assert(float.abs(matrix.get(y, 0, 1) - (0.0 - 2.0)) < 0.000000001, "(1−5)/2=−2")
+}
+
+// locally-constant pairs have zero detail: [3,3,7,7] → [0,0].
+test "haar detail vanishes on constant pairs" {
+  let x = matrix.from_lists([[3.0, 3.0, 7.0, 7.0]])
+  let y = haar_detail_x2_rows(x)
+  assert(float.abs(matrix.get(y, 0, 0)) < 0.000000001, "0")
+  assert(float.abs(matrix.get(y, 0, 1)) < 0.000000001, "0")
+}

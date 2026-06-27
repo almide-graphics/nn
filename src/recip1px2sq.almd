@@ -1,0 +1,21 @@
+// recip_1px2_sq — 1/(1+x²)². The squared Lorentzian / Student-t(ν=3)-shaped bump:
+// even, peaks at 1, with ~x⁻⁴ tails (lighter than cauchy_act's ~x⁻²). A more
+// concentrated rational kernel. Elementwise.
+
+fn recip_1px2_sq(m: Matrix) -> Matrix =
+  matrix.map(m, (x) => {
+    let d = 1.0 / (1.0 + x * x)
+    d * d
+  })
+
+test "recip_1px2_sq peaks at one when x=0" {
+  let y = recip_1px2_sq(matrix.from_lists([[0.0]]))
+  assert_eq(matrix.get(y, 0, 0), 1.0)
+}
+
+// (1/2)²=0.25 at x=±1; even.
+test "recip_1px2_sq quarter at plus minus one" {
+  let y = recip_1px2_sq(matrix.from_lists([[1.0, -1.0]]))
+  assert_eq(matrix.get(y, 0, 0), 0.25)
+  assert_eq(matrix.get(y, 0, 1), 0.25)
+}

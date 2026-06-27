@@ -1,0 +1,56 @@
+// soft_consensus3_rows — the differentiable 3-input consensus (all-agree) gate, elementwise (3-input):
+//   out = a·b·c + (1−a)·(1−b)·(1−c)   for a, b, c ∈ [0,1]   → (T,D).
+// Reading a, b, c as independent Bernoulli probabilities, this is P(all three take the same value) —
+// the unanimity / agreement detector. As a symmetric Boolean function it fires on the count classes
+// {0, 3} (all-off or all-on), making it the third distinct symmetric gate beyond soft_majority3
+// (counts {2,3}) and soft_parity3 (counts {1,3}). A natural circuit primitive for consensus / tie
+// detection. At the boolean corners it is 1 exactly when the three agree; at a=b=c=½ it is ¼ (the
+// two agreeing corners out of eight). Symmetric in its inputs. Output (T,D).
+
+import float
+
+fn soft_consensus3_rows(a: Matrix, b: Matrix, c: Matrix) -> Matrix = {
+  let ra = matrix.to_lists(a)
+  let rb = matrix.to_lists(b)
+  let rc = matrix.to_lists(c)
+  let (t, d) = matrix.shape(a)
+  var out: List[List[Float]] = []
+  var i = 0
+  while i < t {
+    let ai = list.get_or(ra, i, [])
+    let bi = list.get_or(rb, i, [])
+    let ci = list.get_or(rc, i, [])
+    var row: List[Float] = []
+    var j = 0
+    while j < d {
+      let av = list.get_or(ai, j, 0.0)
+      let bv = list.get_or(bi, j, 0.0)
+      let cv = list.get_or(ci, j, 0.0)
+      row = row + [av * bv * cv + (1.0 - av) * (1.0 - bv) * (1.0 - cv)]
+      j = j + 1
+    }
+    out = out + [row]
+    i = i + 1
+  }
+  matrix.from_lists(out)
+}
+
+// consensus fires iff all three agree: (1,1,1)→1, (0,0,0)→1, (1,1,0)→0.
+test "soft-consensus-3 is 1 exactly when all three agree (corners)" {
+  let a = matrix.from_lists([[1.0, 0.0, 1.0]])
+  let b = matrix.from_lists([[1.0, 0.0, 1.0]])
+  let c = matrix.from_lists([[1.0, 0.0, 0.0]])
+  let y = soft_consensus3_rows(a, b, c)
+  assert_eq(matrix.get(y, 0, 0), 1.0)
+  assert_eq(matrix.get(y, 0, 1), 1.0)
+  assert_eq(matrix.get(y, 0, 2), 0.0)
+}
+
+// at a = b = c = ½: ⅛ + ⅛ = ¼.
+test "soft-consensus-3 at p=0.5 is one quarter" {
+  let a = matrix.from_lists([[0.5]])
+  let b = matrix.from_lists([[0.5]])
+  let c = matrix.from_lists([[0.5]])
+  let y = soft_consensus3_rows(a, b, c)
+  assert(float.abs(matrix.get(y, 0, 0) - 0.25) < 0.000000001, "0.25")
+}

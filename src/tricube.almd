@@ -1,0 +1,26 @@
+// tricube — (max(0, 1-|x|³))³. The tricube kernel (LOWESS weighting): a very
+// flat-topped, compact-support bump (1 at 0, 0 beyond |x|=1) with a higher-order
+// flat contact than the biweight. Even. Elementwise.
+
+import math
+
+fn tricube(m: Matrix) -> Matrix =
+  matrix.map(m, (x) => {
+    let a = float.abs(x)
+    let u = math.fmax(0.0, 1.0 - a * a * a)
+    u * u * u
+  })
+
+// peak 1 at 0; (1-0.125)³ = 0.875³ = 0.669921875 at 0.5.
+test "tricube peak and interior" {
+  let y = tricube(matrix.from_lists([[0.0, 0.5]]))
+  assert_eq(matrix.get(y, 0, 0), 1.0)
+  assert_eq(matrix.get(y, 0, 1), 0.669921875)
+}
+
+// exactly 0 at and beyond |x|=1.
+test "tricube zero outside unit" {
+  let y = tricube(matrix.from_lists([[1.0, -2.0]]))
+  assert_eq(matrix.get(y, 0, 0), 0.0)
+  assert_eq(matrix.get(y, 0, 1), 0.0)
+}

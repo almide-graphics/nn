@@ -1,0 +1,40 @@
+// mean_prod_rows — row-wise mean of the elementwise product of two matrices:
+//
+//   out_r = (1/D) · Σ_j a_rj · b_rj
+//
+// One value per row → output (T,1). The (uncentered) cross-moment / mean
+// co-activation (dot_rows divided by D); a sample second-moment statistic.
+// Two-input row reduction.
+
+fn mean_prod_rows(a: Matrix, b: Matrix) -> Matrix = {
+  let ra = matrix.to_lists(a)
+  let rb = matrix.to_lists(b)
+  let (rows, d) = matrix.shape(a)
+  let df = int.to_float(d)
+  var out: List[List[Float]] = []
+  var n = 0
+  while n < rows {
+    let an = list.get_or(ra, n, [])
+    let bn = list.get_or(rb, n, [])
+    let s = list.zip_with(an, bn, (x, y) => x * y) |> list.fold(0.0, (acc, v) => acc + v)
+    out = out + [[s / df]]
+    n = n + 1
+  }
+  matrix.from_lists(out)
+}
+
+// (2·1 + 4·1)/2 = 3.
+test "mean prod averages the products" {
+  let a = matrix.from_lists([[2.0, 4.0]])
+  let b = matrix.from_lists([[1.0, 1.0]])
+  let y = mean_prod_rows(a, b)
+  assert_eq(matrix.get(y, 0, 0), 3.0)
+}
+
+// orthogonal rows → 0.
+test "mean prod of orthogonal rows is zero" {
+  let a = matrix.from_lists([[1.0, 0.0]])
+  let b = matrix.from_lists([[0.0, 1.0]])
+  let y = mean_prod_rows(a, b)
+  assert_eq(matrix.get(y, 0, 0), 0.0)
+}

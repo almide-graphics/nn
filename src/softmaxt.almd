@@ -1,0 +1,39 @@
+// softmax_temperature — row-wise temperature softmax, numerically stable:
+//
+//   softmax(x/τ)_j = exp(x_j/τ - m) / Σ_i exp(x_i/τ - m),   m = max_i x_i/τ
+//
+// τ>0 is a scalar: τ→0 sharpens toward one-hot(argmax), τ→∞ flattens toward
+// uniform. The matrix stdlib has softmax_rows (τ=1) but no temperature form.
+
+import math
+
+fn softmax_temperature(x: Matrix, tau: Float) -> Matrix = {
+  let rx = matrix.to_lists(x)
+  let (t, _) = matrix.shape(x)
+  let inv = 1.0 / tau
+  var out: List[List[Float]] = []
+  var n = 0
+  while n < t {
+    let xn = list.get_or(rx, n, [])
+    let scaled = list.map(xn, (v) => v * inv)
+    let mx = scaled |> list.fold(-1.0e38, (acc, v) => math.fmax(acc, v))
+    let exps = list.map(scaled, (v) => math.exp(v - mx))
+    let denom = exps |> list.fold(0.0, (acc, v) => acc + v)
+    out = out + [list.map(exps, (e) => e / denom)]
+    n = n + 1
+  }
+  matrix.from_lists(out)
+}
+
+// Each row is a probability distribution → sums to 1.
+test "softmax_temperature row sums to one" {
+  let y = softmax_temperature(matrix.from_lists([[1.0, 2.0, 3.0]]), 0.7)
+  let s = matrix.get(y, 0, 0) + matrix.get(y, 0, 1) + matrix.get(y, 0, 2)
+  assert(float.abs(s - 1.0) < 0.000000001, "row sums to 1")
+}
+
+// Equal logits → uniform regardless of τ.
+test "softmax_temperature uniform on equal logits" {
+  let y = softmax_temperature(matrix.from_lists([[0.0, 0.0]]), 2.0)
+  assert(float.abs(matrix.get(y, 0, 0) - 0.5) < 0.000000001, "uniform 0.5")
+}

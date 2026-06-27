@@ -1,0 +1,47 @@
+// logaddexp_rows — elementwise log-semiring addition of two matrices (2-input):
+//   out_{t,j} = log(exp(a) + exp(b)) = max(a,b) + log(1 + exp(−|a − b|))   → (T,D).
+// The "⊕" of the log semiring (torch.logaddexp): adds two values that live in log-space without
+// leaving it. It is the single combining step of the forward algorithm for HMMs / linear-chain CRFs
+// (and the soft analogue of Viterbi's max), where probabilities are kept as log-probabilities for
+// numerical stability. Computed in the log-sum-exp-stable form so it never overflows. Distinct from
+// the reductions logsumexp_rows (over a row, axis=1) and cumulative_logsumexp_rows (a prefix scan,
+// axis=0): this is a binary, elementwise operator. logaddexp(x,x)=x+log2; it tends to max(a,b) as
+// the gap grows. Output (T,D).
+
+import float
+import math
+
+fn logaddexp_rows(a: Matrix, b: Matrix) -> Matrix = {
+  let ra = matrix.to_lists(a)
+  let rb = matrix.to_lists(b)
+  let (t, _) = matrix.shape(a)
+  var out: List[List[Float]] = []
+  var i = 0
+  while i < t {
+    let ai = list.get_or(ra, i, [])
+    let bi = list.get_or(rb, i, [])
+    out = out + [list.zip_with(ai, bi, (av, bv) => {
+      let m = math.fmax(av, bv)
+      m + math.log(1.0 + math.exp(0.0 - float.abs(av - bv)))
+    })]
+    i = i + 1
+  }
+  matrix.from_lists(out)
+}
+
+// logaddexp(x, x) = x + log 2.
+test "logaddexp of equal values adds log 2" {
+  let a = matrix.from_lists([[0.0, 5.0]])
+  let b = matrix.from_lists([[0.0, 5.0]])
+  let y = logaddexp_rows(a, b)
+  assert(float.abs(matrix.get(y, 0, 0) - 0.6931471805599453) < 0.000000001, "log 2")
+  assert(float.abs(matrix.get(y, 0, 1) - (5.0 + 0.6931471805599453)) < 0.000000001, "5 + log 2")
+}
+
+// when one term dominates, logaddexp ≈ max (here 100).
+test "logaddexp approaches the max when one term dominates" {
+  let a = matrix.from_lists([[100.0]])
+  let b = matrix.from_lists([[0.0]])
+  let y = logaddexp_rows(a, b)
+  assert(float.abs(matrix.get(y, 0, 0) - 100.0) < 0.0001, "≈ 100")
+}

@@ -1,0 +1,63 @@
+// bitnet_b158_quant_error_rows — residual left by BitNet b1.58 quantization.
+//   γ    = (1 / (T·D)) Σ_{t,j} |x_{t,j}|                  (per-tensor absmean scale)
+//   u    = x / γ
+//   code = +1 if u > 0.5 ; −1 if u < −0.5 ; 0 otherwise   (ternary snap)
+//   out  = x − γ · code                                   (per-coordinate quant noise)
+// The gap between a weight and its dequantized 1.58-bit code γ·code (op
+// bitnet_b158_scaled_rows). Dead-zone entries (|u| ≤ 0.5) carry code 0, so they pass
+// through unchanged — the residual there is the value itself. This is the b1.58 analogue
+// of quant_error_rows (binary b1, sign⁺) and the per-tensor-γ counterpart of
+// ternary_quant_error_rows (TWN per-row α). round() is unavailable, so the snap is a
+// ±0.5 threshold on u. Two passes (absmean, then residual). Output (T,D).
+
+import float
+
+fn bitnet_b158_quant_error_rows(x: Matrix) -> Matrix = {
+  let rx = matrix.to_lists(x)
+  let (t, d) = matrix.shape(x)
+  let n = int.to_float(t * d)
+  // pass 1: sum of absolute values over the whole tensor → per-tensor absmean γ.
+  var total = 0.0
+  var p = 0
+  while p < t {
+    let xp = list.get_or(rx, p, [])
+    let s = xp |> list.fold(0.0, (acc, v) => acc + float.abs(v))
+    total = total + s
+    p = p + 1
+  }
+  let gamma = total / n
+  // pass 2: residual x − γ·code, code = ternary snap of u = x/γ at ±0.5.
+  var out: List[List[Float]] = []
+  var i = 0
+  while i < t {
+    let xi = list.get_or(rx, i, [])
+    let row = xi |> list.map((v) => {
+      let u = v / gamma
+      let code = if u > 0.5 then 1.0 else (if u < (0.0 - 0.5) then 0.0 - 1.0 else 0.0)
+      v - gamma * code
+    })
+    out = out + [row]
+    i = i + 1
+  }
+  matrix.from_lists(out)
+}
+
+// Σ|x|=8 over 4 cells → γ=2; u={3,0,0,1}; code={1,0,0,1}; dequant={2,0,0,2}; residual={4,0,0,0}.
+test "b1.58 quant-error is x minus its dequantized ternary code" {
+  let x = matrix.from_lists([[6.0, 0.0], [0.0, 2.0]])
+  let y = bitnet_b158_quant_error_rows(x)
+  assert(float.abs(matrix.get(y, 0, 0) - 4.0) < 0.000000001, "6-2=4")
+  assert_eq(matrix.get(y, 0, 1), 0.0)
+  assert_eq(matrix.get(y, 1, 0), 0.0)
+  assert_eq(matrix.get(y, 1, 1), 0.0)
+}
+
+// γ=2; an entry with u=0.5 is in the dead-zone (code 0) → residual is the value itself.
+test "dead-zone entries pass through unchanged as their own value" {
+  let x = matrix.from_lists([[6.0, 1.0], [1.0, 0.0]])
+  let y = bitnet_b158_quant_error_rows(x)
+  assert(float.abs(matrix.get(y, 0, 0) - 4.0) < 0.000000001, "6-2=4")
+  assert_eq(matrix.get(y, 0, 1), 1.0)
+  assert_eq(matrix.get(y, 1, 0), 1.0)
+  assert_eq(matrix.get(y, 1, 1), 0.0)
+}

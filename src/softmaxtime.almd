@@ -1,0 +1,52 @@
+// softmax_time_rows — softmax along the time axis (down the rows): each column is
+// normalized over its T entries so that Σ_t out_{t,c} = 1. The time-direction
+// counterpart of the per-row softmax — an attention/weighting distribution over
+// timesteps per channel. Numerically stable (subtracts per-column max). Three
+// passes. Output (T,D).
+
+import math
+
+fn softmax_time_rows(x: Matrix) -> Matrix = {
+  let rx = matrix.to_lists(x)
+  let (t, _) = matrix.shape(x)
+  var m: List[Float] = list.get_or(rx, 0, [])
+  var i = 0
+  while i < t {
+    let xi = list.get_or(rx, i, [])
+    m = list.zip_with(m, xi, (a, b) => math.fmax(a, b))
+    i = i + 1
+  }
+  var z: List[Float] = m |> list.map((_) => 0.0)
+  var k = 0
+  while k < t {
+    let xk = list.get_or(rx, k, [])
+    let e = list.zip_with(xk, m, (a, b) => math.exp(a - b))
+    z = list.zip_with(z, e, (a, b) => a + b)
+    k = k + 1
+  }
+  var out: List[List[Float]] = []
+  var j = 0
+  while j < t {
+    let xj = list.get_or(rx, j, [])
+    let e = list.zip_with(xj, m, (a, b) => math.exp(a - b))
+    out = out + [list.zip_with(e, z, (a, b) => a / b)]
+    j = j + 1
+  }
+  matrix.from_lists(out)
+}
+
+// a column of equal values is uniform over time → 0.5 each (2 rows).
+test "softmax over time of equal values is uniform" {
+  let x = matrix.from_lists([[0.0], [0.0]])
+  let y = softmax_time_rows(x)
+  assert_eq(matrix.get(y, 0, 0), 0.5)
+  assert_eq(matrix.get(y, 1, 0), 0.5)
+}
+
+// per channel, equal entries → uniform regardless of value.
+test "softmax over time is uniform per equal-entry channel" {
+  let x = matrix.from_lists([[0.0, 1.0], [0.0, 1.0]])
+  let y = softmax_time_rows(x)
+  assert_eq(matrix.get(y, 0, 1), 0.5)
+  assert_eq(matrix.get(y, 1, 1), 0.5)
+}

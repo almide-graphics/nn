@@ -1,0 +1,19 @@
+// cosm1 — cos(x) - 1. The zero-anchored cosine: 0 at the origin, even, always
+// ≤ 0 (range [-2,0]); ≈ -x²/2 near 0. A periodic "valley" feature. Elementwise.
+
+import math
+
+fn cosm1(m: Matrix) -> Matrix =
+  matrix.map(m, (x) => math.cos(x) - 1.0)
+
+test "cosm1 at zero is zero" {
+  let y = cosm1(matrix.from_lists([[0.0]]))
+  assert_eq(matrix.get(y, 0, 0), 0.0)
+}
+
+// cos(π)-1 = -2; even.
+test "cosm1 at pi is minus two and even" {
+  let y = cosm1(matrix.from_lists([[3.141592653589793, -3.141592653589793]]))
+  assert(float.abs(matrix.get(y, 0, 0) + 2.0) < 0.000000001, "= -2")
+  assert(float.abs(matrix.get(y, 0, 1) + 2.0) < 0.000000001, "even")
+}

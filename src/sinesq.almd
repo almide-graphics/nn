@@ -1,0 +1,22 @@
+// sine_sq — sin²(x). A non-negative periodic activation bounded in [0,1]
+// (= (1-cos2x)/2); the complement of cosine_sq (sum = 1). Even. Elementwise.
+
+import math
+
+fn sine_sq(m: Matrix) -> Matrix =
+  matrix.map(m, (x) => {
+    let s = math.sin(x)
+    s * s
+  })
+
+test "sine_sq at zero is zero" {
+  let y = sine_sq(matrix.from_lists([[0.0]]))
+  assert_eq(matrix.get(y, 0, 0), 0.0)
+}
+
+// sin(π/2)=1 → 1; even.
+test "sine_sq at pi over two is one and even" {
+  let y = sine_sq(matrix.from_lists([[1.5707963267948966, -1.5707963267948966]]))
+  assert(float.abs(matrix.get(y, 0, 0) - 1.0) < 0.000000001, "= 1")
+  assert(float.abs(matrix.get(y, 0, 1) - 1.0) < 0.000000001, "even")
+}

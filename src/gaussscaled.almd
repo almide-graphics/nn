@@ -1,0 +1,19 @@
+// gaussian_scaled — width-parameterized RBF exp(-x²/(2σ²)) (scalar σ>0). The
+// bandwidth-controlled bump behind RBF kernels / SchNet filters. Even,
+// peaks at 1. Elementwise.
+
+import math
+
+fn gaussian_scaled(m: Matrix, sigma: Float) -> Matrix =
+  matrix.map(m, (x) => math.exp(0.0 - (x * x) / (2.0 * sigma * sigma)))
+
+test "gaussian_scaled peaks at one when x=0" {
+  let y = gaussian_scaled(matrix.from_lists([[0.0]]), 1.5)
+  assert_eq(matrix.get(y, 0, 0), 1.0)
+}
+
+// at x=σ the value is exp(-1/2).
+test "gaussian_scaled at x equal sigma" {
+  let y = gaussian_scaled(matrix.from_lists([[2.0]]), 2.0)
+  assert(float.abs(matrix.get(y, 0, 0) - 0.6065306597126334) < 0.000000001, "exp(-1/2)")
+}

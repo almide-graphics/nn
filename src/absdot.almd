@@ -1,0 +1,41 @@
+// abs_dot_rows — row-wise absolute dot product of two matrices:
+//
+//   out_r = | Σ_j a_rj · b_rj |
+//
+// One value per row → output (T,1). The sign-agnostic alignment magnitude (the
+// |·| of dot_rows); used where only the strength, not the direction, of
+// projection matters. Two-input row reduction.
+
+import float
+
+fn abs_dot_rows(a: Matrix, b: Matrix) -> Matrix = {
+  let ra = matrix.to_lists(a)
+  let rb = matrix.to_lists(b)
+  let (rows, _) = matrix.shape(a)
+  var out: List[List[Float]] = []
+  var n = 0
+  while n < rows {
+    let an = list.get_or(ra, n, [])
+    let bn = list.get_or(rb, n, [])
+    let dot = list.zip_with(an, bn, (x, y) => x * y) |> list.fold(0.0, (acc, v) => acc + v)
+    out = out + [[float.abs(dot)]]
+    n = n + 1
+  }
+  matrix.from_lists(out)
+}
+
+// orthogonal rows → 0.
+test "abs dot of orthogonal rows is zero" {
+  let a = matrix.from_lists([[1.0, 0.0]])
+  let b = matrix.from_lists([[0.0, 1.0]])
+  let y = abs_dot_rows(a, b)
+  assert_eq(matrix.get(y, 0, 0), 0.0)
+}
+
+// 1·(-3)+2·(-1) = -5 → |−5| = 5.
+test "abs dot takes the magnitude" {
+  let a = matrix.from_lists([[1.0, 2.0]])
+  let b = matrix.from_lists([[0.0 - 3.0, 0.0 - 1.0]])
+  let y = abs_dot_rows(a, b)
+  assert_eq(matrix.get(y, 0, 0), 5.0)
+}

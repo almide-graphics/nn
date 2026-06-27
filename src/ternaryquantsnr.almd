@@ -1,0 +1,51 @@
+// ternary_quant_snr_rows — per-row signal-to-quantization-noise ratio of TWN ternary.
+//   Δ_t = 0.7·(1/D)Σ_j|x_{t,j}|,  α_t = mean of |x| over kept {j: |x|>Δ_t}
+//   q_{t,j} = α_t·(+1 if x>Δ ; −1 if x<−Δ ; 0)        (dequantized ternary weight)
+//   out_t = (Σ_j x²) / (Σ_j (x−q)² + ε)               → one ratio per row, (T,1).
+// The quantization quality of TWN ternary per row: signal power over the power of the
+// residual that ternary_quant_error_rows leaves (the linear SQNR a ternary layer achieves).
+// The ternary sibling of quant_snr_rows (which scores binary b1, β·sign⁺) and the scale-free
+// ratio form of ternary_quant_error_rows (which reports the residual itself). α and the cut
+// match ternary_quant_error_rows exactly. The +ε guards an already-ternary row (noise 0).
+// Per-row reduction. Output (T,1).
+
+import float
+
+fn ternary_quant_snr_rows(x: Matrix) -> Matrix = {
+  let rx = matrix.to_lists(x)
+  let (t, d) = matrix.shape(x)
+  let df = int.to_float(d)
+  var out: List[List[Float]] = []
+  var i = 0
+  while i < t {
+    let xi = list.get_or(rx, i, [])
+    let s = xi |> list.fold(0.0, (acc, v) => acc + float.abs(v))
+    let delta = 0.7 * (s / df)
+    let count = xi |> list.fold(0.0, (acc, v) => acc + (if float.abs(v) > delta then 1.0 else 0.0))
+    let above = xi |> list.fold(0.0, (acc, v) => acc + (if float.abs(v) > delta then float.abs(v) else 0.0))
+    let alpha = if count > 0.0 then above / count else 0.0
+    let sig = xi |> list.fold(0.0, (acc, v) => acc + v * v)
+    let noise = xi |> list.fold(0.0, (acc, v) => {
+      let q = if v > delta then alpha else (if v < (0.0 - delta) then 0.0 - alpha else 0.0)
+      let e = v - q
+      acc + e * e
+    })
+    out = out + [[sig / (noise + 0.000000000001)]]
+    i = i + 1
+  }
+  matrix.from_lists(out)
+}
+
+// [2,2,−2,−2]: Δ=1.4, all kept, α=2 → q=x → residual 0 → SNR = ‖x‖²/ε (huge, ε-guarded).
+test "an already-ternary row has near-zero noise and a huge finite SNR" {
+  let x = matrix.from_lists([[2.0, 2.0, 0.0 - 2.0, 0.0 - 2.0]])
+  let y = ternary_quant_snr_rows(x)
+  assert(matrix.get(y, 0, 0) > 1000000.0, "exact ternary → huge SNR")
+}
+
+// [3,−4,0.1,0.05]: kept{3,4}, α=3.5, q=[3.5,−3.5,0,0]; sig=25.0125, noise=0.5125 → 2001/41.
+test "ternary-quant-snr is row signal power over ternary quantization-noise power" {
+  let x = matrix.from_lists([[3.0, 0.0 - 4.0, 0.1, 0.05]])
+  let y = ternary_quant_snr_rows(x)
+  assert(float.abs(matrix.get(y, 0, 0) - 48.80487804878048) < 0.0000001, "2001/41")
+}

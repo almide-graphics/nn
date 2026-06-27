@@ -1,0 +1,39 @@
+// cumsum_clip0_rows — cumulative sum of the positive part over time (down the rows):
+//   out_t = Σ_{i≤t} max(x_i, 0)   (elementwise per channel).
+// The running total of positive contributions — negatives are clipped to 0 before
+// accumulating. The "gains-only" running sum of a sequence. O(T), O(D) state.
+// Output (T,D).
+
+import math
+
+fn cumsum_clip0_rows(x: Matrix) -> Matrix = {
+  let rx = matrix.to_lists(x)
+  let (t, d) = matrix.shape(x)
+  var acc: List[Float] = list.range(0, d) |> list.map((_) => 0.0)
+  var out: List[List[Float]] = []
+  var i = 0
+  while i < t {
+    let xi = list.get_or(rx, i, [])
+    acc = list.zip_with(acc, xi, (a, b) => a + math.fmax(b, 0.0))
+    out = out + [acc]
+    i = i + 1
+  }
+  matrix.from_lists(out)
+}
+
+// [2,-1,3] → positive parts 2,0,3 accumulate to 2,2,5.
+test "cumsum-clip0 accumulates only the positive part" {
+  let x = matrix.from_lists([[2.0], [0.0 - 1.0], [3.0]])
+  let y = cumsum_clip0_rows(x)
+  assert_eq(matrix.get(y, 0, 0), 2.0)
+  assert_eq(matrix.get(y, 1, 0), 2.0)
+  assert_eq(matrix.get(y, 2, 0), 5.0)
+}
+
+// an all-negative column accumulates to 0 throughout.
+test "cumsum-clip0 is zero on an all-negative channel" {
+  let x = matrix.from_lists([[0.0 - 1.0], [0.0 - 4.0]])
+  let y = cumsum_clip0_rows(x)
+  assert_eq(matrix.get(y, 0, 0), 0.0)
+  assert_eq(matrix.get(y, 1, 0), 0.0)
+}

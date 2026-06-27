@@ -1,0 +1,57 @@
+// bitnet_quant_scaled_rows — BitNet b1 (1-bit) quantization with its dequant scale.
+//   β = (1 / (T·D)) Σ_{t,j} |x_{t,j}|          (per-tensor absmean scale)
+//   out_{t,j} = β · sign⁺(x_{t,j}),   sign⁺(v) = +1 if v ≥ 0 else −1
+// The full BitNet b1 substrate: binarize each weight to {−1,+1} (zero maps to +1, the
+// BitNet convention), then rescale by the tensor's mean magnitude so the dequantized
+// matrix matches the original in L1 energy. Unlike the b1.58 ternary form there is no
+// dead zone — every entry is ±β. math.sign is Int-only, so the binary sign is written
+// directly. Two passes (absmean over all elements, then per-element ±β). Output (T,D).
+
+import float
+
+fn bitnet_quant_scaled_rows(x: Matrix) -> Matrix = {
+  let rx = matrix.to_lists(x)
+  let (t, d) = matrix.shape(x)
+  let n = int.to_float(t * d)
+  // pass 1: sum of absolute values over the whole tensor → absmean scale β.
+  var total = 0.0
+  var p = 0
+  while p < t {
+    let xp = list.get_or(rx, p, [])
+    let s = xp |> list.fold(0.0, (acc, v) => acc + float.abs(v))
+    total = total + s
+    p = p + 1
+  }
+  let beta = total / n
+  // pass 2: dequantized 1-bit weight β·sign⁺(x) (zero → +β, BitNet convention).
+  var out: List[List[Float]] = []
+  var i = 0
+  while i < t {
+    let xi = list.get_or(rx, i, [])
+    let row = xi |> list.map((v) => beta * (if v >= 0.0 then 1.0 else 0.0 - 1.0))
+    out = out + [row]
+    i = i + 1
+  }
+  matrix.from_lists(out)
+}
+
+// β = mean|x| = (3+1+2+0)/4 = 1.5. Signs: +,+,−,(0→+). → [[1.5,1.5],[−1.5,1.5]].
+test "bitnet-quant-scaled is beta times the binary sign" {
+  let x = matrix.from_lists([[3.0, 1.0], [0.0 - 2.0, 0.0]])
+  let y = bitnet_quant_scaled_rows(x)
+  assert_eq(matrix.get(y, 0, 0), 1.5)
+  assert_eq(matrix.get(y, 0, 1), 1.5)
+  assert_eq(matrix.get(y, 1, 0), 0.0 - 1.5)
+  assert_eq(matrix.get(y, 1, 1), 1.5)
+}
+
+// every output has magnitude exactly β, so (out² − β²) = 0 at each entry.
+test "bitnet-quant-scaled has uniform magnitude beta" {
+  let x = matrix.from_lists([[4.0, 0.0 - 2.0]])
+  let y = bitnet_quant_scaled_rows(x)
+  let b = (4.0 + 2.0) / 2.0
+  let a0 = matrix.get(y, 0, 0)
+  let a1 = matrix.get(y, 0, 1)
+  assert_eq((a0 * a0) - (b * b), 0.0)
+  assert_eq((a1 * a1) - (b * b), 0.0)
+}

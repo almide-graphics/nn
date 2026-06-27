@@ -1,0 +1,42 @@
+// softmax_max_rows — the maximum softmax probability of each logit row (axis=1):
+//   m_t = max_j x_{t,j},   out_t = max_j exp(x−m) / Σ_j exp(x−m)   ∈ (0, 1],  (T,1).
+// The "maximum softmax probability" (MSP) confidence — the model's probability mass on its
+// top class, the canonical OOD / calibration baseline (Hendrycks & Gimpel 2017). High when
+// the row is peaked, → 1/D when uniform. Distinct from max_rows (the raw top logit, not a
+// probability) and from softmax_entropy_rows (spread, not peak). Since the max logit maps to
+// exp(0)=1, this is just 1/Σexp(x−m); computed with the standard max-subtraction for
+// stability. Per-row reduction. Output (T,1).
+
+import float
+import math
+
+fn softmax_max_rows(x: Matrix) -> Matrix = {
+  let rx = matrix.to_lists(x)
+  let (t, _) = matrix.shape(x)
+  var out: List[List[Float]] = []
+  var i = 0
+  while i < t {
+    let xi = list.get_or(rx, i, [])
+    let m = xi |> list.fold(list.get_or(xi, 0, 0.0), (acc, v) => math.fmax(acc, v))
+    let e = xi |> list.map((v) => math.exp(v - m))
+    let z = e |> list.fold(0.0, (acc, v) => acc + v)
+    let emax = e |> list.fold(list.get_or(e, 0, 0.0), (acc, v) => math.fmax(acc, v))
+    out = out + [[emax / z]]
+    i = i + 1
+  }
+  matrix.from_lists(out)
+}
+
+// equal logits → uniform softmax → top probability 1/D; here D=2 → 0.5.
+test "softmax-max of equal logits is 1/D" {
+  let x = matrix.from_lists([[0.0, 0.0]])
+  let y = softmax_max_rows(x)
+  assert(float.abs(matrix.get(y, 0, 0) - 0.5) < 0.000000001, "1/2")
+}
+
+// a sharply peaked logit row → top probability ≈ 1.
+test "softmax-max of a sharply peaked logit row is near one" {
+  let x = matrix.from_lists([[100.0, 0.0, 0.0]])
+  let y = softmax_max_rows(x)
+  assert(matrix.get(y, 0, 0) > 0.9999, "peaked → ≈ 1")
+}

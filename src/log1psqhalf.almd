@@ -1,0 +1,20 @@
+// log1p_sq_half — ½·log(1 + x²). The exact Cauchy/Lorentzian negative-log-
+// likelihood as a robust loss (= ½ log_quad): even, ≥0, ~½x² near 0 and
+// logarithmic in the tails (down-weights outliers). Elementwise.
+
+import math
+
+fn log1p_sq_half(m: Matrix) -> Matrix =
+  matrix.map(m, (x) => 0.5 * math.log(1.0 + x * x))
+
+test "log1p_sq_half at zero is zero" {
+  let y = log1p_sq_half(matrix.from_lists([[0.0]]))
+  assert_eq(matrix.get(y, 0, 0), 0.0)
+}
+
+// ½log(1+(e-1)) = ½log(e) = 0.5 at x=√(e-1); even.
+test "log1p_sq_half half log e and even" {
+  let y = log1p_sq_half(matrix.from_lists([[1.3108324944320275, -1.3108324944320275]]))
+  assert(float.abs(matrix.get(y, 0, 0) - 0.5) < 0.000000001, "= 0.5")
+  assert(float.abs(matrix.get(y, 0, 1) - 0.5) < 0.000000001, "even")
+}

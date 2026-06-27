@@ -1,0 +1,25 @@
+// hann_window — 0.5·(1 + cos(π·|x|)) for |x|<1, else 0. The Hann (raised-cosine)
+// window: 1 at 0, smoothly to 0 at |x|=1 with zero slope, exactly 0 beyond.
+// Even, compact support; low spectral leakage. Elementwise.
+
+import math
+
+fn hann_window(m: Matrix) -> Matrix =
+  matrix.map(m, (x) => {
+    let a = float.abs(x)
+    if a < 1.0 then 0.5 * (1.0 + math.cos(3.141592653589793 * a)) else 0.0
+  })
+
+// peak 1 at 0; 0.5 at 0.5.
+test "hann_window peak and midpoint" {
+  let y = hann_window(matrix.from_lists([[0.0, 0.5]]))
+  assert_eq(matrix.get(y, 0, 0), 1.0)
+  assert(float.abs(matrix.get(y, 0, 1) - 0.5) < 0.000000001, "0.5 at 0.5")
+}
+
+// exactly 0 beyond |x|=1.
+test "hann_window zero outside unit" {
+  let y = hann_window(matrix.from_lists([[2.0, -3.0]]))
+  assert_eq(matrix.get(y, 0, 0), 0.0)
+  assert_eq(matrix.get(y, 0, 1), 0.0)
+}

@@ -1,0 +1,47 @@
+// hellinger_dist_rows — Hellinger distance between two non-negative rows / distributions (2-input):
+//   out_t = sqrt( ½ Σ_j ( sqrt(p_{t,j}) − sqrt(q_{t,j}) )² )   → one value per row, (T,1).
+// The L2 distance in amplitude (square-root) space — a bounded, symmetric, true metric on
+// probability distributions (∈ [0,1] for normalized inputs). Distinct in functional form from the
+// other divergences/distances here: KL/JS (log-ratio), χ² (squared diff over per-bin sum),
+// Bray–Curtis/Canberra/L1/L2 (raw differences). The defining move is taking the square root of each
+// mass *before* the squared difference, so it is not a scaling of any L1/L2 op (unlike TV = ½·L1,
+// which was skipped as affine). 0 for identical distributions, 1 for disjoint unit masses. Inputs
+// are non-negative (squared standard normals). Output (T,1).
+
+import float
+import math
+
+fn hellinger_dist_rows(p: Matrix, q: Matrix) -> Matrix = {
+  let rp = matrix.to_lists(p)
+  let rq = matrix.to_lists(q)
+  let (t, _) = matrix.shape(p)
+  var out: List[List[Float]] = []
+  var i = 0
+  while i < t {
+    let pi = list.get_or(rp, i, [])
+    let qi = list.get_or(rq, i, [])
+    let s = list.zip_with(pi, qi, (pv, qv) => {
+      let d = math.sqrt(pv) - math.sqrt(qv)
+      d * d
+    }) |> list.fold(0.0, (acc, v) => acc + v)
+    out = out + [[math.sqrt(0.5 * s)]]
+    i = i + 1
+  }
+  matrix.from_lists(out)
+}
+
+// identical distributions → 0.
+test "hellinger distance of identical distributions is zero" {
+  let p = matrix.from_lists([[1.0, 4.0, 9.0]])
+  let q = matrix.from_lists([[1.0, 4.0, 9.0]])
+  let y = hellinger_dist_rows(p, q)
+  assert(float.abs(matrix.get(y, 0, 0)) < 0.000000001, "0")
+}
+
+// disjoint unit masses [1,0] vs [0,1]: sqrt(½·((1−0)²+(0−1)²)) = sqrt(½·2) = 1.
+test "hellinger distance of disjoint unit masses is one" {
+  let p = matrix.from_lists([[1.0, 0.0]])
+  let q = matrix.from_lists([[0.0, 1.0]])
+  let y = hellinger_dist_rows(p, q)
+  assert(float.abs(matrix.get(y, 0, 0) - 1.0) < 0.000000001, "sqrt(0.5·2)=1")
+}

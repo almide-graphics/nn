@@ -1,0 +1,47 @@
+// ternary_mask_rows — the nonzero (kept-weight) mask of TWN ternary quantization.
+//   Δ_t = 0.7 · (1/D) Σ_j |x_{t,j}|        (per-row absmean threshold)
+//   out_{t,j} = 1 if |x_{t,j}| > Δ_t  else  0
+// |ternary_twn(x)| — which entries survive ternarization in each row, i.e. the support
+// of the quantized weight. Its row mean is the per-row kept-density (1 − sparsity), the
+// headline statistic for a ternary layer's compute savings. Two passes per row (absmean,
+// then threshold). Exact {0,1} outputs. Output (T,D).
+
+import float
+
+fn ternary_mask_rows(x: Matrix) -> Matrix = {
+  let rx = matrix.to_lists(x)
+  let (t, d) = matrix.shape(x)
+  let df = int.to_float(d)
+  var out: List[List[Float]] = []
+  var i = 0
+  while i < t {
+    let xi = list.get_or(rx, i, [])
+    let s = xi |> list.fold(0.0, (acc, v) => acc + float.abs(v))
+    let delta = 0.7 * (s / df)
+    let row = xi |> list.map((v) => if float.abs(v) > delta then 1.0 else 0.0)
+    out = out + [row]
+    i = i + 1
+  }
+  matrix.from_lists(out)
+}
+
+// row [3,-4,0.1]: mean|x|=2.366..., Δ=1.656 → |3|,|−4| beat Δ:1, |0.1| below:0.
+test "ternary-mask keeps entries whose magnitude beats the absmean threshold" {
+  let x = matrix.from_lists([[3.0, 0.0 - 4.0, 0.1]])
+  let y = ternary_mask_rows(x)
+  assert_eq(matrix.get(y, 0, 0), 1.0)
+  assert_eq(matrix.get(y, 0, 1), 1.0)
+  assert_eq(matrix.get(y, 0, 2), 0.0)
+}
+
+// every output is exactly 0 or 1, so m·(m−1) = 0 at each entry.
+test "ternary-mask outputs are exactly boolean" {
+  let x = matrix.from_lists([[5.0, 0.0 - 1.0, 0.2, 0.0]])
+  let y = ternary_mask_rows(x)
+  let a = matrix.get(y, 0, 0)
+  let b = matrix.get(y, 0, 2)
+  let c = matrix.get(y, 0, 3)
+  assert_eq(a * (a - 1.0), 0.0)
+  assert_eq(b * (b - 1.0), 0.0)
+  assert_eq(c * (c - 1.0), 0.0)
+}

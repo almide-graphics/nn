@@ -1,0 +1,54 @@
+// up_run_length_rows — length of the current consecutive-increase streak over time (per channel):
+//   out_{t,j} = (x_{t,j} > x_{t-1,j}) ? out_{t-1,j} + 1 : 0,   out_{0,j} = 0   → (T,D), integer-valued.
+// Run-length encoding of monotone-up segments: how many steps in a row the sequence has strictly
+// risen, ending at t. Captures trend persistence / momentum (a rising streak grows the counter; any
+// non-increase resets it to 0). Distinct from diff_rows (the per-step change), turning_point_count
+// (a count of reversals) and the cumargmax/record family (extrema tracking) — this is the live
+// streak length. One O(D) carry of (previous row, running length); strict ">" so a flat step also
+// resets. Output (T,D).
+
+fn up_run_length_rows(x: Matrix) -> Matrix = {
+  let rx = matrix.to_lists(x)
+  let (t, d) = matrix.shape(x)
+  var prev = list.get_or(rx, 0, [])
+  var run: List[Float] = list.range(0, d) |> list.map((_) => 0.0)
+  var out: List[List[Float]] = []
+  var i = 0
+  while i < t {
+    let xi = list.get_or(rx, i, [])
+    var nr: List[Float] = []
+    var j = 0
+    while j < d {
+      let xv = list.get_or(xi, j, 0.0)
+      let pv = list.get_or(prev, j, 0.0)
+      let rv = list.get_or(run, j, 0.0)
+      nr = nr + [if xv > pv then rv + 1.0 else 0.0]
+      j = j + 1
+    }
+    run = nr
+    out = out + [run]
+    prev = xi
+    i = i + 1
+  }
+  matrix.from_lists(out)
+}
+
+// a monotonic increase grows the streak: [1,2,3,4] → [0,1,2,3] (first step has no predecessor).
+test "up-run-length grows on a monotonic increase" {
+  let x = matrix.from_lists([[1.0], [2.0], [3.0], [4.0]])
+  let y = up_run_length_rows(x)
+  assert_eq(matrix.get(y, 0, 0), 0.0)
+  assert_eq(matrix.get(y, 1, 0), 1.0)
+  assert_eq(matrix.get(y, 2, 0), 2.0)
+  assert_eq(matrix.get(y, 3, 0), 3.0)
+}
+
+// a decrease resets the streak: [1,2,1,2] → [0,1,0,1].
+test "up-run-length resets to zero on a decrease" {
+  let x = matrix.from_lists([[1.0], [2.0], [1.0], [2.0]])
+  let y = up_run_length_rows(x)
+  assert_eq(matrix.get(y, 0, 0), 0.0)
+  assert_eq(matrix.get(y, 1, 0), 1.0)
+  assert_eq(matrix.get(y, 2, 0), 0.0)
+  assert_eq(matrix.get(y, 3, 0), 1.0)
+}

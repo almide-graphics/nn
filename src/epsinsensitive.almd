@@ -1,0 +1,44 @@
+// eps_insensitive_loss_rows — per-row ε-insensitive (SVR) regression loss, ε = 0.5 (2-input):
+//   out_t = (1/D) Σ_j max(0, |y_{t,j} − ŷ_{t,j}| − ε)   → (T,1).
+// The loss minimized by Support Vector Regression: errors smaller than ε cost nothing (the
+// "ε-tube"), and beyond the tube the penalty grows linearly. This dead-zone shape is distinct from
+// the regressors already here — smooth_l1 / mse / mae penalize every nonzero error, and pinball is
+// asymmetric-but-everywhere; ε-insensitive is flat-then-linear, encouraging sparse support vectors.
+// max(0,·) is continuous at the tube edge so parity is exact. Output (T,1).
+
+import float
+import math
+
+fn eps_insensitive_loss_rows(y: Matrix, yhat: Matrix) -> Matrix = {
+  let ry = matrix.to_lists(y)
+  let rh = matrix.to_lists(yhat)
+  let (t, d) = matrix.shape(y)
+  let df = int.to_float(d)
+  var out: List[List[Float]] = []
+  var i = 0
+  while i < t {
+    let yi = list.get_or(ry, i, [])
+    let hi = list.get_or(rh, i, [])
+    let s = list.zip_with(yi, hi, (yv, hv) => math.fmax(0.0, float.abs(yv - hv) - 0.5))
+      |> list.fold(0.0, (acc, v) => acc + v)
+    out = out + [[s / df]]
+    i = i + 1
+  }
+  matrix.from_lists(out)
+}
+
+// an error inside the ε-tube (|e| = 0.3 < 0.5) costs nothing.
+test "errors within the epsilon tube cost nothing" {
+  let y = matrix.from_lists([[0.3]])
+  let yhat = matrix.from_lists([[0.0]])
+  let l = eps_insensitive_loss_rows(y, yhat)
+  assert(float.abs(matrix.get(l, 0, 0)) < 0.000000001, "|0.3|−0.5 < 0 → 0")
+}
+
+// beyond the tube the cost is |e| − ε: |e| = 2 → 1.5.
+test "errors beyond the tube cost |e| minus epsilon" {
+  let y = matrix.from_lists([[2.0]])
+  let yhat = matrix.from_lists([[0.0]])
+  let l = eps_insensitive_loss_rows(y, yhat)
+  assert(float.abs(matrix.get(l, 0, 0) - 1.5) < 0.000000001, "2 − 0.5 = 1.5")
+}

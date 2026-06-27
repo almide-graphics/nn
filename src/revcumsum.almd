@@ -1,0 +1,37 @@
+// reverse_cumsum_rows — suffix sum over time (down the rows): out_t = Σ_{i≥t} x_i.
+// The time-reversed counterpart of cumsum_rows; gives each step the total of all
+// current-and-future inputs (e.g. discounted future-return / look-ahead masks).
+// Walks rows back-to-front and prepends. O(T), O(D) state. Output (T,D).
+
+fn reverse_cumsum_rows(x: Matrix) -> Matrix = {
+  let rx = matrix.to_lists(x)
+  let (t, d) = matrix.shape(x)
+  var acc: List[Float] = list.range(0, d) |> list.map((_) => 0.0)
+  var out: List[List[Float]] = []
+  var j = 0
+  while j < t {
+    let xi = list.get_or(rx, t - 1 - j, [])
+    acc = list.zip_with(acc, xi, (a, b) => a + b)
+    out = [acc] + out
+    j = j + 1
+  }
+  matrix.from_lists(out)
+}
+
+// suffix sums of [1,2,3] (single channel) → [6,5,3].
+test "reverse cumsum is the suffix sum" {
+  let x = matrix.from_lists([[1.0], [2.0], [3.0]])
+  let y = reverse_cumsum_rows(x)
+  assert_eq(matrix.get(y, 0, 0), 6.0)
+  assert_eq(matrix.get(y, 1, 0), 5.0)
+  assert_eq(matrix.get(y, 2, 0), 3.0)
+}
+
+// per-channel suffix sums of [[1,10],[2,20]] → [[3,30],[2,20]].
+test "reverse cumsum works per channel" {
+  let x = matrix.from_lists([[1.0, 10.0], [2.0, 20.0]])
+  let y = reverse_cumsum_rows(x)
+  assert_eq(matrix.get(y, 0, 0), 3.0)
+  assert_eq(matrix.get(y, 0, 1), 30.0)
+  assert_eq(matrix.get(y, 1, 1), 20.0)
+}

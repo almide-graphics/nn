@@ -1,0 +1,42 @@
+// cosine_sim_rows — row-wise cosine similarity of two matrices:
+//
+//   sim_r = (Σ_j a_rj b_rj) / ( √Σ_j a_rj²  ·  √Σ_j b_rj² )
+//
+// One value per row → output (T,1). Used in retrieval / contrastive heads.
+// Two-input row reduction: to_lists both, fold per row.
+
+import math
+
+fn cosine_sim_rows(a: Matrix, b: Matrix) -> Matrix = {
+  let ra = matrix.to_lists(a)
+  let rb = matrix.to_lists(b)
+  let (t, _) = matrix.shape(a)
+  var out: List[List[Float]] = []
+  var n = 0
+  while n < t {
+    let an = list.get_or(ra, n, [])
+    let bn = list.get_or(rb, n, [])
+    let dot = list.zip_with(an, bn, (x, y) => x * y) |> list.fold(0.0, (acc, v) => acc + v)
+    let na = an |> list.fold(0.0, (acc, v) => acc + v * v)
+    let nb = bn |> list.fold(0.0, (acc, v) => acc + v * v)
+    let sim = dot / (math.sqrt(na) * math.sqrt(nb))
+    out = out + [[sim]]
+    n = n + 1
+  }
+  matrix.from_lists(out)
+}
+
+// cos(x, x) = 1.
+test "cosine of a row with itself is one" {
+  let a = matrix.from_lists([[3.0, 4.0]])
+  let y = cosine_sim_rows(a, a)
+  assert(float.abs(matrix.get(y, 0, 0) - 1.0) < 0.000000001, "self-similarity 1")
+}
+
+// orthogonal rows → 0.
+test "cosine of orthogonal rows is zero" {
+  let a = matrix.from_lists([[1.0, 0.0]])
+  let b = matrix.from_lists([[0.0, 1.0]])
+  let y = cosine_sim_rows(a, b)
+  assert(float.abs(matrix.get(y, 0, 0)) < 0.000000001, "orthogonal 0")
+}

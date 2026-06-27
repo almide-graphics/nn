@@ -1,0 +1,42 @@
+// cov_rows — row-wise (population) covariance of two matrices:
+//
+//   cov_r = (1/D) · Σ_j (a_rj − ā_r)(b_rj − b̄_r),  ā_r = mean_j a_rj
+//
+// One value per row → output (T,1). The unnormalized linear co-variation between
+// paired rows (cov(a,a) = variance_rows); building block of correlation /
+// whitening. Two-input, three-pass row reduction (two means, one cross-fold).
+
+fn cov_rows(a: Matrix, b: Matrix) -> Matrix = {
+  let ra = matrix.to_lists(a)
+  let rb = matrix.to_lists(b)
+  let (rows, d) = matrix.shape(a)
+  let df = int.to_float(d)
+  var out: List[List[Float]] = []
+  var n = 0
+  while n < rows {
+    let an = list.get_or(ra, n, [])
+    let bn = list.get_or(rb, n, [])
+    let ma = (an |> list.fold(0.0, (acc, v) => acc + v)) / df
+    let mb = (bn |> list.fold(0.0, (acc, v) => acc + v)) / df
+    let cov = (list.zip_with(an, bn, (x, y) => (x - ma) * (y - mb)) |> list.fold(0.0, (acc, v) => acc + v)) / df
+    out = out + [[cov]]
+    n = n + 1
+  }
+  matrix.from_lists(out)
+}
+
+// a constant row has zero deviation → covariance 0.
+test "cov with a constant row is zero" {
+  let a = matrix.from_lists([[5.0, 5.0, 5.0, 5.0]])
+  let b = matrix.from_lists([[1.0, 2.0, 3.0, 4.0]])
+  let y = cov_rows(a, b)
+  assert_eq(matrix.get(y, 0, 0), 0.0)
+}
+
+// a=[1,2] (ā=1.5), b=[3,5] (b̄=4): ((-.5)(-1)+(.5)(1))/2 = 0.5.
+test "cov computes the covariance" {
+  let a = matrix.from_lists([[1.0, 2.0]])
+  let b = matrix.from_lists([[3.0, 5.0]])
+  let y = cov_rows(a, b)
+  assert(float.abs(matrix.get(y, 0, 0) - 0.5) < 0.000000001, "= 0.5")
+}

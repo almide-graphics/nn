@@ -1,0 +1,38 @@
+// mean_sign_rows — per-row mean of the signs (the sign balance / polarity), (T,1).
+//   out_t = (1/D) Σ_j sign(x_{t,j})   ∈ [−1, 1].
+// The DC bias of a row's ±1 code: +1 if every entry is positive, −1 if all negative,
+// 0 when positives and negatives cancel. In a BitNet layer this is the mean of the
+// binarized weights — the per-row imbalance that a bias term has to absorb. sign is
+// Int-only, so the Float sign is the usual ±1/0 threshold; the per-row sum of signs is
+// divided by D. Output (T,1).
+
+fn mean_sign_rows(x: Matrix) -> Matrix = {
+  let rx = matrix.to_lists(x)
+  let (t, d) = matrix.shape(x)
+  let df = int.to_float(d)
+  var out: List[List[Float]] = []
+  var i = 0
+  while i < t {
+    let xi = list.get_or(rx, i, [])
+    let s = xi |> list.fold(0.0, (acc, v) =>
+      acc + (if v > 0.0 then 1.0 else (if v < 0.0 then 0.0 - 1.0 else 0.0)))
+    out = out + [[s / df]]
+    i = i + 1
+  }
+  matrix.from_lists(out)
+}
+
+// row [3,-4,1,-1]: signs [+,−,+,−] sum to 0 → mean 0.
+test "mean-sign is zero on a sign-balanced row" {
+  let x = matrix.from_lists([[3.0, 0.0 - 4.0, 1.0, 0.0 - 1.0]])
+  let y = mean_sign_rows(x)
+  assert_eq(matrix.get(y, 0, 0), 0.0)
+}
+
+// an all-positive row has mean sign +1; an all-negative row −1.
+test "mean-sign is +1 / -1 on uniform-sign rows" {
+  let x = matrix.from_lists([[2.0, 5.0, 0.1], [0.0 - 2.0, 0.0 - 5.0, 0.0 - 0.1]])
+  let y = mean_sign_rows(x)
+  assert_eq(matrix.get(y, 0, 0), 1.0)
+  assert_eq(matrix.get(y, 1, 0), 0.0 - 1.0)
+}

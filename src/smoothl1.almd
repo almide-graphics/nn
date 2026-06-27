@@ -1,0 +1,47 @@
+// smooth_l1_rows — row-wise smooth-L1 / Huber loss (δ=1) of two matrices:
+//
+//   huber(e) = 0.5·e²        if |e| < 1
+//            = |e| − 0.5      otherwise
+//   loss_r   = (1/D) · Σ_j huber(a_rj − b_rj)
+//
+// One value per row → output (T,1). Quadratic near 0 (smooth gradient), linear
+// in the tails (outlier-robust) — the Faster-R-CNN / detection regression loss.
+// Two-input row reduction with a per-element branch.
+
+import float
+
+fn smooth_l1_rows(a: Matrix, b: Matrix) -> Matrix = {
+  let ra = matrix.to_lists(a)
+  let rb = matrix.to_lists(b)
+  let (t, d) = matrix.shape(a)
+  let df = int.to_float(d)
+  var out: List[List[Float]] = []
+  var n = 0
+  while n < t {
+    let an = list.get_or(ra, n, [])
+    let bn = list.get_or(rb, n, [])
+    let sh = list.zip_with(an, bn, (x, y) => {
+      let e = x - y
+      let ea = float.abs(e)
+      if ea < 1.0 then 0.5 * e * e else ea - 0.5
+    }) |> list.fold(0.0, (acc, v) => acc + v)
+    out = out + [[sh / df]]
+    n = n + 1
+  }
+  matrix.from_lists(out)
+}
+
+// huber(0)=0 → loss(a, a) = 0.
+test "smooth_l1 of identical rows is zero" {
+  let a = matrix.from_lists([[1.0, 2.0, 3.0, 4.0]])
+  let y = smooth_l1_rows(a, a)
+  assert_eq(matrix.get(y, 0, 0), 0.0)
+}
+
+// e=0.5 -> 0.5·0.25=0.125 (quadratic); e=2 -> 2-0.5=1.5 (linear); mean=0.8125.
+test "smooth_l1 mixes quadratic and linear regions" {
+  let a = matrix.from_lists([[0.0, 0.0]])
+  let b = matrix.from_lists([[0.5, 2.0]])
+  let y = smooth_l1_rows(a, b)
+  assert(float.abs(matrix.get(y, 0, 0) - 0.8125) < 0.000000001, "= 0.8125")
+}

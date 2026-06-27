@@ -1,0 +1,54 @@
+// mahalanobis_diag_rows — per-row diagonal Mahalanobis distance (3-input):
+//   out_t = sqrt( Σ_j (a_{t,j} − b_{t,j})² / (v_{t,j} + ε) )   → (T,1).
+// The variance-normalized Euclidean distance: each coordinate's squared gap is divided by that
+// coordinate's variance v before summing, so directions of high natural variability count less. It
+// is the diagonal-covariance Mahalanobis distance used in anomaly detection and Gaussian
+// discriminant analysis. Distinct from l2_dist_rows (which weights all coordinates equally) — and
+// not a monotone transform of it, since the per-coordinate v reweights the sum. 0 for identical
+// vectors; a high-variance coordinate contributes a smaller share than under plain Euclidean.
+// Third input is the per-feature variance (non-negative). Output (T,1).
+
+import float
+import math
+
+fn mahalanobis_diag_rows(a: Matrix, b: Matrix, v: Matrix) -> Matrix = {
+  let ra = matrix.to_lists(a)
+  let rb = matrix.to_lists(b)
+  let rv = matrix.to_lists(v)
+  let (t, d) = matrix.shape(a)
+  var out: List[List[Float]] = []
+  var i = 0
+  while i < t {
+    let ai = list.get_or(ra, i, [])
+    let bi = list.get_or(rb, i, [])
+    let vi = list.get_or(rv, i, [])
+    var s = 0.0
+    var j = 0
+    while j < d {
+      let diff = list.get_or(ai, j, 0.0) - list.get_or(bi, j, 0.0)
+      s = s + diff * diff / (list.get_or(vi, j, 0.0) + 0.000000000001)
+      j = j + 1
+    }
+    out = out + [[math.sqrt(s)]]
+    i = i + 1
+  }
+  matrix.from_lists(out)
+}
+
+// identical vectors → 0 distance.
+test "mahalanobis distance of identical vectors is zero" {
+  let a = matrix.from_lists([[1.0, 2.0]])
+  let b = matrix.from_lists([[1.0, 2.0]])
+  let v = matrix.from_lists([[1.0, 1.0]])
+  let y = mahalanobis_diag_rows(a, b, v)
+  assert(float.abs(matrix.get(y, 0, 0)) < 0.000000001, "0")
+}
+
+// variance reweighting: gaps [2,2], variances [1,4] → sqrt(4/1 + 4/4) = sqrt(5).
+test "mahalanobis down-weights high-variance coordinates" {
+  let a = matrix.from_lists([[2.0, 2.0]])
+  let b = matrix.from_lists([[0.0, 0.0]])
+  let v = matrix.from_lists([[1.0, 4.0]])
+  let y = mahalanobis_diag_rows(a, b, v)
+  assert(float.abs(matrix.get(y, 0, 0) - math.sqrt(5.0)) < 0.000001, "sqrt(4+1)=sqrt5")
+}

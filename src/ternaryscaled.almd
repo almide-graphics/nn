@@ -1,0 +1,54 @@
+// ternary_scaled_rows — TWN scaled ternary (dequantized weights, Li & Liu 2016).
+//   Δ_t = 0.7 · (1/D) Σ_j |x_{t,j}|                       (per-row threshold)
+//   I_t = { j : |x_{t,j}| > Δ_t }                          (surviving indices)
+//   α_t = (1/|I_t|) Σ_{j∈I_t} |x_{t,j}|                    (optimal scale)
+//   out_{t,j} = +α_t if x_{t,j} >  Δ_t
+//               −α_t if x_{t,j} < −Δ_t
+//                0    otherwise
+// The dequantized form of the ternary substrate: α·t recovers the best scalar
+// reconstruction of the row from its {−1,0,1} code, the value actually used in the
+// forward pass of a ternary-weight layer. Per-row 3-pass (absmean → α → scatter).
+// Real-valued output. Output (T,D).
+
+import float
+
+fn ternary_scaled_rows(x: Matrix) -> Matrix = {
+  let rx = matrix.to_lists(x)
+  let (t, d) = matrix.shape(x)
+  let df = int.to_float(d)
+  var out: List[List[Float]] = []
+  var i = 0
+  while i < t {
+    let xi = list.get_or(rx, i, [])
+    let s = xi |> list.fold(0.0, (acc, v) => acc + float.abs(v))
+    let delta = 0.7 * (s / df)
+    let count = xi |> list.fold(0.0, (acc, v) =>
+      acc + (if float.abs(v) > delta then 1.0 else 0.0))
+    let above = xi |> list.fold(0.0, (acc, v) =>
+      acc + (if float.abs(v) > delta then float.abs(v) else 0.0))
+    let alpha = if count > 0.0 then above / count else 0.0
+    let row = xi |> list.map((v) =>
+      if v > delta then alpha else (if v < (0.0 - delta) then 0.0 - alpha else 0.0))
+    out = out + [row]
+    i = i + 1
+  }
+  matrix.from_lists(out)
+}
+
+// row [3,-4,0.1]: mean|x|=2.3667, Δ=1.6567 → 3,−4 survive, 0.1 dropped.
+//   α=(3+4)/2=3.5 → out = [+3.5, −3.5, 0].
+test "ternary-scaled scatters the survivor absmean back onto the ternary code" {
+  let x = matrix.from_lists([[3.0, 0.0 - 4.0, 0.1]])
+  let y = ternary_scaled_rows(x)
+  assert_eq(matrix.get(y, 0, 0), 3.5)
+  assert_eq(matrix.get(y, 0, 1), 0.0 - 3.5)
+  assert_eq(matrix.get(y, 0, 2), 0.0)
+}
+
+// a flat-magnitude row: all survive, α=|x|, so α·t exactly recovers x.
+test "ternary-scaled reconstructs a flat-magnitude row exactly" {
+  let x = matrix.from_lists([[2.0, 0.0 - 2.0]])
+  let y = ternary_scaled_rows(x)
+  assert_eq(matrix.get(y, 0, 0), 2.0)
+  assert_eq(matrix.get(y, 0, 1), 0.0 - 2.0)
+}

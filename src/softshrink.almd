@@ -1,0 +1,16 @@
+// softshrink — soft thresholding (proximal operator of the L1 norm):
+//   x-λ  if x>λ ;  x+λ  if x<-λ ;  0 otherwise.   λ scalar (>0)
+// The shrinkage at the heart of LASSO / sparse coding. Elementwise (nested if).
+
+fn softshrink(m: Matrix, lambd: Float) -> Matrix =
+  matrix.map(m, (x) =>
+    if x > lambd then x - lambd
+    else (if x < 0.0 - lambd then x + lambd else 0.0))
+
+// x>λ → x-λ ; x<-λ → x+λ ; |x|≤λ → 0.
+test "softshrink shrinks toward zero" {
+  let y = softshrink(matrix.from_lists([[5.0, -5.0, 0.5]]), 1.0)
+  assert_eq(matrix.get(y, 0, 0), 4.0)
+  assert_eq(matrix.get(y, 0, 1), -4.0)
+  assert_eq(matrix.get(y, 0, 2), 0.0)
+}

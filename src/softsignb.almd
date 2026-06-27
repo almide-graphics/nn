@@ -1,0 +1,19 @@
+// softsign_beta — steepness-parameterized softsign x/(1+|β·x|) (scalar β>0).
+// β controls how fast it saturates toward ±1; β=1 recovers plain softsign.
+// Odd, bounded. Elementwise.
+
+import math
+
+fn softsign_beta(m: Matrix, beta: Float) -> Matrix =
+  matrix.map(m, (x) => x / (1.0 + float.abs(beta * x)))
+
+test "softsign_beta at zero is zero" {
+  let y = softsign_beta(matrix.from_lists([[0.0]]), 2.0)
+  assert_eq(matrix.get(y, 0, 0), 0.0)
+}
+
+// β=2 at x=1 → 1/(1+2) = 1/3.
+test "softsign_beta steepness" {
+  let y = softsign_beta(matrix.from_lists([[1.0]]), 2.0)
+  assert(float.abs(matrix.get(y, 0, 0) - 0.3333333333333333) < 0.000000001, "= 1/3")
+}

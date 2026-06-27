@@ -1,0 +1,51 @@
+// hgrn — Hierarchically Gated Linear RNN recurrence (per channel):
+//
+//   f_t = lb + (1 - lb) ⊙ sigmoid(g_t)      (forget gate floored at lb ∈ [0,1))
+//   h_t = f_t ⊙ h_{t-1} + (1 - f_t) ⊙ i_t    (convex gated linear update)
+//
+// The "hierarchical" part is the per-channel lower bound `lb`: channels with lb
+// near 1 retain long memory, near 0 react fast. Distinct from scan/gla/retnet:
+// the gate is a *convex interpolation* (output stays in the hull of past h and
+// input i), and it is floored, never free decay. g = gate logits (T,D),
+// i = candidate input (T,D), lb = per-channel floor (D,).
+
+import math
+
+fn hgrn(g: Matrix, i: Matrix, lb: List[Float]) -> Matrix = {
+  let rg = matrix.to_lists(g)
+  let ri = matrix.to_lists(i)
+  let (t, d) = matrix.shape(g)
+  var h: List[Float] = list.range(0, d) |> list.map((_) => 0.0)
+  var out: List[List[Float]] = []
+  var n = 0
+  while n < t {
+    let gn = list.get_or(rg, n, [])
+    let inp = list.get_or(ri, n, [])
+    let f = list.zip_with(lb, gn, (l, gg) => l + (1.0 - l) * (1.0 / (1.0 + math.exp(0.0 - gg))))
+    let keep = list.zip_with(f, h, (ff, hh) => ff * hh)
+    let take = list.zip_with(f, inp, (ff, ii) => (1.0 - ff) * ii)
+    h = list.zip_with(keep, take, (p, q) => p + q)
+    out = out + [h]
+    n = n + 1
+  }
+  matrix.from_lists(out)
+}
+
+// lb=0 and g→-∞ → f≈0 → h_t = i_t (gate fully open, copies input).
+test "hgrn open gate copies input" {
+  let g = matrix.from_lists([[-50.0], [-50.0]])
+  let i = matrix.from_lists([[3.0], [7.0]])
+  let y = hgrn(g, i, [0.0])
+  assert(float.abs(matrix.get(y, 0, 0) - 3.0) < 0.000000001, "h0=i0")
+  assert(float.abs(matrix.get(y, 1, 0) - 7.0) < 0.000000001, "h1=i1")
+}
+
+// lb=0.5 floors the forget gate: with g→-∞, f=0.5 exactly.
+//   h0 = 0.5·0 + 0.5·2 = 1 ;  h1 = 0.5·1 + 0.5·2 = 1.5
+test "hgrn lower bound floors the gate" {
+  let g = matrix.from_lists([[-50.0], [-50.0]])
+  let i = matrix.from_lists([[2.0], [2.0]])
+  let y = hgrn(g, i, [0.5])
+  assert(float.abs(matrix.get(y, 0, 0) - 1.0) < 0.000000001, "h0=1")
+  assert(float.abs(matrix.get(y, 1, 0) - 1.5) < 0.000000001, "h1=1.5")
+}

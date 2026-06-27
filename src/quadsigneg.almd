@@ -1,0 +1,23 @@
+// quad_times_sigmoid_neg — x²·σ(-x). The left-handed mirror of sigmoid_times_x_sq:
+// ≈x² for x≪0, ≈0 for x≫0 — a smooth one-sided squared response activated on the
+// negative side. σ(-x) = 1/(1+eˣ). Elementwise.
+
+import math
+
+fn quad_times_sigmoid_neg(m: Matrix) -> Matrix =
+  matrix.map(m, (x) => {
+    let s = 1.0 / (1.0 + math.exp(x))
+    x * x * s
+  })
+
+test "quad_times_sigmoid_neg at zero is zero" {
+  let y = quad_times_sigmoid_neg(matrix.from_lists([[0.0]]))
+  assert_eq(matrix.get(y, 0, 0), 0.0)
+}
+
+// → x² for large -, → 0 for large +.
+test "quad_times_sigmoid_neg saturation" {
+  let y = quad_times_sigmoid_neg(matrix.from_lists([[-30.0, 30.0]]))
+  assert(float.abs(matrix.get(y, 0, 0) - 900.0) < 0.000000001, "→ x²")
+  assert(float.abs(matrix.get(y, 0, 1)) < 0.000000001, "→ 0")
+}

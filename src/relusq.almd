@@ -1,0 +1,11 @@
+// relu_squared — squared ReLU: x² for x>0, else 0. Used in some transformer
+// FFNs (Primer). Elementwise.
+
+fn relu_squared(m: Matrix) -> Matrix =
+  matrix.map(m, (x) => if x > 0.0 then x * x else 0.0)
+
+test "relu_squared squares positives and zeros negatives" {
+  let y = relu_squared(matrix.from_lists([[3.0, -2.0]]))
+  assert_eq(matrix.get(y, 0, 0), 9.0)
+  assert_eq(matrix.get(y, 0, 1), 0.0)
+}

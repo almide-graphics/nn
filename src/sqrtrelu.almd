@@ -1,0 +1,22 @@
+// sqrt_relu — √(max(0, x)). One-sided sub-linear gate: 0 for x≤0, √x for x>0
+// (concave, with an infinite slope at 0⁺). Compresses large positive
+// activations. Elementwise.
+
+import math
+
+fn sqrt_relu(m: Matrix) -> Matrix =
+  matrix.map(m, (x) => math.sqrt(math.fmax(0.0, x)))
+
+// 0 for x≤0 (incl. 0).
+test "sqrt_relu is zero for x<=0" {
+  let y = sqrt_relu(matrix.from_lists([[-3.0, 0.0]]))
+  assert_eq(matrix.get(y, 0, 0), 0.0)
+  assert_eq(matrix.get(y, 0, 1), 0.0)
+}
+
+// √4=2, √9=3 for x>0.
+test "sqrt_relu is sqrt for x>0" {
+  let y = sqrt_relu(matrix.from_lists([[4.0, 9.0]]))
+  assert_eq(matrix.get(y, 0, 0), 2.0)
+  assert_eq(matrix.get(y, 0, 1), 3.0)
+}

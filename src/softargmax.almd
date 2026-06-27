@@ -1,0 +1,48 @@
+// soft_argmax_rows — differentiable argmax: the softmax-expected index of each row (axis=1):
+//   p = softmax(x),   out_t = Σ_j j · p_{t,j}   (j = 0 … D−1)   → one value per row, (T,1).
+// The expected position under the softmax distribution — the smooth, differentiable stand-in for
+// argmax used in keypoint regression (DSNT) and soft attention over positions. A flat row returns
+// the mean index (D−1)/2; a sharply peaked row returns (close to) the index of its max. Distinct
+// from hardmax_rows (a one-hot mask), from softmax_max_rows (the peak probability) and from a true
+// argmax (the value is continuous, not an integer). Max-stabilized softmax, then an index-weighted
+// sum: num = Σ j·e_j formed first, divided by Z once (matches the reference's associativity).
+// Output (T,1).
+
+import float
+import math
+
+fn soft_argmax_rows(x: Matrix) -> Matrix = {
+  let rx = matrix.to_lists(x)
+  let (t, d) = matrix.shape(x)
+  var out: List[List[Float]] = []
+  var i = 0
+  while i < t {
+    let xi = list.get_or(rx, i, [])
+    let m = xi |> list.fold(0.0 - 100000000000000000000.0, (acc, v) => math.fmax(acc, v))
+    let e = xi |> list.map((v) => math.exp(v - m))
+    let z = e |> list.fold(0.0, (acc, v) => acc + v)
+    var num = 0.0
+    var j = 0
+    while j < d {
+      num = num + int.to_float(j) * list.get_or(e, j, 0.0)
+      j = j + 1
+    }
+    out = out + [[num / z]]
+    i = i + 1
+  }
+  matrix.from_lists(out)
+}
+
+// a flat row weights every index equally → the mean index (0+1+2+3)/4 = 1.5.
+test "soft-argmax of a flat row is the mean index" {
+  let x = matrix.from_lists([[0.0, 0.0, 0.0, 0.0]])
+  let y = soft_argmax_rows(x)
+  assert(float.abs(matrix.get(y, 0, 0) - 1.5) < 0.000000001, "(0+1+2+3)/4 = 1.5")
+}
+
+// a sharply peaked row concentrates on its argmax index → ≈ 2.
+test "soft-argmax of a peaked row approaches the argmax index" {
+  let x = matrix.from_lists([[0.0, 0.0, 100.0, 0.0]])
+  let y = soft_argmax_rows(x)
+  assert(float.abs(matrix.get(y, 0, 0) - 2.0) < 0.0001, "≈ 2")
+}

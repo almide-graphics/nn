@@ -1,0 +1,56 @@
+// cumargmin_rows — cumulative argmin over time (down the rows, per channel):
+//   out_{t,j} = argmin_{0 ≤ i ≤ t} x_{i,j}   (the row index where the running minimum first occurred)
+//   → (T,D), integer-valued.
+// The min-side companion of cumargmax_rows: it tracks *where* the smallest-so-far happened (online
+// trough / worst-case position tracking). The library carries max/min pairs throughout
+// (cummax/cummin, hardmax/hardmin, elementwise_max/min); argmin is a genuinely distinct computation
+// from argmax (the strict-"<" update, not argmax with swapped inputs). Ties resolve to the earliest
+// index, matching numpy's argmin. One O(D) carry of (best value, best index) scanned over time.
+// Output (T,D).
+
+fn cumargmin_rows(x: Matrix) -> Matrix = {
+  let rx = matrix.to_lists(x)
+  let (t, d) = matrix.shape(x)
+  var best = list.get_or(rx, 0, [])
+  var bidx: List[Float] = list.range(0, d) |> list.map((_) => 0.0)
+  var out: List[List[Float]] = []
+  var i = 0
+  while i < t {
+    let xi = list.get_or(rx, i, [])
+    var nb: List[Float] = []
+    var nx: List[Float] = []
+    var j = 0
+    while j < d {
+      let xv = list.get_or(xi, j, 0.0)
+      let bv = list.get_or(best, j, 0.0)
+      let iv = list.get_or(bidx, j, 0.0)
+      let upd = xv < bv
+      nb = nb + [if upd then xv else bv]
+      nx = nx + [if upd then int.to_float(i) else iv]
+      j = j + 1
+    }
+    best = nb
+    bidx = nx
+    out = out + [bidx]
+    i = i + 1
+  }
+  matrix.from_lists(out)
+}
+
+// a decreasing column: the running argmin is always the current index → [0,1,2].
+test "cumulative argmin of a decreasing column tracks the current index" {
+  let x = matrix.from_lists([[3.0], [2.0], [1.0]])
+  let y = cumargmin_rows(x)
+  assert_eq(matrix.get(y, 0, 0), 0.0)
+  assert_eq(matrix.get(y, 1, 0), 1.0)
+  assert_eq(matrix.get(y, 2, 0), 2.0)
+}
+
+// an early trough then larger values: the index stays at the trough → [0,0,0].
+test "cumulative argmin stays at the earlier trough" {
+  let x = matrix.from_lists([[1.0], [5.0], [3.0]])
+  let y = cumargmin_rows(x)
+  assert_eq(matrix.get(y, 0, 0), 0.0)
+  assert_eq(matrix.get(y, 1, 0), 0.0)
+  assert_eq(matrix.get(y, 2, 0), 0.0)
+}

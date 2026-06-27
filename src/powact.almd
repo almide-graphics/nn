@@ -1,0 +1,20 @@
+// power_act — |x|^1.5. Fractional power feature (magnitude raised to 1.5);
+// base is |x| so the non-integer exponent never hits a negative base. Uses
+// math.fpow (the Float power; math.pow is integer-only). Elementwise.
+
+import math
+
+fn power_act(m: Matrix) -> Matrix =
+  matrix.map(m, (x) => math.fpow(float.abs(x), 1.5))
+
+test "power at zero is zero" {
+  let y = power_act(matrix.from_lists([[0.0]]))
+  assert_eq(matrix.get(y, 0, 0), 0.0)
+}
+
+// 1^1.5 = 1, 4^1.5 = 8.
+test "power at 1 and 4" {
+  let y = power_act(matrix.from_lists([[1.0, 4.0]]))
+  assert(float.abs(matrix.get(y, 0, 0) - 1.0) < 0.000000001, "1^1.5=1")
+  assert(float.abs(matrix.get(y, 0, 1) - 8.0) < 0.000000001, "4^1.5=8")
+}

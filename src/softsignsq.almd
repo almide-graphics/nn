@@ -1,0 +1,23 @@
+// softsign_sq — softsign(x)² = (x/(1+|x|))². An even, [0,1)-bounded "energy" gate
+// from softsign: 0 at the origin, approaching 1 with slow polynomial saturation
+// (the softsign analogue of tanh_squared). Elementwise.
+
+import math
+
+fn softsign_sq(m: Matrix) -> Matrix =
+  matrix.map(m, (x) => {
+    let s = x / (1.0 + float.abs(x))
+    s * s
+  })
+
+test "softsign_sq at zero is zero" {
+  let y = softsign_sq(matrix.from_lists([[0.0]]))
+  assert_eq(matrix.get(y, 0, 0), 0.0)
+}
+
+// (1/2)²=0.25 at x=±1; even.
+test "softsign_sq quarter at plus minus one" {
+  let y = softsign_sq(matrix.from_lists([[1.0, -1.0]]))
+  assert_eq(matrix.get(y, 0, 0), 0.25)
+  assert_eq(matrix.get(y, 0, 1), 0.25)
+}

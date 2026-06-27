@@ -1,0 +1,42 @@
+// cumsum_abs_diff_rows — cumulative total variation over time (down the rows):
+//   out_t = Σ_{i≤t} |x_i − x_{i-1}|   (out_0 = 0, elementwise per channel).
+// The running total variation / accumulated path length of a sequence — a
+// roughness / activity measure (∫|dx|). Carries the previous row and accumulates
+// the absolute step. Monotone non-decreasing. O(T), O(D) state. Output (T,D).
+
+import float
+
+fn cumsum_abs_diff_rows(x: Matrix) -> Matrix = {
+  let rx = matrix.to_lists(x)
+  let (t, d) = matrix.shape(x)
+  var prev: List[Float] = list.get_or(rx, 0, [])
+  var acc: List[Float] = list.range(0, d) |> list.map((_) => 0.0)
+  var out: List[List[Float]] = []
+  var i = 0
+  while i < t {
+    let xi = list.get_or(rx, i, [])
+    let dlt = list.zip_with(xi, prev, (a, b) => float.abs(a - b))
+    acc = list.zip_with(acc, dlt, (a, b) => a + b)
+    out = out + [acc]
+    prev = xi
+    i = i + 1
+  }
+  matrix.from_lists(out)
+}
+
+// |steps| of [0,3,1] accumulate to TV [0,3,5].
+test "cumsum abs diff is the running total variation" {
+  let x = matrix.from_lists([[0.0], [3.0], [1.0]])
+  let y = cumsum_abs_diff_rows(x)
+  assert_eq(matrix.get(y, 0, 0), 0.0)
+  assert_eq(matrix.get(y, 1, 0), 3.0)
+  assert_eq(matrix.get(y, 2, 0), 5.0)
+}
+
+// per channel: [[1,10],[4,8]] → row1 = [|4-1|, |8-10|] = [3,2].
+test "cumsum abs diff works per channel" {
+  let x = matrix.from_lists([[1.0, 10.0], [4.0, 8.0]])
+  let y = cumsum_abs_diff_rows(x)
+  assert_eq(matrix.get(y, 1, 0), 3.0)
+  assert_eq(matrix.get(y, 1, 1), 2.0)
+}

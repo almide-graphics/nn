@@ -1,0 +1,26 @@
+// l2_normalize — row-wise L2 normalization: x_r / sqrt(Σ x_r² + eps).
+// Common in attention (query/key normalization) and retrieval. eps fixed at 1e-6.
+
+import math
+
+fn l2_normalize(x: Matrix) -> Matrix = {
+  let rx = matrix.to_lists(x)
+  let (t, _) = matrix.shape(x)
+  var out: List[List[Float]] = []
+  var i = 0
+  while i < t {
+    let xi = list.get_or(rx, i, [])
+    let ss = xi |> list.fold(0.0, (acc, v) => acc + v * v)
+    let inv = 1.0 / math.sqrt(ss + 0.000001)
+    out = out + [list.map(xi, (v) => v * inv)]
+    i = i + 1
+  }
+  matrix.from_lists(out)
+}
+
+// [3,4] → [0.6,0.8] (norm 5). eps shifts it by < 1e-4.
+test "l2_normalize unit row" {
+  let y = l2_normalize(matrix.from_lists([[3.0, 4.0]]))
+  assert(float.abs(matrix.get(y, 0, 0) - 0.6) < 0.0001, "x/||x|| col0")
+  assert(float.abs(matrix.get(y, 0, 1) - 0.8) < 0.0001, "x/||x|| col1")
+}

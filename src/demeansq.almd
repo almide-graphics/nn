@@ -1,0 +1,47 @@
+// demean_sq_rows — squared deviation from the per-channel time mean:
+//   out_{t,c} = (x_{t,c} − μ_c)²,   μ_c = (1/T) Σ_t x_{t,c}.
+// The squared-error counterpart of center_rows: each entry's contribution to the
+// per-channel variance over time (variance = mean of these). Two passes — sum the
+// columns for μ, then square the centered residuals. O(D) state. Output (T,D).
+
+fn demean_sq_rows(x: Matrix) -> Matrix = {
+  let rx = matrix.to_lists(x)
+  let (t, d) = matrix.shape(x)
+  // pass 1: column sums over time → per-channel mean μ.
+  var s: List[Float] = list.range(0, d) |> list.map((_) => 0.0)
+  var i = 0
+  while i < t {
+    let xi = list.get_or(rx, i, [])
+    s = list.zip_with(s, xi, (a, b) => a + b)
+    i = i + 1
+  }
+  let tf = int.to_float(t)
+  let mu = s |> list.map((v) => v / tf)
+  // pass 2: squared centered residual per row.
+  var out: List[List[Float]] = []
+  var j = 0
+  while j < t {
+    let xj = list.get_or(rx, j, [])
+    out = out + [list.zip_with(xj, mu, (a, b) => (a - b) * (a - b))]
+    j = j + 1
+  }
+  matrix.from_lists(out)
+}
+
+// column [1,3] → μ=2, residuals ±1 → squares [1,1].
+test "demean-sq is the squared deviation from the time mean" {
+  let x = matrix.from_lists([[1.0], [3.0]])
+  let y = demean_sq_rows(x)
+  assert_eq(matrix.get(y, 0, 0), 1.0)
+  assert_eq(matrix.get(y, 1, 0), 1.0)
+}
+
+// per channel: col1 [0,4]→μ=2→[4,4], col2 [1,1]→μ=1→[0,0].
+test "demean-sq works per channel and is zero on a constant column" {
+  let x = matrix.from_lists([[0.0, 1.0], [4.0, 1.0]])
+  let y = demean_sq_rows(x)
+  assert_eq(matrix.get(y, 0, 0), 4.0)
+  assert_eq(matrix.get(y, 1, 0), 4.0)
+  assert_eq(matrix.get(y, 0, 1), 0.0)
+  assert_eq(matrix.get(y, 1, 1), 0.0)
+}

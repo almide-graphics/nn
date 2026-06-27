@@ -1,0 +1,20 @@
+// gaussian_deriv — -x·exp(-x²), the derivative of the Gaussian exp(-x²). An odd,
+// edge-detecting wavelet: zero at 0, peaks/troughs at ±1/√2, decays to 0.
+// Elementwise.
+
+import math
+
+fn gaussian_deriv(m: Matrix) -> Matrix =
+  matrix.map(m, (x) => 0.0 - x * math.exp(0.0 - x * x))
+
+test "gaussian_deriv at zero is zero" {
+  let y = gaussian_deriv(matrix.from_lists([[0.0]]))
+  assert_eq(matrix.get(y, 0, 0), 0.0)
+}
+
+// -1·e⁻¹ at x=1; odd.
+test "gaussian_deriv at 1 and odd" {
+  let y = gaussian_deriv(matrix.from_lists([[1.0, -1.0]]))
+  assert(float.abs(matrix.get(y, 0, 0) + 0.36787944117144233) < 0.000000001, "-e⁻¹")
+  assert(float.abs(matrix.get(y, 0, 1) - 0.36787944117144233) < 0.000000001, "odd")
+}

@@ -1,0 +1,43 @@
+// min_prod_rows — row-wise minimum elementwise product of two matrices:
+//
+//   out_r = min_j ( a_rj · b_rj )
+//
+// One value per row → output (T,1). The worst single-coordinate agreement / most
+// negative co-activation (min-pooled bilinear score; the floor counterpart of
+// max_prod_rows). Seeds the fold with the first product. Two-input row reduction.
+
+import math
+
+fn min_prod_rows(a: Matrix, b: Matrix) -> Matrix = {
+  let ra = matrix.to_lists(a)
+  let rb = matrix.to_lists(b)
+  let (rows, _) = matrix.shape(a)
+  var out: List[List[Float]] = []
+  var n = 0
+  while n < rows {
+    let an = list.get_or(ra, n, [])
+    let bn = list.get_or(rb, n, [])
+    let ps = list.zip_with(an, bn, (x, y) => x * y)
+    let seed = list.get_or(ps, 0, 0.0)
+    let mn = ps |> list.fold(seed, (acc, v) => math.fmin(acc, v))
+    out = out + [[mn]]
+    n = n + 1
+  }
+  matrix.from_lists(out)
+}
+
+// products [3, 2] → min 2.
+test "min prod picks the smallest product" {
+  let a = matrix.from_lists([[1.0, 2.0]])
+  let b = matrix.from_lists([[3.0, 1.0]])
+  let y = min_prod_rows(a, b)
+  assert_eq(matrix.get(y, 0, 0), 2.0)
+}
+
+// mixed-sign products [3, -2] → min -2.
+test "min prod handles mixed-sign products" {
+  let a = matrix.from_lists([[1.0, 0.0 - 2.0]])
+  let b = matrix.from_lists([[3.0, 1.0]])
+  let y = min_prod_rows(a, b)
+  assert_eq(matrix.get(y, 0, 0), 0.0 - 2.0)
+}

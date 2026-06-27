@@ -1,0 +1,50 @@
+// op-level parity driver for src/scan.almd (scan_diag).
+//
+// STATUS: `almide check` passes, but `almide build` (native) currently emits
+// invalid Rust (E0277/E0308/E0599/E0608) — an Almide native-backend bug, not a
+// source error. The independent numpy-oracle parity check therefore lives,
+// for now, baked into a test in src/scan.almd (WASM path, green). This driver +
+// oplab/scan_ref.py are the productionization target once native codegen (or a
+// WASI-fs build path) lands.
+//
+// Generates a deterministic (T,D) input via a fixed sin formula — matched
+// bit-for-bit in oplab/scan_ref.py — runs scan_diag, and dumps the flat
+// row-major output. The reference oracle (numpy) is an INDEPENDENT author,
+// which turns this from a self-test into a real parity receipt: the op-level
+// analogue of the model-level gate in tools/compare_logits.py.
+//
+// Run from the nn/ repo root:
+//   almide build oplab/scan.almd -o /tmp/scan_parity && /tmp/scan_parity
+//   tools/.venv/bin/python oplab/scan_ref.py
+
+import self.scan
+import fs
+import math
+
+// Only constructs proven to survive native codegen in existing examples:
+// var/while, list.range/map, matrix.from_lists/get, float.to_string, string `+`.
+fn gen(t: Int, d: Int, base: Float, amp: Float, ft: Float, fj: Float) -> Matrix =
+  matrix.from_lists(list.range(0, t) |> list.map((ti) =>
+    list.range(0, d) |> list.map((j) =>
+      base + amp * math.sin(ft * int.to_float(ti) + fj * int.to_float(j)))))
+
+effect fn main() -> () = {
+  let t = 12
+  let d = 8
+  let x = gen(t, d, 0.0, 1.0, 0.5, 0.1)
+  let a = gen(t, d, 0.5, 0.4, 0.3, 0.2)
+  let b = gen(t, d, 0.2, 0.1, 0.7, 0.05)
+  let y = scan.scan_diag(a, b, x)
+  var s = ""
+  var r = 0
+  while r < t {
+    var c = 0
+    while c < d {
+      s = s + float.to_string(matrix.get(y, r, c)) + " "
+      c = c + 1
+    }
+    r = r + 1
+  }
+  fs.write("oplab/scan_alm.txt", s)!
+  println("wrote oplab/scan_alm.txt (" + int.to_string(t * d) + " values)")
+}

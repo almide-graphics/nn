@@ -1,0 +1,41 @@
+// cumsum_sign_rows — cumulative sum of the sign over time (down the rows):
+//   out_{t,j} = Σ_{i≤t} sign(x_{i,j}),   sign(0)=0.
+// A running ±-vote tally per channel: how far positives outweigh negatives up to
+// step t. The sign-quantized companion of cumsum_rows — the cumulative drift of a
+// binarized/ternarized stream. Integer-valued outputs. O(T), O(D) state. Output (T,D).
+
+// math.sign is Int-only; the Float sign is hand-rolled as a ±-threshold (sign(0)=0).
+fn cumsum_sign_rows(x: Matrix) -> Matrix = {
+  let rx = matrix.to_lists(x)
+  let (t, d) = matrix.shape(x)
+  var acc: List[Float] = list.range(0, d) |> list.map((_) => 0.0)
+  var out: List[List[Float]] = []
+  var i = 0
+  while i < t {
+    let xi = list.get_or(rx, i, [])
+    acc = list.zip_with(acc, xi, (a, b) =>
+      a + (if b > 0.0 then 1.0 else (if b < 0.0 then 0.0 - 1.0 else 0.0)))
+    out = out + [acc]
+    i = i + 1
+  }
+  matrix.from_lists(out)
+}
+
+// column 0 signs are +,−,+ → running tally 1, 0, 1; column 1 all + → 1, 2, 3.
+test "cumsum-sign tallies the running sign vote per channel" {
+  let x = matrix.from_lists([[2.0, 5.0], [0.0 - 3.0, 1.0], [0.4, 9.0]])
+  let y = cumsum_sign_rows(x)
+  assert_eq(matrix.get(y, 0, 0), 1.0)
+  assert_eq(matrix.get(y, 1, 0), 0.0)
+  assert_eq(matrix.get(y, 2, 0), 1.0)
+  assert_eq(matrix.get(y, 2, 1), 3.0)
+}
+
+// a zero entry contributes nothing: sign(0)=0, so the tally is unchanged across it.
+test "cumsum-sign treats zero as a non-vote" {
+  let x = matrix.from_lists([[0.0 - 1.0], [0.0], [0.0 - 1.0]])
+  let y = cumsum_sign_rows(x)
+  assert_eq(matrix.get(y, 0, 0), 0.0 - 1.0)
+  assert_eq(matrix.get(y, 1, 0), 0.0 - 1.0)
+  assert_eq(matrix.get(y, 2, 0), 0.0 - 2.0)
+}

@@ -1,0 +1,23 @@
+// exp_neg_sixth — exp(-x⁶). A higher-order super-Gaussian (flat-top) window:
+// even, peaks at 1, with an even flatter plateau near 0 and steeper skirts than
+// exp(-x⁴) — approaching a soft rectangular mask. Elementwise.
+
+import math
+
+fn exp_neg_sixth(m: Matrix) -> Matrix =
+  matrix.map(m, (x) => {
+    let x2 = x * x
+    math.exp(0.0 - x2 * x2 * x2)
+  })
+
+test "exp_neg_sixth peaks at one when x=0" {
+  let y = exp_neg_sixth(matrix.from_lists([[0.0]]))
+  assert_eq(matrix.get(y, 0, 0), 1.0)
+}
+
+// exp(-1) at x=±1; even.
+test "exp_neg_sixth at one and even" {
+  let y = exp_neg_sixth(matrix.from_lists([[1.0, -1.0]]))
+  assert(float.abs(matrix.get(y, 0, 0) - 0.36787944117144233) < 0.000000001, "e⁻¹")
+  assert(float.abs(matrix.get(y, 0, 1) - 0.36787944117144233) < 0.000000001, "even")
+}

@@ -1,0 +1,17 @@
+// quartic_act — elementwise x⁴. Even, convex, flatter-than-square near 0 and
+// steeper far out; a high-order polynomial feature term. Elementwise.
+
+fn quartic_act(m: Matrix) -> Matrix =
+  matrix.map(m, (x) => x * x * x * x)
+
+test "quartic_act at zero is zero" {
+  let y = quartic_act(matrix.from_lists([[0.0]]))
+  assert_eq(matrix.get(y, 0, 0), 0.0)
+}
+
+// 2⁴=16; even.
+test "quartic_act at 2 and even" {
+  let y = quartic_act(matrix.from_lists([[2.0, -2.0]]))
+  assert_eq(matrix.get(y, 0, 0), 16.0)
+  assert_eq(matrix.get(y, 0, 1), 16.0)
+}

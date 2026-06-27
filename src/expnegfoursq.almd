@@ -1,0 +1,20 @@
+// exp_neg_four_sq — exp(-4x²). The tightest Gaussian RBF of the precision family
+// (γ=4, σ²=⅛): even, peaks at 1, sharper than exp(-3x²). Completes the
+// γ∈{1,2,3,4} precision sweep for fine localization. Elementwise.
+
+import math
+
+fn exp_neg_four_sq(m: Matrix) -> Matrix =
+  matrix.map(m, (x) => math.exp(0.0 - 4.0 * x * x))
+
+test "exp_neg_four_sq peaks at one when x=0" {
+  let y = exp_neg_four_sq(matrix.from_lists([[0.0]]))
+  assert_eq(matrix.get(y, 0, 0), 1.0)
+}
+
+// 4·(0.5)²=1 → exp(-1) at x=0.5; even.
+test "exp_neg_four_sq at half and even" {
+  let y = exp_neg_four_sq(matrix.from_lists([[0.5, -0.5]]))
+  assert(float.abs(matrix.get(y, 0, 0) - 0.36787944117144233) < 0.000000001, "e⁻¹")
+  assert(float.abs(matrix.get(y, 0, 1) - 0.36787944117144233) < 0.000000001, "even")
+}

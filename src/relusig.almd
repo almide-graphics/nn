@@ -1,0 +1,25 @@
+// relu_times_sigmoid — max(0,x)·σ(x). A one-sided SiLU: identical to SiLU for
+// x>0 but hard-clamped to exactly 0 for x≤0 (no negative dip). A self-gated
+// ReLU with a soft turn-on. Elementwise.
+
+import math
+
+fn relu_times_sigmoid(m: Matrix) -> Matrix =
+  matrix.map(m, (x) => {
+    let r = math.fmax(0.0, x)
+    let s = 1.0 / (1.0 + math.exp(0.0 - x))
+    r * s
+  })
+
+// exactly 0 for x≤0 (incl. 0).
+test "relu_times_sigmoid is zero for x<=0" {
+  let y = relu_times_sigmoid(matrix.from_lists([[-3.0, 0.0]]))
+  assert_eq(matrix.get(y, 0, 0), 0.0)
+  assert_eq(matrix.get(y, 0, 1), 0.0)
+}
+
+// x·σ(x) at x=2: 2·0.8807970779778823.
+test "relu_times_sigmoid equals x sigma x for x>0" {
+  let y = relu_times_sigmoid(matrix.from_lists([[2.0]]))
+  assert(float.abs(matrix.get(y, 0, 0) - 1.7615941559557646) < 0.000000001, "x·σ(x)")
+}

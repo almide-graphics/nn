@@ -1,0 +1,40 @@
+// rms_rows — the root-mean-square (quadratic mean) value of each row (axis=1):
+//   out_t = sqrt( (1/D) Σ_j x_{t,j}² )                 → one value per row, (T,1).
+// The uncentered second moment's root: a row's overall magnitude / power level. Distinct
+// from std_rows (which centers by the mean first), from rms_time_rows / rms_normalize_vec
+// (which rescale the vector), and from rmse_rows (a two-input error). RMS² = mean² + var, so
+// it is ≥ |mean| and sign-blind. The scale a RMSProp / RMSNorm step divides by. Per-row
+// reduction (mean of squares under a root). Output (T,1).
+
+import float
+import math
+
+fn rms_rows(x: Matrix) -> Matrix = {
+  let rx = matrix.to_lists(x)
+  let (t, d) = matrix.shape(x)
+  let df = int.to_float(d)
+  var out: List[List[Float]] = []
+  var i = 0
+  while i < t {
+    let xi = list.get_or(rx, i, [])
+    let ms = (xi |> list.fold(0.0, (acc, v) => acc + v * v)) / df
+    out = out + [[math.sqrt(ms)]]
+    i = i + 1
+  }
+  matrix.from_lists(out)
+}
+
+// flat row [3,3]: mean of squares = 9 → rms = 3.
+test "rms of a flat row equals its magnitude" {
+  let x = matrix.from_lists([[3.0, 3.0]])
+  let y = rms_rows(x)
+  assert(float.abs(matrix.get(y, 0, 0) - 3.0) < 0.000000001, "sqrt(9)=3")
+}
+
+// one-hot [0,0,4,0]: rms = sqrt(16/4) = 2; a ±1 row is sign-blind → rms 1.
+test "rms is sign-blind and uses the mean of squares" {
+  let yp = rms_rows(matrix.from_lists([[0.0, 0.0, 4.0, 0.0]]))
+  assert(float.abs(matrix.get(yp, 0, 0) - 2.0) < 0.000000001, "sqrt(4)=2")
+  let yn = rms_rows(matrix.from_lists([[1.0, 0.0 - 1.0, 1.0, 0.0 - 1.0]]))
+  assert(float.abs(matrix.get(yn, 0, 0) - 1.0) < 0.000000001, "all |·|=1 → rms 1")
+}

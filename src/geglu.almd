@@ -1,0 +1,40 @@
+// geglu — GEGLU gate (the GELU-gated half of a GEGLU MLP): x ⊙ gelu(g).
+// gelu uses the tanh approximation, built from a self-defined tanh (no math.tanh
+// and not depending on matrix.gelu's internal form, so the numpy oracle can mirror
+// it exactly). Two inputs x, g of equal shape; output (T,D).
+
+import math
+
+fn tanh_scalar(y: Float) -> Float =
+  2.0 / (1.0 + math.exp(0.0 - 2.0 * y)) - 1.0
+
+fn gelu_scalar(v: Float) -> Float =
+  0.5 * v * (1.0 + tanh_scalar(0.7978845608028654 * (v + 0.044715 * v * v * v)))
+
+fn geglu(x: Matrix, g: Matrix) -> Matrix = {
+  let rx = matrix.to_lists(x)
+  let rg = matrix.to_lists(g)
+  let (t, _) = matrix.shape(x)
+  var out: List[List[Float]] = []
+  var n = 0
+  while n < t {
+    let xn = list.get_or(rx, n, [])
+    let gn = list.get_or(rg, n, [])
+    out = out + [list.zip_with(xn, gn, (xx, gg) => xx * gelu_scalar(gg))]
+    n = n + 1
+  }
+  matrix.from_lists(out)
+}
+
+// gelu(0) = 0 → gate closed.
+test "geglu zero gate is zero" {
+  let y = geglu(matrix.from_lists([[3.0, 5.0]]), matrix.from_lists([[0.0, 0.0]]))
+  assert_eq(matrix.get(y, 0, 0), 0.0)
+  assert_eq(matrix.get(y, 0, 1), 0.0)
+}
+
+// Large positive gate → gelu(g) ≈ g → geglu ≈ x·g.
+test "geglu large positive gate is product" {
+  let y = geglu(matrix.from_lists([[2.0]]), matrix.from_lists([[10.0]]))
+  assert(float.abs(matrix.get(y, 0, 0) - 20.0) < 0.001, "≈ x·g")
+}

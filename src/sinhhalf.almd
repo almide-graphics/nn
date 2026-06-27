@@ -1,0 +1,23 @@
+// sinh_half — ½·sinh(x). An odd, exponentially-growing activation (= ¼(eˣ-e⁻ˣ)):
+// ≈½x near 0 and exponential in the tails — an "anti-saturating" expansion
+// nonlinearity. sinh via exp. Elementwise.
+
+import math
+
+fn sinh_half(m: Matrix) -> Matrix =
+  matrix.map(m, (x) => {
+    let e = math.exp(x)
+    0.25 * (e - 1.0 / e)
+  })
+
+test "sinh_half at zero is zero" {
+  let y = sinh_half(matrix.from_lists([[0.0]]))
+  assert_eq(matrix.get(y, 0, 0), 0.0)
+}
+
+// ½sinh(1) at x=1; odd → negated at x=-1.
+test "sinh_half odd at one" {
+  let y = sinh_half(matrix.from_lists([[1.0, -1.0]]))
+  assert(float.abs(matrix.get(y, 0, 0) - 0.5876005968219007) < 0.000000001, "½sinh1")
+  assert(float.abs(matrix.get(y, 0, 1) + 0.5876005968219007) < 0.000000001, "odd")
+}

@@ -1,0 +1,32 @@
+// logsumexp_rows — numerically-stable log-sum-exp per row → (T,1):
+//   lse_r = m + log Σ_j exp(x_rj - m),   m = max_j x_rj
+// The normalizer behind softmax / energy models; the smooth max.
+
+import math
+
+fn logsumexp_rows(x: Matrix) -> Matrix = {
+  let rx = matrix.to_lists(x)
+  let (t, _) = matrix.shape(x)
+  var out: List[List[Float]] = []
+  var n = 0
+  while n < t {
+    let xn = list.get_or(rx, n, [])
+    let mx = xn |> list.fold(-1.0e38, (acc, v) => math.fmax(acc, v))
+    let se = xn |> list.fold(0.0, (acc, v) => acc + math.exp(v - mx))
+    out = out + [[mx + math.log(se)]]
+    n = n + 1
+  }
+  matrix.from_lists(out)
+}
+
+// logsumexp([0,0]) = log 2.
+test "logsumexp of equal logits is log n" {
+  let y = logsumexp_rows(matrix.from_lists([[0.0, 0.0]]))
+  assert(float.abs(matrix.get(y, 0, 0) - 0.6931471805599453) < 0.000000001, "log 2")
+}
+
+// Single element → that element (smooth max of one value).
+test "logsumexp of single element is identity" {
+  let y = logsumexp_rows(matrix.from_lists([[5.0]]))
+  assert(float.abs(matrix.get(y, 0, 0) - 5.0) < 0.000000001, "= x")
+}

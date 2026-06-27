@@ -1,0 +1,44 @@
+// signed_log1p_rows — sign-preserving log compression, sign(x)·log(1+|x|), elementwise.
+//   out_{t,j} = sign(x_{t,j}) · log(1 + |x_{t,j}|),   sign(0) = 0 ⇒ out = 0
+// A symmetric, gentler-than-signed-sqrt squashing transform: it grows like x near zero
+// (log(1+|x|) ≈ |x|) and only logarithmically for large magnitudes, while staying odd
+// (f(−x) = −f(x)). The standard reward / value-target rescaling of RL (Pohlen et al.).
+// math.sign is Int-only, so the sign is the usual ±1/0 threshold; log acts on 1+|x| ≥ 1
+// so it never sees a non-positive argument. Purely elementwise. Output (T,D).
+
+import float
+import math
+
+fn signed_log1p_rows(x: Matrix) -> Matrix = {
+  let rx = matrix.to_lists(x)
+  let (t, _d) = matrix.shape(x)
+  var out: List[List[Float]] = []
+  var i = 0
+  while i < t {
+    let xi = list.get_or(rx, i, [])
+    let row = xi |> list.map((v) => {
+      let s = if v > 0.0 then 1.0 else (if v < 0.0 then 0.0 - 1.0 else 0.0)
+      s * math.log(1.0 + float.abs(v))
+    })
+    out = out + [row]
+    i = i + 1
+  }
+  matrix.from_lists(out)
+}
+
+// 0 → 0; the magnitude side equals log(1+|x|), the sign is carried through.
+test "signed-log1p is zero at the origin" {
+  let x = matrix.from_lists([[0.0, 1.0]])
+  let y = signed_log1p_rows(x)
+  assert_eq(matrix.get(y, 0, 0), 0.0)
+  assert(matrix.get(y, 0, 1) > 0.0, "positive side is positive")
+}
+
+// odd symmetry: f(v) + f(−v) = 0 exactly.
+test "signed-log1p is an odd function" {
+  let x = matrix.from_lists([[3.0]])
+  let xn = matrix.from_lists([[0.0 - 3.0]])
+  let a = matrix.get(signed_log1p_rows(x), 0, 0)
+  let b = matrix.get(signed_log1p_rows(xn), 0, 0)
+  assert_eq(a + b, 0.0)
+}

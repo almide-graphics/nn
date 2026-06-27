@@ -1,0 +1,45 @@
+// second_diff_rows — discrete second difference over time (down the rows):
+//   out_0 = out_1 = 0,   out_t = x_t − 2·x_{t-1} + x_{t-2}   (t ≥ 2, per channel).
+// The discrete acceleration / curvature of a sequence (the 1-D Laplacian stencil
+// [1,−2,1]) — zero on any linear ramp, positive where the trajectory is convex, negative
+// where concave. The second-order companion to diff_rows; an inflection / smoothness probe.
+// Carries the two previous rows. The first two rows have no full window, so they are zero.
+// O(T), O(D) state. Output (T,D).
+
+fn second_diff_rows(x: Matrix) -> Matrix = {
+  let rx = matrix.to_lists(x)
+  let (t, d) = matrix.shape(x)
+  let zero = list.range(0, d) |> list.map((_) => 0.0)
+  var prev: List[Float] = list.get_or(rx, 0, [])
+  var prev2: List[Float] = list.get_or(rx, 0, [])
+  var out: List[List[Float]] = []
+  var i = 0
+  while i < t {
+    let xi = list.get_or(rx, i, [])
+    let row = if i < 2 then zero
+              else list.zip_with(list.zip_with(xi, prev, (a, b) => a - 2.0 * b), prev2, (ab, c) => ab + c)
+    out = out + [row]
+    prev2 = prev
+    prev = xi
+    i = i + 1
+  }
+  matrix.from_lists(out)
+}
+
+// column [1,2,4,7]: out_2 = 4−2·2+1 = 1, out_3 = 7−2·4+2 = 1; first two rows zero.
+test "second-diff is the discrete acceleration x_t − 2x_{t-1} + x_{t-2}" {
+  let x = matrix.from_lists([[1.0], [2.0], [4.0], [7.0]])
+  let y = second_diff_rows(x)
+  assert_eq(matrix.get(y, 0, 0), 0.0)
+  assert_eq(matrix.get(y, 1, 0), 0.0)
+  assert_eq(matrix.get(y, 2, 0), 1.0)
+  assert_eq(matrix.get(y, 3, 0), 1.0)
+}
+
+// a linear ramp [0,3,6,9] has constant slope → zero second difference.
+test "a linear ramp has zero second difference" {
+  let x = matrix.from_lists([[0.0], [3.0], [6.0], [9.0]])
+  let y = second_diff_rows(x)
+  assert_eq(matrix.get(y, 2, 0), 0.0)
+  assert_eq(matrix.get(y, 3, 0), 0.0)
+}

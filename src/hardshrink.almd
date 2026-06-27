@@ -1,0 +1,15 @@
+// hardshrink — keep x where |x|>λ, else 0. λ scalar (>0). The hard-threshold
+// counterpart of softshrink (no shrinkage of the kept values). Elementwise.
+
+fn hardshrink(m: Matrix, lambd: Float) -> Matrix =
+  matrix.map(m, (x) =>
+    if x > lambd then x
+    else (if x < 0.0 - lambd then x else 0.0))
+
+// |x|>λ → x ; |x|≤λ → 0.
+test "hardshrink keeps large-magnitude, zeros small" {
+  let y = hardshrink(matrix.from_lists([[5.0, -5.0, 0.5]]), 1.0)
+  assert_eq(matrix.get(y, 0, 0), 5.0)
+  assert_eq(matrix.get(y, 0, 1), -5.0)
+  assert_eq(matrix.get(y, 0, 2), 0.0)
+}

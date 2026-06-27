@@ -1,0 +1,43 @@
+// mamba_abar — Mamba (S6) state-transition discretization:
+//
+//   Ā = exp(Δ ⊙ A)            (zero-order-hold of the diagonal state matrix)
+//
+// This is the nonlinear half of Mamba's discretization step. Composes directly
+// with scan_diag (src/scan.almd): feed the result as the per-step decay `a` so
+// that  h_t = Ā_t ⊙ h_{t-1} + B̄_t ⊙ x_t  is the full selective SSM. The other
+// half,  B̄ = Δ ⊙ B,  is a plain elementwise (Hadamard) product — note the
+// matrix stdlib has no elementwise binary product (matrix.mul is matmul), so a
+// standalone `hadamard` op is a good future addition.
+//
+// Δ is positive (a softplus gate), A is negative (stable continuous dynamics),
+// so Ā = exp(Δ⊙A) lands in (0,1): a per-channel forget gate.
+
+import math
+
+fn mamba_abar(delta: Matrix, a: Matrix) -> Matrix = {
+  let rd = matrix.to_lists(delta)
+  let ra = matrix.to_lists(a)
+  let (t, _) = matrix.shape(delta)
+  var out: List[List[Float]] = []
+  var i = 0
+  while i < t {
+    let di = list.get_or(rd, i, [])
+    let ai = list.get_or(ra, i, [])
+    out = out + [list.zip_with(di, ai, (dd, aa) => math.exp(dd * aa))]
+    i = i + 1
+  }
+  matrix.from_lists(out)
+}
+
+// Δ=0 (or A=0) → exp(0) = 1: no discretization, decay is identity.
+test "mamba_abar zero step is identity gate" {
+  let y = mamba_abar(matrix.from_lists([[0.0, 0.0]]), matrix.from_lists([[-1.0, 2.0]]))
+  assert_eq(matrix.get(y, 0, 0), 1.0)
+  assert_eq(matrix.get(y, 0, 1), 1.0)
+}
+
+// Δ=1, A=-1 → Ā = exp(-1).
+test "mamba_abar exp of product" {
+  let y = mamba_abar(matrix.from_lists([[1.0]]), matrix.from_lists([[-1.0]]))
+  assert(float.abs(matrix.get(y, 0, 0) - 0.36787944117144233) < 0.000000001, "exp(-1)")
+}

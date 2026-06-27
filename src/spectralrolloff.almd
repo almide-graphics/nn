@@ -1,0 +1,56 @@
+// spectral_rolloff_rows — per-row spectral roll-off index at 85% energy (axis=1):
+//   total_t = Σ_j |x_{t,j}|,   out_t = the smallest k with Σ_{j≤k} |x_{t,j}| ≥ 0.85·total_t   → (T,1).
+// The classic MIR spectral roll-off: the position along the feature axis below which 85% of the
+// magnitude energy accumulates. It is a *quantile of the energy-position distribution*, so it
+// complements the first two moments already here — magnitude_centroid_rows (the mean position) and
+// magnitude_spread_rows (the std). Front-loaded rows roll off early (small index), flat rows roll off
+// near the end. No sort is needed (the feature order IS the axis); a single cumulative scan returns
+// the first crossing as an integer index. Output (T,1). Computing the total as a left-to-right fold
+// matches the reference's sequential cumsum, so the integer crossing is exact.
+
+import float
+
+fn spectral_rolloff_rows(x: Matrix) -> Matrix = {
+  let rx = matrix.to_lists(x)
+  let (t, d) = matrix.shape(x)
+  var out: List[List[Float]] = []
+  var i = 0
+  while i < t {
+    let xi = list.get_or(rx, i, [])
+    var total = 0.0
+    var p = 0
+    while p < d {
+      total = total + float.abs(list.get_or(xi, p, 0.0))
+      p = p + 1
+    }
+    let thr = 0.85 * total
+    var cum = 0.0
+    var idx = int.to_float(d - 1)
+    var foundf = 0.0
+    var j = 0
+    while j < d {
+      cum = cum + float.abs(list.get_or(xi, j, 0.0))
+      let crossed = cum >= thr
+      idx = if foundf < 0.5 then (if crossed then int.to_float(j) else idx) else idx
+      foundf = if crossed then 1.0 else foundf
+      j = j + 1
+    }
+    out = out + [[idx]]
+    i = i + 1
+  }
+  matrix.from_lists(out)
+}
+
+// front-loaded energy rolls off at index 0: |x|=[10,0,0,0], total 10, 85%·10=8.5 ≤ cum[0]=10.
+test "spectral rolloff is index 0 when energy is front-loaded" {
+  let x = matrix.from_lists([[10.0, 0.0, 0.0, 0.0]])
+  let y = spectral_rolloff_rows(x)
+  assert(float.abs(matrix.get(y, 0, 0)) < 0.000000001, "idx 0")
+}
+
+// uniform energy: total 4, threshold 3.4, cum=[1,2,3,4] first crosses at index 3.
+test "spectral rolloff for uniform energy is near the end" {
+  let x = matrix.from_lists([[1.0, 1.0, 1.0, 1.0]])
+  let y = spectral_rolloff_rows(x)
+  assert(float.abs(matrix.get(y, 0, 0) - 3.0) < 0.000000001, "idx 3")
+}

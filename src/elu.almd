@@ -1,0 +1,25 @@
+// elu — Exponential Linear Unit: x for x>0, else α·(exp(x)-1). α is a scalar.
+// Smooth, saturates to -α on the left. Elementwise (uses if/then/else in map).
+
+import math
+
+fn elu(m: Matrix, alpha: Float) -> Matrix =
+  matrix.map(m, (x) => if x > 0.0 then x else alpha * (math.exp(x) - 1.0))
+
+// Positive side is identity.
+test "elu identity for positive" {
+  let y = elu(matrix.from_lists([[3.0]]), 1.0)
+  assert_eq(matrix.get(y, 0, 0), 3.0)
+}
+
+// elu(0) = α·(e^0 - 1) = 0.
+test "elu at zero is zero" {
+  let y = elu(matrix.from_lists([[0.0]]), 1.5)
+  assert_eq(matrix.get(y, 0, 0), 0.0)
+}
+
+// Large negative → saturates to -α.
+test "elu saturates to minus alpha" {
+  let y = elu(matrix.from_lists([[-50.0]]), 2.0)
+  assert(float.abs(matrix.get(y, 0, 0) + 2.0) < 0.000000001, "≈ -α")
+}

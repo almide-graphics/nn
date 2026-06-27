@@ -1,0 +1,46 @@
+// attention_pool_rows — softmax-weighted pooling of values by scores, per row (axis=1):
+//   m_t = max_j w_{t,j},   p_{t,j} = exp(w−m) / Σ_j exp(w−m)
+//   out_t = Σ_j p_{t,j} · x_{t,j}                      → one value per row, (T,1).
+// The attention read-out: each row's values x are averaged with weights from the softmax of
+// its scores w (a single query's attention over D keys). Reduces to the plain mean when the
+// scores are equal and to a hard select when one score dominates. The two-input pooling
+// primitive behind attention / pointer heads; softmax is fused here (with the standard
+// max-subtraction), not re-exposed. Output (T,1).
+
+import float
+import math
+
+fn attention_pool_rows(x: Matrix, w: Matrix) -> Matrix = {
+  let rx = matrix.to_lists(x)
+  let rw = matrix.to_lists(w)
+  let (t, _) = matrix.shape(x)
+  var out: List[List[Float]] = []
+  var i = 0
+  while i < t {
+    let xi = list.get_or(rx, i, [])
+    let wi = list.get_or(rw, i, [])
+    let m = wi |> list.fold(list.get_or(wi, 0, 0.0), (acc, v) => math.fmax(acc, v))
+    let e = wi |> list.map((v) => math.exp(v - m))
+    let z = e |> list.fold(0.0, (acc, v) => acc + v)
+    let s = list.zip_with(e, xi, (ej, xj) => (ej / z) * xj) |> list.fold(0.0, (acc, v) => acc + v)
+    out = out + [[s]]
+    i = i + 1
+  }
+  matrix.from_lists(out)
+}
+
+// equal scores → uniform weights → plain mean of the values: mean(3,5) = 4.
+test "attention pool with equal scores is the plain mean of values" {
+  let x = matrix.from_lists([[3.0, 5.0]])
+  let w = matrix.from_lists([[0.0, 0.0]])
+  let y = attention_pool_rows(x, w)
+  assert(float.abs(matrix.get(y, 0, 0) - 4.0) < 0.000000001, "mean(3,5)=4")
+}
+
+// a sharply peaked score selects the corresponding value (≈ hard argmax read-out).
+test "a sharply peaked score selects the corresponding value" {
+  let x = matrix.from_lists([[10.0, 20.0, 30.0]])
+  let w = matrix.from_lists([[100.0, 0.0, 0.0]])
+  let y = attention_pool_rows(x, w)
+  assert(float.abs(matrix.get(y, 0, 0) - 10.0) < 0.000000001, "selects x0 = 10")
+}

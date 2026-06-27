@@ -1,0 +1,22 @@
+// sinc — sin(x)/x with the removable singularity sinc(0)=1. The ideal low-pass
+// (brick-wall) impulse response; even, with decaying ripples. Computed on |x|
+// (sinc is even) so the guard branch is symmetric. Elementwise.
+
+import math
+
+fn sinc(m: Matrix) -> Matrix =
+  matrix.map(m, (x) => {
+    let a = float.abs(x)
+    if a < 0.0000001 then 1.0 else math.sin(a) / a
+  })
+
+test "sinc at zero is one" {
+  let y = sinc(matrix.from_lists([[0.0]]))
+  assert_eq(matrix.get(y, 0, 0), 1.0)
+}
+
+// sin(π)/π = 0.
+test "sinc at pi is zero" {
+  let y = sinc(matrix.from_lists([[3.141592653589793]]))
+  assert(float.abs(matrix.get(y, 0, 0)) < 0.000000001, "→ 0")
+}

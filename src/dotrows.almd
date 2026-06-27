@@ -1,0 +1,38 @@
+// dot_rows — row-wise dot product of two matrices:
+//
+//   dot_r = Σ_j a_rj · b_rj
+//
+// One value per row → output (T,1). The unnormalized similarity / bilinear
+// score (cosine_sim_rows without the norm denominators); attention-logit and
+// projection building block. Two-input row reduction.
+
+fn dot_rows(a: Matrix, b: Matrix) -> Matrix = {
+  let ra = matrix.to_lists(a)
+  let rb = matrix.to_lists(b)
+  let (t, _) = matrix.shape(a)
+  var out: List[List[Float]] = []
+  var n = 0
+  while n < t {
+    let an = list.get_or(ra, n, [])
+    let bn = list.get_or(rb, n, [])
+    let dot = list.zip_with(an, bn, (x, y) => x * y) |> list.fold(0.0, (acc, v) => acc + v)
+    out = out + [[dot]]
+    n = n + 1
+  }
+  matrix.from_lists(out)
+}
+
+// dot(a, a) = ‖a‖²: 3²+4² = 25.
+test "dot of a row with itself is squared norm" {
+  let a = matrix.from_lists([[3.0, 4.0]])
+  let y = dot_rows(a, a)
+  assert_eq(matrix.get(y, 0, 0), 25.0)
+}
+
+// orthogonal rows → 0.
+test "dot of orthogonal rows is zero" {
+  let a = matrix.from_lists([[1.0, 0.0]])
+  let b = matrix.from_lists([[0.0, 1.0]])
+  let y = dot_rows(a, b)
+  assert_eq(matrix.get(y, 0, 0), 0.0)
+}

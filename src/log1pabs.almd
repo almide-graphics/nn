@@ -1,0 +1,19 @@
+// log1p_abs — log(1 + |x|). Sign-free log compression of magnitude (positive,
+// monotone in |x|). Useful for heavy-tailed feature squashing. Elementwise.
+
+import math
+
+fn log1p_abs(m: Matrix) -> Matrix =
+  matrix.map(m, (x) => math.log(1.0 + float.abs(x)))
+
+// log(1+0)=0.
+test "log1p_abs at zero is zero" {
+  let y = log1p_abs(matrix.from_lists([[0.0]]))
+  assert_eq(matrix.get(y, 0, 0), 0.0)
+}
+
+// log(1+(e-1)) = log(e) = 1.
+test "log1p_abs at e-1 is one" {
+  let y = log1p_abs(matrix.from_lists([[1.718281828459045]]))
+  assert(float.abs(matrix.get(y, 0, 0) - 1.0) < 0.000000001, "= 1")
+}

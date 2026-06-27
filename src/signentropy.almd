@@ -1,0 +1,43 @@
+// sign_entropy_rows — binary (Bernoulli) entropy of each row's sign distribution (axis=1):
+//   p₊ = (1/D)·#{j : x_{t,j} > 0},   q = 1 − p₊
+//   out_t = −p₊·log(p₊+ε) − q·log(q+ε)                → one value per row (nats), (T,1).
+// How balanced a row's signs are, measured in information: maximal (log 2) when half the
+// entries are positive, → 0 when all share one sign. Distinct from mean_sign_rows (which
+// reports the balance value p₊−q itself) and from entropy_rows (which expects a full
+// probability row); this is the 2-bin entropy of the positivity rate. The +ε handles the
+// degenerate 0·log0 case. Per-row reduction. Output (T,1).
+
+import float
+import math
+
+fn sign_entropy_rows(x: Matrix) -> Matrix = {
+  let rx = matrix.to_lists(x)
+  let (t, d) = matrix.shape(x)
+  let df = int.to_float(d)
+  var out: List[List[Float]] = []
+  var i = 0
+  while i < t {
+    let xi = list.get_or(rx, i, [])
+    let pos = xi |> list.fold(0.0, (acc, v) => acc + (if v > 0.0 then 1.0 else 0.0))
+    let p = pos / df
+    let q = 1.0 - p
+    let h = 0.0 - p * math.log(p + 0.000000000001) - q * math.log(q + 0.000000000001)
+    out = out + [[h]]
+    i = i + 1
+  }
+  matrix.from_lists(out)
+}
+
+// a sign-balanced row (half positive) has the maximal 2-bin entropy log 2.
+test "a sign-balanced row has maximal binary entropy log 2" {
+  let x = matrix.from_lists([[1.0, 0.0 - 1.0]])
+  let y = sign_entropy_rows(x)
+  assert(float.abs(matrix.get(y, 0, 0) - 0.6931471805599453) < 0.000000001, "log 2")
+}
+
+// an all-positive row has p₊=1 → zero sign entropy.
+test "an all-positive row has zero sign entropy" {
+  let x = matrix.from_lists([[1.0, 2.0, 3.0]])
+  let y = sign_entropy_rows(x)
+  assert(float.abs(matrix.get(y, 0, 0)) < 0.000001, "all same sign → ≈ 0")
+}

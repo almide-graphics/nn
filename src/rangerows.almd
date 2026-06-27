@@ -1,0 +1,37 @@
+// range_rows — row-wise range (peak-to-peak):
+//
+//   out_r = max_j x_rj − min_j x_rj
+//
+// One value per row → output (T,1). The spread / dynamic range of each row
+// (numpy ptp); a quantization-scale / outlier-spread statistic. Seeds both folds
+// with the first element (negative-safe). Single-input row reduction.
+
+import math
+
+fn range_rows(x: Matrix) -> Matrix = {
+  let rx = matrix.to_lists(x)
+  let (rows, _) = matrix.shape(x)
+  var out: List[List[Float]] = []
+  var n = 0
+  while n < rows {
+    let xn = list.get_or(rx, n, [])
+    let seed = list.get_or(xn, 0, 0.0)
+    let mx = xn |> list.fold(seed, (acc, v) => math.fmax(acc, v))
+    let mn = xn |> list.fold(seed, (acc, v) => math.fmin(acc, v))
+    out = out + [[mx - mn]]
+    n = n + 1
+  }
+  matrix.from_lists(out)
+}
+
+// constant row → 0 spread.
+test "range of a constant row is zero" {
+  let y = range_rows(matrix.from_lists([[5.0, 5.0, 5.0, 5.0]]))
+  assert_eq(matrix.get(y, 0, 0), 0.0)
+}
+
+// max 5, min 1 → range 4.
+test "range is max minus min" {
+  let y = range_rows(matrix.from_lists([[1.0, 5.0, 3.0]]))
+  assert_eq(matrix.get(y, 0, 0), 4.0)
+}

@@ -1,0 +1,31 @@
+// l1_normalize_rows — row-wise L1 normalization: x_r / (Σ_j |x_rj| + 1e-12).
+// Maps each row onto the L1 unit sphere; useful for attention-weight-like
+// nonnegative mixing and sparse coding.
+
+fn l1_normalize_rows(x: Matrix) -> Matrix = {
+  let rx = matrix.to_lists(x)
+  let (t, _) = matrix.shape(x)
+  var out: List[List[Float]] = []
+  var n = 0
+  while n < t {
+    let xn = list.get_or(rx, n, [])
+    let s = xn |> list.fold(0.0, (acc, v) => acc + float.abs(v))
+    let inv = 1.0 / (s + 0.000000000001)
+    out = out + [list.map(xn, (v) => v * inv)]
+    n = n + 1
+  }
+  matrix.from_lists(out)
+}
+
+// Σ|output| = 1.
+test "l1_normalize makes abs sum one" {
+  let y = l1_normalize_rows(matrix.from_lists([[1.0, 1.0, 1.0, 1.0]]))
+  assert(float.abs(matrix.get(y, 0, 0) - 0.25) < 0.000000001, "1/4")
+}
+
+// Signs preserved, magnitudes scaled by 1/Σ|x|.
+test "l1_normalize preserves signs" {
+  let y = l1_normalize_rows(matrix.from_lists([[3.0, -1.0]]))
+  assert(float.abs(matrix.get(y, 0, 0) - 0.75) < 0.000000001, "0.75")
+  assert(float.abs(matrix.get(y, 0, 1) + 0.25) < 0.000000001, "-0.25")
+}

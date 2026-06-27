@@ -1,0 +1,46 @@
+// cumstd_rows — expanding-window (population) standard deviation over time:
+//   out_t = sqrt(Var(x_{0..t})),   Var = (1/n) Σ_{i≤t} x_i² − μ_t²,   n = t+1
+//   (elementwise per channel).
+// The running spread of a sequence — sqrt of cumvar, built from the same sum /
+// sum-of-squares accumulators. The variance is clamped to ≥ 0 with fmax before the
+// root so that float cancellation on a (near-)constant channel can't feed a tiny
+// negative into sqrt. Row 0 is always 0. O(T), O(D) state. Output (T,D).
+
+import math
+
+fn cumstd_rows(x: Matrix) -> Matrix = {
+  let rx = matrix.to_lists(x)
+  let (t, d) = matrix.shape(x)
+  var s: List[Float] = list.range(0, d) |> list.map((_) => 0.0)
+  var ss: List[Float] = list.range(0, d) |> list.map((_) => 0.0)
+  var out: List[List[Float]] = []
+  var i = 0
+  while i < t {
+    let xi = list.get_or(rx, i, [])
+    s = list.zip_with(s, xi, (a, b) => a + b)
+    ss = list.zip_with(ss, xi, (a, b) => a + b * b)
+    let n = int.to_float(i + 1)
+    let row = list.zip_with(s, ss, (sa, sq) =>
+      math.sqrt(math.fmax(sq / n - (sa / n) * (sa / n), 0.0)))
+    out = out + [row]
+    i = i + 1
+  }
+  matrix.from_lists(out)
+}
+
+// [3,7] → step0 std=0; step1 mean=5, E[x²]=29 → var=29-25=4 → std=2.
+test "cumstd is the running population standard deviation" {
+  let x = matrix.from_lists([[3.0], [7.0]])
+  let y = cumstd_rows(x)
+  assert_eq(matrix.get(y, 0, 0), 0.0)
+  assert_eq(matrix.get(y, 1, 0), 2.0)
+}
+
+// a constant column has zero spread at every step (fmax keeps sqrt off negatives).
+test "cumstd is zero on a constant channel" {
+  let x = matrix.from_lists([[4.0], [4.0], [4.0]])
+  let y = cumstd_rows(x)
+  assert_eq(matrix.get(y, 0, 0), 0.0)
+  assert_eq(matrix.get(y, 1, 0), 0.0)
+  assert_eq(matrix.get(y, 2, 0), 0.0)
+}

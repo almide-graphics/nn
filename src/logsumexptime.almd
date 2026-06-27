@@ -1,0 +1,56 @@
+// logsumexp_time_rows — log-softmax along the time axis (down the rows):
+//   out_{t,c} = x_{t,c} − lse_c,   lse_c = log Σ_t exp(x_{t,c}).
+// The time-direction counterpart of the per-row log_softmax: each column becomes a
+// log-probability distribution over timesteps (Σ_t exp(out_{t,c}) = 1). Numerically
+// stable — subtracts the per-column max before exponentiating. Three passes,
+// O(D) state. Output (T,D).
+
+import math
+
+fn logsumexp_time_rows(x: Matrix) -> Matrix = {
+  let rx = matrix.to_lists(x)
+  let (t, _) = matrix.shape(x)
+  // pass 1: per-column max over time.
+  var m: List[Float] = list.get_or(rx, 0, [])
+  var i = 0
+  while i < t {
+    let xi = list.get_or(rx, i, [])
+    m = list.zip_with(m, xi, (a, b) => math.fmax(a, b))
+    i = i + 1
+  }
+  // pass 2: z_c = Σ_t exp(x_{t,c} − m_c).
+  var z: List[Float] = m |> list.map((_) => 0.0)
+  var k = 0
+  while k < t {
+    let xk = list.get_or(rx, k, [])
+    let e = list.zip_with(xk, m, (a, b) => math.exp(a - b))
+    z = list.zip_with(z, e, (a, b) => a + b)
+    k = k + 1
+  }
+  // lse_c = m_c + log z_c.
+  let lse = list.zip_with(m, z, (a, b) => a + math.log(b))
+  // pass 3: out_{t,c} = x_{t,c} − lse_c.
+  var out: List[List[Float]] = []
+  var j = 0
+  while j < t {
+    let xj = list.get_or(rx, j, [])
+    out = out + [list.zip_with(xj, lse, (a, b) => a - b)]
+    j = j + 1
+  }
+  matrix.from_lists(out)
+}
+
+// equal-value column → uniform log-distribution over time = −log T.
+test "log-softmax over time of equal values is -log T" {
+  let x = matrix.from_lists([[0.0], [0.0]])
+  let y = logsumexp_time_rows(x)
+  assert_eq(matrix.get(y, 0, 0), 0.0 - math.log(2.0))
+  assert_eq(matrix.get(y, 1, 0), 0.0 - math.log(2.0))
+}
+
+// a constant column is uniform over time whatever its level: both rows equal.
+test "log-softmax over time is uniform on a constant channel" {
+  let x = matrix.from_lists([[0.0, 5.0], [0.0, 5.0]])
+  let y = logsumexp_time_rows(x)
+  assert_eq(matrix.get(y, 0, 1), matrix.get(y, 1, 1))
+}

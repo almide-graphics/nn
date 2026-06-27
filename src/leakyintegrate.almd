@@ -1,0 +1,43 @@
+// leaky_integrate_rows — leaky integrator / eligibility trace over time (per channel):
+//   s_t = x_t + β·s_{t-1},   s_0 = x_0,   β = 0.9   → (T,D).
+// An un-normalized exponential accumulator: each input adds in full and the running state decays by
+// β each step. This is the reinforcement-learning eligibility trace, the leaky integrate-and-fire /
+// RC-filter accumulator, and the (un-normalized) decayed memory a linear-attention state carries.
+// Distinct from ema (the convex, normalized smoother h = α·h + (1−α)·x, which can't grow past the
+// input range) and from cumsum (β = 1, a pure non-decaying sum) and decayed_max (a max, not a sum).
+// An impulse leaves a geometric tail; a constant input converges to x/(1−β). Output (T,D).
+
+import float
+
+fn leaky_integrate_rows(x: Matrix) -> Matrix = {
+  let rx = matrix.to_lists(x)
+  let (t, d) = matrix.shape(x)
+  var s = list.get_or(rx, 0, [])
+  var out: List[List[Float]] = []
+  var i = 0
+  while i < t {
+    let xi = list.get_or(rx, i, [])
+    s = if i > 0 then list.zip_with(xi, s, (xv, sv) => xv + 0.9 * sv) else s
+    out = out + [s]
+    i = i + 1
+  }
+  matrix.from_lists(out)
+}
+
+// an impulse decays geometrically by β: [1,0,0] → [1, 0.9, 0.81].
+test "leaky integrator decays an impulse geometrically" {
+  let x = matrix.from_lists([[1.0], [0.0], [0.0]])
+  let y = leaky_integrate_rows(x)
+  assert(float.abs(matrix.get(y, 0, 0) - 1.0) < 0.000000001, "1")
+  assert(float.abs(matrix.get(y, 1, 0) - 0.9) < 0.000000001, "0+0.9·1=0.9")
+  assert(float.abs(matrix.get(y, 2, 0) - 0.81) < 0.000000001, "0+0.9·0.9=0.81")
+}
+
+// a constant input accumulates: [1,1,1] → [1, 1.9, 2.71].
+test "leaky integrator accumulates a constant input" {
+  let x = matrix.from_lists([[1.0], [1.0], [1.0]])
+  let y = leaky_integrate_rows(x)
+  assert(float.abs(matrix.get(y, 0, 0) - 1.0) < 0.000000001, "1")
+  assert(float.abs(matrix.get(y, 1, 0) - 1.9) < 0.000000001, "1+0.9·1=1.9")
+  assert(float.abs(matrix.get(y, 2, 0) - 2.71) < 0.000000001, "1+0.9·1.9=2.71")
+}

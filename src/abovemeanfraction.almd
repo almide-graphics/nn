@@ -1,0 +1,40 @@
+// above_mean_fraction_rows — per-row fraction of entries strictly above the row mean (axis=1):
+//   μ_t = (1/D) Σ_j x_{t,j},   out_t = (1/D) · #{ j : x_{t,j} > μ_t }   → (T,1), ∈ [0,1].
+// A non-parametric / ordinal skewness indicator: a symmetric row puts ~half its mass above the mean
+// (≈0.5), a right-skewed row (a few large values pulling the mean up) leaves fewer entries above it
+// (<0.5), and a left-skewed row gives >0.5. Distinct from skewness_rows, which is the moment-based
+// (3rd standardized moment) measure — this is a robust count-based one, insensitive to the size of
+// outliers. Distinct too from mean_sign_rows (which thresholds at 0, not the mean). Two passes:
+// mean, then a strict-greater tally. Output (T,1).
+
+import float
+
+fn above_mean_fraction_rows(x: Matrix) -> Matrix = {
+  let rx = matrix.to_lists(x)
+  let (t, d) = matrix.shape(x)
+  let df = int.to_float(d)
+  var out: List[List[Float]] = []
+  var i = 0
+  while i < t {
+    let xi = list.get_or(rx, i, [])
+    let mean = (xi |> list.fold(0.0, (acc, v) => acc + v)) / df
+    let cnt = xi |> list.fold(0.0, (acc, v) => acc + (if v > mean then 1.0 else 0.0))
+    out = out + [[cnt / df]]
+    i = i + 1
+  }
+  matrix.from_lists(out)
+}
+
+// symmetric [1,2,3,4]: mean 2.5, entries {3,4} above → 2/4 = 0.5.
+test "above-mean fraction of a symmetric row is one half" {
+  let x = matrix.from_lists([[1.0, 2.0, 3.0, 4.0]])
+  let y = above_mean_fraction_rows(x)
+  assert(float.abs(matrix.get(y, 0, 0) - 0.5) < 0.000000001, "2/4=0.5")
+}
+
+// right-skewed [0,0,0,4]: mean 1, only {4} above → 1/4 = 0.25.
+test "above-mean fraction is small for a right-skewed row" {
+  let x = matrix.from_lists([[0.0, 0.0, 0.0, 4.0]])
+  let y = above_mean_fraction_rows(x)
+  assert(float.abs(matrix.get(y, 0, 0) - 0.25) < 0.000000001, "1/4=0.25")
+}

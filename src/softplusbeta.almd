@@ -1,0 +1,21 @@
+// softplus_beta — temperature softplus: (1/β)·log(1+exp(βx)), stable form.
+//   = (1/β)·( max(βx,0) + log(1+exp(-|βx|)) )
+// β→∞ approaches ReLU; β small is smoother. β scalar. Elementwise.
+
+import math
+
+fn softplus_beta(m: Matrix, beta: Float) -> Matrix =
+  matrix.map(m, (x) =>
+    (math.fmax(beta * x, 0.0) + math.log(1.0 + math.exp(0.0 - float.abs(beta * x)))) / beta)
+
+// softplus_beta(0, β) = log(2)/β.
+test "softplus_beta at zero is log2 over beta" {
+  let y = softplus_beta(matrix.from_lists([[0.0]]), 2.0)
+  assert(float.abs(matrix.get(y, 0, 0) - 0.34657359027997264) < 0.000000001, "log2/2")
+}
+
+// Large positive x → x.
+test "softplus_beta large positive approaches x" {
+  let y = softplus_beta(matrix.from_lists([[30.0]]), 1.0)
+  assert(float.abs(matrix.get(y, 0, 0) - 30.0) < 0.000000001, "≈ x")
+}

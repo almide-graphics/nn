@@ -1,0 +1,41 @@
+// cumvar_rows — expanding-window (population) variance over time (down the rows):
+//   out_t = Var(x_{0..t}) = (1/n) Σ_{i≤t} x_i² − μ_t²,   μ_t = (1/n) Σ_{i≤t} x_i,
+//   n = t+1   (elementwise per channel).
+// The running variance of a sequence, via the sum / sum-of-squares accumulators.
+// Row 0 is always 0 (a single sample has no spread). O(T), O(D) state. Output (T,D).
+
+fn cumvar_rows(x: Matrix) -> Matrix = {
+  let rx = matrix.to_lists(x)
+  let (t, d) = matrix.shape(x)
+  var s: List[Float] = list.range(0, d) |> list.map((_) => 0.0)
+  var ss: List[Float] = list.range(0, d) |> list.map((_) => 0.0)
+  var out: List[List[Float]] = []
+  var i = 0
+  while i < t {
+    let xi = list.get_or(rx, i, [])
+    s = list.zip_with(s, xi, (a, b) => a + b)
+    ss = list.zip_with(ss, xi, (a, b) => a + b * b)
+    let n = int.to_float(i + 1)
+    let row = list.zip_with(s, ss, (sa, sq) => sq / n - (sa / n) * (sa / n))
+    out = out + [row]
+    i = i + 1
+  }
+  matrix.from_lists(out)
+}
+
+// [1,3] → step0 var=0; step1 mean=2, E[x²]=5 → var=5-4=1.
+test "cumvar is the running population variance" {
+  let x = matrix.from_lists([[1.0], [3.0]])
+  let y = cumvar_rows(x)
+  assert_eq(matrix.get(y, 0, 0), 0.0)
+  assert_eq(matrix.get(y, 1, 0), 1.0)
+}
+
+// a constant column has zero variance at every step.
+test "cumvar is zero on a constant channel" {
+  let x = matrix.from_lists([[4.0], [4.0], [4.0]])
+  let y = cumvar_rows(x)
+  assert_eq(matrix.get(y, 0, 0), 0.0)
+  assert_eq(matrix.get(y, 1, 0), 0.0)
+  assert_eq(matrix.get(y, 2, 0), 0.0)
+}

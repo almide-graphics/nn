@@ -1,0 +1,44 @@
+// argmin_rows — per-row hard argmin: the integer index of each row's minimum (axis=1):
+//   out_t = argmin_j x_{t,j}   (first index on ties)   → (T,1), integer-valued.
+// The min-side companion of argmax_rows: the location of the smallest entry in each row (nearest-
+// prototype / lowest-cost selection, the worst-class index). The library carries max/min index pairs
+// throughout (hardmax/hardmin, cumargmax/cumargmin); argmin is a genuinely distinct computation (the
+// strict "<" update, not argmax on negated data). A single scan tracking the best value and its
+// index, earliest index on ties (numpy argmin convention). Output (T,1).
+
+fn argmin_rows(x: Matrix) -> Matrix = {
+  let rx = matrix.to_lists(x)
+  let (t, d) = matrix.shape(x)
+  var out: List[List[Float]] = []
+  var i = 0
+  while i < t {
+    let xi = list.get_or(rx, i, [])
+    var bestv = list.get_or(xi, 0, 0.0)
+    var besti = 0
+    var j = 1
+    while j < d {
+      let v = list.get_or(xi, j, 0.0)
+      besti = if v < bestv then j else besti
+      bestv = if v < bestv then v else bestv
+      j = j + 1
+    }
+    out = out + [[int.to_float(besti)]]
+    i = i + 1
+  }
+  matrix.from_lists(out)
+}
+
+// index of the row minimum: [5,1,3,2] → 1.
+test "argmin returns the index of the row minimum" {
+  let x = matrix.from_lists([[5.0, 1.0, 3.0, 2.0]])
+  let y = argmin_rows(x)
+  assert_eq(matrix.get(y, 0, 0), 1.0)
+}
+
+// minima at the ends: row0 min at last (3), row1 min at first (0).
+test "argmin handles minima at the ends" {
+  let x = matrix.from_lists([[4.0, 3.0, 2.0, 1.0], [1.0, 9.0, 9.0, 9.0]])
+  let y = argmin_rows(x)
+  assert_eq(matrix.get(y, 0, 0), 3.0)
+  assert_eq(matrix.get(y, 1, 0), 0.0)
+}

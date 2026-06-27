@@ -1,0 +1,42 @@
+// abs_diff_rows — absolute first difference over time (down the rows):
+//   out_0 = 0,   out_t = |x_t − x_{t-1}|   (t ≥ 1).
+// The per-step total-variation increment: how far each channel moved since the previous
+// timestep, regardless of direction (the |·| of diff_rows, and the summand of
+// cumsum_abs_diff). A roughness / jerk signal. Carries the previous row forward and takes
+// the absolute change. Row 0 has no predecessor, so it is 0. Output (T,D).
+
+import float
+
+fn abs_diff_rows(x: Matrix) -> Matrix = {
+  let rx = matrix.to_lists(x)
+  let (t, d) = matrix.shape(x)
+  let zero = list.range(0, d) |> list.map((_) => 0.0)
+  var prev: List[Float] = list.get_or(rx, 0, [])
+  var out: List[List[Float]] = []
+  var i = 0
+  while i < t {
+    let xi = list.get_or(rx, i, [])
+    let row = if i == 0 then zero else list.zip_with(prev, xi, (p, c) => float.abs(c - p))
+    out = out + [row]
+    prev = xi
+    i = i + 1
+  }
+  matrix.from_lists(out)
+}
+
+// column 0 = [3,7,2]: |7−3|=4, |2−7|=5.
+test "abs-diff is the magnitude of the step-to-step change" {
+  let x = matrix.from_lists([[3.0], [7.0], [2.0]])
+  let y = abs_diff_rows(x)
+  assert_eq(matrix.get(y, 0, 0), 0.0)
+  assert_eq(matrix.get(y, 1, 0), 4.0)
+  assert_eq(matrix.get(y, 2, 0), 5.0)
+}
+
+// a constant column has zero movement at every step.
+test "abs-diff is zero on a constant column" {
+  let x = matrix.from_lists([[4.0], [4.0], [4.0]])
+  let y = abs_diff_rows(x)
+  assert_eq(matrix.get(y, 1, 0), 0.0)
+  assert_eq(matrix.get(y, 2, 0), 0.0)
+}

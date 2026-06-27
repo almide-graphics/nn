@@ -1,0 +1,27 @@
+// mish — self-regularized activation: x · tanh(softplus(x)).
+//   softplus(x) = max(x,0) + log(1 + exp(-|x|))   (stable)
+//   tanh(y)     = 2/(1 + exp(-2y)) - 1            (no math.tanh in stdlib)
+// Elementwise; helpers keep the map lambda a single expression.
+
+import math
+
+fn sp_scalar(x: Float) -> Float =
+  math.fmax(x, 0.0) + math.log(1.0 + math.exp(0.0 - float.abs(x)))
+
+fn tanh_scalar(y: Float) -> Float =
+  2.0 / (1.0 + math.exp(0.0 - 2.0 * y)) - 1.0
+
+fn mish(m: Matrix) -> Matrix =
+  matrix.map(m, (x) => x * tanh_scalar(sp_scalar(x)))
+
+// mish(0) = 0 · tanh(softplus(0)) = 0.
+test "mish at zero is zero" {
+  let y = mish(matrix.from_lists([[0.0]]))
+  assert_eq(matrix.get(y, 0, 0), 0.0)
+}
+
+// Large positive x → softplus≈x, tanh≈1 → mish≈x.
+test "mish large positive approaches x" {
+  let y = mish(matrix.from_lists([[20.0]]))
+  assert(float.abs(matrix.get(y, 0, 0) - 20.0) < 0.0001, "≈ x")
+}

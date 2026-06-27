@@ -1,0 +1,42 @@
+// hinge_rows — row-wise SVM hinge loss between targets t (±1) and scores s:
+//
+//   hinge_r = (1/D) · Σ_j max(0, 1 − t_rj·s_rj)
+//
+// One value per row → output (T,1). Zero once the margin (t·s ≥ 1) is met, linear
+// penalty inside the margin — the max-margin / SVM objective. Two-input row
+// reduction.
+
+import math
+
+fn hinge_rows(t: Matrix, s: Matrix) -> Matrix = {
+  let rt = matrix.to_lists(t)
+  let rs = matrix.to_lists(s)
+  let (rows, d) = matrix.shape(t)
+  let df = int.to_float(d)
+  var out: List[List[Float]] = []
+  var n = 0
+  while n < rows {
+    let tn = list.get_or(rt, n, [])
+    let sn = list.get_or(rs, n, [])
+    let h = list.zip_with(tn, sn, (tj, sj) => math.fmax(0.0, 1.0 - tj * sj)) |> list.fold(0.0, (acc, v) => acc + v)
+    out = out + [[h / df]]
+    n = n + 1
+  }
+  matrix.from_lists(out)
+}
+
+// margin satisfied (t·s ≥ 1) → loss 0.
+test "hinge is zero when margin satisfied" {
+  let t = matrix.from_lists([[1.0, -1.0]])
+  let s = matrix.from_lists([[2.0, -2.0]])
+  let y = hinge_rows(t, s)
+  assert_eq(matrix.get(y, 0, 0), 0.0)
+}
+
+// margin violated: max(0,1-0)=1, max(0,1-0.5)=0.5 → mean 0.75.
+test "hinge penalizes margin violation" {
+  let t = matrix.from_lists([[1.0, 1.0]])
+  let s = matrix.from_lists([[0.0, 0.5]])
+  let y = hinge_rows(t, s)
+  assert(float.abs(matrix.get(y, 0, 0) - 0.75) < 0.000000001, "= 0.75")
+}

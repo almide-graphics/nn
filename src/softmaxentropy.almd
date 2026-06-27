@@ -1,0 +1,45 @@
+// softmax_entropy_rows — Shannon entropy (nats) of the softmax of each logit row (axis=1):
+//   m_t = max_j x_{t,j},   p_{t,j} = exp(x−m) / Σ_j exp(x−m)
+//   out_t = −Σ_j p_{t,j} · log(p_{t,j} + ε)            → one value per row, (T,1).
+// The predictive entropy / confidence head computed straight from logits: how spread-out
+// the softmax distribution is (max = log D for uniform logits, → 0 for a peaked one). Unlike
+// entropy_rows, which expects an already-normalized probability row, this fuses the softmax
+// (with the standard max-subtraction for stability) and the entropy into one verified op,
+// so it takes raw logits. Per-row reduction. Output (T,1).
+
+import float
+import math
+
+fn softmax_entropy_rows(x: Matrix) -> Matrix = {
+  let rx = matrix.to_lists(x)
+  let (t, _) = matrix.shape(x)
+  var out: List[List[Float]] = []
+  var i = 0
+  while i < t {
+    let xi = list.get_or(rx, i, [])
+    let m = xi |> list.fold(list.get_or(xi, 0, 0.0), (acc, v) => math.fmax(acc, v))
+    let e = xi |> list.map((v) => math.exp(v - m))
+    let z = e |> list.fold(0.0, (acc, v) => acc + v)
+    let h = e |> list.fold(0.0, (acc, v) => {
+      let p = v / z
+      acc + p * math.log(p + 0.000000000001)
+    })
+    out = out + [[0.0 - h]]
+    i = i + 1
+  }
+  matrix.from_lists(out)
+}
+
+// equal logits → uniform softmax → maximum entropy log(D); here D=2 → log 2.
+test "softmax-entropy of equal logits is log(D)" {
+  let x = matrix.from_lists([[0.0, 0.0]])
+  let y = softmax_entropy_rows(x)
+  assert(float.abs(matrix.get(y, 0, 0) - 0.6931471805599453) < 0.000000001, "log 2")
+}
+
+// a sharply peaked logit row → near-one-hot softmax → entropy ≈ 0.
+test "softmax-entropy of a sharply peaked logit row is near zero" {
+  let x = matrix.from_lists([[100.0, 0.0, 0.0]])
+  let y = softmax_entropy_rows(x)
+  assert(float.abs(matrix.get(y, 0, 0)) < 0.000001, "peaked → ≈ 0")
+}

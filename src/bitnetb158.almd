@@ -1,0 +1,63 @@
+// bitnet_b158_scaled_rows — BitNet b1.58 dequantized weight (Ma et al. 2024).
+//   γ = (1 / (T·D)) Σ_{t,j} |x_{t,j}|          (per-tensor absmean scale)
+//   u_{t,j} = x_{t,j} / γ
+//   code   = +1 if u > 0.5 ; −1 if u < −0.5 ; 0 otherwise        (ternary snap)
+//   out    = γ · code                                            ∈ {−γ, 0, +γ}
+// The real-valued reconstruction that BitNet b1.58 actually multiplies with at
+// inference: bitnet_absmean_rows gives the {−1,0,1} code, this scales it back by the
+// per-tensor mean magnitude γ. It is the b1.58 analogue of bitnet_quant_scaled_rows
+// (which is the binary b1 dequant β·sign⁺) and the per-tensor analogue of
+// ternary_scaled_rows (which uses a per-row α). round() is unavailable, so the snap is
+// a ±0.5 threshold on u. Two passes (absmean over all cells, then per-cell snap·γ).
+// Output (T,D).
+
+import float
+
+fn bitnet_b158_scaled_rows(x: Matrix) -> Matrix = {
+  let rx = matrix.to_lists(x)
+  let (t, d) = matrix.shape(x)
+  let n = int.to_float(t * d)
+  // pass 1: sum of absolute values over the whole tensor → per-tensor absmean γ.
+  var total = 0.0
+  var p = 0
+  while p < t {
+    let xp = list.get_or(rx, p, [])
+    let s = xp |> list.fold(0.0, (acc, v) => acc + float.abs(v))
+    total = total + s
+    p = p + 1
+  }
+  let gamma = total / n
+  // pass 2: snap u = x/γ to {−1,0,1} via a ±0.5 threshold, then scale back by γ.
+  var out: List[List[Float]] = []
+  var i = 0
+  while i < t {
+    let xi = list.get_or(rx, i, [])
+    let row = xi |> list.map((v) => {
+      let u = v / gamma
+      let code = if u > 0.5 then 1.0 else (if u < (0.0 - 0.5) then 0.0 - 1.0 else 0.0)
+      gamma * code
+    })
+    out = out + [row]
+    i = i + 1
+  }
+  matrix.from_lists(out)
+}
+
+// Σ|x| = 8 over 4 cells → γ = 2; u = {3,0,0,1} → codes {+1,0,0,+1} → dequant {2,0,0,2}.
+test "b1.58 dequant scales the ternary code back by per-tensor γ" {
+  let x = matrix.from_lists([[6.0, 0.0], [0.0, 2.0]])
+  let y = bitnet_b158_scaled_rows(x)
+  assert(float.abs(matrix.get(y, 0, 0) - 2.0) < 0.000000001, "+γ")
+  assert_eq(matrix.get(y, 0, 1), 0.0)
+  assert_eq(matrix.get(y, 1, 0), 0.0)
+  assert(float.abs(matrix.get(y, 1, 1) - 2.0) < 0.000000001, "+γ")
+}
+
+// γ = 2; strongly negative entry → −γ, strongly positive → +γ, dead-zone → 0.
+test "b1.58 dequant yields −γ for negative, +γ for positive entries" {
+  let x = matrix.from_lists([[0.0 - 6.0, 0.0], [2.0, 0.0]])
+  let y = bitnet_b158_scaled_rows(x)
+  assert(float.abs(matrix.get(y, 0, 0) - (0.0 - 2.0)) < 0.000000001, "−γ")
+  assert(float.abs(matrix.get(y, 1, 0) - 2.0) < 0.000000001, "+γ")
+  assert_eq(matrix.get(y, 0, 1), 0.0)
+}

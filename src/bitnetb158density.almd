@@ -1,0 +1,54 @@
+// bitnet_b158_density_rows — kept-weight density of BitNet b1.58 quantization, per row.
+//   γ   = (1 / (T·D)) Σ_{t,j} |x_{t,j}|              (per-tensor absmean scale)
+//   out_t = (1/D) Σ_j [ |x_{t,j}| > 0.5·γ ]          → one fraction per row, (T,1).
+// The share of each row's weights that survive the b1.58 dead-zone (|x/γ| > 0.5 ⇔ code ≠ 0),
+// i.e. 1 − sparsity under the per-tensor absmean quantizer bitnet_absmean_rows. Distinct from
+// ternary_density_rows, which uses a per-row TWN cut Δ = 0.7·E|x| computed independently for
+// each row; here the threshold 0.5·γ is shared across the whole tensor, so a row's density
+// depends on the global scale. Two passes (γ over all cells, then a per-row count). (T,1).
+
+import float
+
+fn bitnet_b158_density_rows(x: Matrix) -> Matrix = {
+  let rx = matrix.to_lists(x)
+  let (t, d) = matrix.shape(x)
+  let n = int.to_float(t * d)
+  let df = int.to_float(d)
+  // pass 1: per-tensor absmean γ.
+  var total = 0.0
+  var p = 0
+  while p < t {
+    let xp = list.get_or(rx, p, [])
+    let s = xp |> list.fold(0.0, (acc, v) => acc + float.abs(v))
+    total = total + s
+    p = p + 1
+  }
+  let gamma = total / n
+  let thr = 0.5 * gamma
+  // pass 2: per-row fraction with |x| above the shared 0.5γ cut.
+  var out: List[List[Float]] = []
+  var i = 0
+  while i < t {
+    let xi = list.get_or(rx, i, [])
+    let count = xi |> list.fold(0.0, (acc, v) => acc + (if float.abs(v) > thr then 1.0 else 0.0))
+    out = out + [[count / df]]
+    i = i + 1
+  }
+  matrix.from_lists(out)
+}
+
+// single row → γ = mean|x| = 1, thr = 0.5; only the 4 clears it → density 1/4.
+test "b1.58 density is the fraction of weights above the 0.5γ cut" {
+  let x = matrix.from_lists([[4.0, 0.0, 0.0, 0.0]])
+  let y = bitnet_b158_density_rows(x)
+  assert(float.abs(matrix.get(y, 0, 0) - 0.25) < 0.000000001, "1/4")
+}
+
+// γ is shared across rows (per-tensor): Σ|x|=4 over 4 cells → γ=1, thr=0.5.
+//   row0 [2,2] all kept → 1.0 ; row1 [0,0] none kept → 0.0.
+test "b1.58 density shares one per-tensor γ across all rows" {
+  let x = matrix.from_lists([[2.0, 2.0], [0.0, 0.0]])
+  let y = bitnet_b158_density_rows(x)
+  assert(float.abs(matrix.get(y, 0, 0) - 1.0) < 0.000000001, "row0 all kept")
+  assert(float.abs(matrix.get(y, 1, 0)) < 0.000000001, "row1 none kept")
+}

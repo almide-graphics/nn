@@ -1,0 +1,45 @@
+// softmax_collision_entropy_rows — Rényi-2 (collision) entropy of softmax(logits) (axis=1):
+//   m_t = max_j x_{t,j},   p_{t,j} = exp(x−m) / Σ_j exp(x−m)
+//   out_t = −log( Σ_j p_{t,j}² + ε )                  → one value per row, (T,1).
+// The order-2 Rényi entropy: −log of the collision probability Σp² (the chance two
+// independent draws land on the same class). Like softmax_entropy_rows it peaks at log D for
+// a uniform row and → 0 for a peaked one, but it is a different functional (a single log of
+// the second moment, not −Σ p log p) and weights the dominant classes more — exp(−out) is
+// the inverse participation ratio. Distinct from the Shannon head. Per-row reduction. (T,1).
+
+import float
+import math
+
+fn softmax_collision_entropy_rows(x: Matrix) -> Matrix = {
+  let rx = matrix.to_lists(x)
+  let (t, _) = matrix.shape(x)
+  var out: List[List[Float]] = []
+  var i = 0
+  while i < t {
+    let xi = list.get_or(rx, i, [])
+    let m = xi |> list.fold(list.get_or(xi, 0, 0.0), (acc, v) => math.fmax(acc, v))
+    let e = xi |> list.map((v) => math.exp(v - m))
+    let z = e |> list.fold(0.0, (acc, v) => acc + v)
+    let sumsq = e |> list.fold(0.0, (acc, v) => {
+      let p = v / z
+      acc + p * p
+    })
+    out = out + [[0.0 - math.log(sumsq + 0.000000000001)]]
+    i = i + 1
+  }
+  matrix.from_lists(out)
+}
+
+// equal logits → uniform softmax → Σp² = 1/D → collision entropy log(D); D=2 → log 2.
+test "collision-entropy of equal logits is log(D)" {
+  let x = matrix.from_lists([[0.0, 0.0]])
+  let y = softmax_collision_entropy_rows(x)
+  assert(float.abs(matrix.get(y, 0, 0) - 0.6931471805599453) < 0.000000001, "log 2")
+}
+
+// a sharply peaked logit row → Σp² ≈ 1 → collision entropy ≈ 0.
+test "collision-entropy of a sharply peaked logit row is near zero" {
+  let x = matrix.from_lists([[100.0, 0.0, 0.0]])
+  let y = softmax_collision_entropy_rows(x)
+  assert(float.abs(matrix.get(y, 0, 0)) < 0.000001, "peaked → ≈ 0")
+}

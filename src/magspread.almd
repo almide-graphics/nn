@@ -1,0 +1,57 @@
+// magnitude_spread_rows — per-row magnitude-weighted positional spread (axis=1):
+//   c_t = Σ_j j·|x_{t,j}| / (Σ_j |x_{t,j}| + ε)   (the magnitude centroid),
+//   out_t = sqrt( Σ_j |x_{t,j}|·(j − c_t)² / (Σ_j |x_{t,j}| + ε) )   → (T,1).
+// The spectral-bandwidth analogue: the standard deviation of feature *positions* weighted by their
+// magnitude — how spread out the energy is around its centroid (0 when all energy sits at one index,
+// large when split across the ends). It is the second central moment of the |x|-over-position
+// distribution, the companion to magnitude_centroid_rows (the first moment). Distinct from
+// softmax_weighted_var (variance of the *values* under a softmax) and from magnitude_entropy (the
+// entropy of the magnitude profile). Two passes (centroid, then weighted positional variance). Output (T,1).
+
+import float
+import math
+
+fn magnitude_spread_rows(x: Matrix) -> Matrix = {
+  let rx = matrix.to_lists(x)
+  let (t, d) = matrix.shape(x)
+  var out: List[List[Float]] = []
+  var i = 0
+  while i < t {
+    let xi = list.get_or(rx, i, [])
+    var num = 0.0
+    var den = 0.0
+    var j = 0
+    while j < d {
+      let a = float.abs(list.get_or(xi, j, 0.0))
+      num = num + int.to_float(j) * a
+      den = den + a
+      j = j + 1
+    }
+    let c = num / (den + 0.000000000001)
+    var s = 0.0
+    var k = 0
+    while k < d {
+      let a = float.abs(list.get_or(xi, k, 0.0))
+      let dev = int.to_float(k) - c
+      s = s + a * dev * dev
+      k = k + 1
+    }
+    out = out + [[math.sqrt(s / (den + 0.000000000001))]]
+    i = i + 1
+  }
+  matrix.from_lists(out)
+}
+
+// all energy at one index → zero spread.
+test "magnitude spread is zero when energy is at one index" {
+  let x = matrix.from_lists([[0.0, 0.0, 5.0, 0.0]])
+  let y = magnitude_spread_rows(x)
+  assert(float.abs(matrix.get(y, 0, 0)) < 0.0000001, "0")
+}
+
+// equal mass at indices 0 and 3: centroid 1.5, spread sqrt((2.25+2.25)/2) = 1.5.
+test "magnitude spread measures the bandwidth around the centroid" {
+  let x = matrix.from_lists([[1.0, 0.0, 0.0, 1.0]])
+  let y = magnitude_spread_rows(x)
+  assert(float.abs(matrix.get(y, 0, 0) - 1.5) < 0.0000001, "sqrt(2.25)=1.5")
+}

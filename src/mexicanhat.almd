@@ -1,0 +1,20 @@
+// mexican_hat — (1 - x²)·exp(-x²/2), the Ricker / Mexican-hat wavelet
+// (∝ second derivative of a Gaussian). Even, peaks at 1, crosses zero at ±1,
+// with negative side-lobes. A band-pass / blob detector. Elementwise.
+
+import math
+
+fn mexican_hat(m: Matrix) -> Matrix =
+  matrix.map(m, (x) => (1.0 - x * x) * math.exp(0.0 - x * x / 2.0))
+
+test "mexican_hat peaks at one when x=0" {
+  let y = mexican_hat(matrix.from_lists([[0.0]]))
+  assert_eq(matrix.get(y, 0, 0), 1.0)
+}
+
+// zero crossings at ±1; even.
+test "mexican_hat zero at 1 and even" {
+  let y = mexican_hat(matrix.from_lists([[1.0, -1.0]]))
+  assert_eq(matrix.get(y, 0, 0), 0.0)
+  assert_eq(matrix.get(y, 0, 1), 0.0)
+}

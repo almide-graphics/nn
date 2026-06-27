@@ -1,0 +1,51 @@
+// ternary_cosine_rows — row-wise cosine similarity of two matrices' TWN ternary codes.
+//   Δa_t = 0.7·(1/D)Σ_j|a_{t,j}|,  Δb_t = 0.7·(1/D)Σ_j|b_{t,j}|   (each row's own threshold)
+//   code(x,Δ) = +1 if x>Δ ; −1 if x<−Δ ; 0 otherwise
+//   out_t = Σ_j ca·cb / ( sqrt( (Σ_j ca²)(Σ_j cb²) ) + ε )   ∈ [−1, 1],  (T,1).
+// The normalized ternary inner product: ternary_dot_rows divided by the geometric mean of
+// the two support sizes (Σ code² = number of kept weights). Unlike ternary_dot it is
+// scale-free in the supports — a direction-only agreement of the two quantized rows
+// (1 = identical code direction, −1 = fully opposed, 0 = orthogonal / disjoint supports).
+// Distinct from cosine_sim_rows, which uses the real vectors. The +ε guards an all-dead-zone
+// row. Two-input row reduction. Output (T,1).
+
+import float
+import math
+
+fn ternary_cosine_rows(a: Matrix, b: Matrix) -> Matrix = {
+  let ra = matrix.to_lists(a)
+  let rb = matrix.to_lists(b)
+  let (t, d) = matrix.shape(a)
+  let df = int.to_float(d)
+  var out: List[List[Float]] = []
+  var i = 0
+  while i < t {
+    let ai = list.get_or(ra, i, [])
+    let bi = list.get_or(rb, i, [])
+    let da = 0.7 * ((ai |> list.fold(0.0, (acc, v) => acc + float.abs(v))) / df)
+    let db = 0.7 * ((bi |> list.fold(0.0, (acc, v) => acc + float.abs(v))) / df)
+    let ca = ai |> list.map((u) => if u > da then 1.0 else (if u < (0.0 - da) then 0.0 - 1.0 else 0.0))
+    let cb = bi |> list.map((v) => if v > db then 1.0 else (if v < (0.0 - db) then 0.0 - 1.0 else 0.0))
+    let dot = list.zip_with(ca, cb, (x, y) => x * y) |> list.fold(0.0, (acc, p) => acc + p)
+    let na = ca |> list.fold(0.0, (acc, x) => acc + x * x)
+    let nb = cb |> list.fold(0.0, (acc, x) => acc + x * x)
+    out = out + [[dot / (math.sqrt(na * nb) + 0.000000000001)]]
+    i = i + 1
+  }
+  matrix.from_lists(out)
+}
+
+// a code vector is perfectly aligned with itself → cosine 1.
+test "ternary-cosine of a matrix with itself is one" {
+  let a = matrix.from_lists([[3.0, 0.0 - 4.0, 0.1, 2.0]])
+  let y = ternary_cosine_rows(a, a)
+  assert(float.abs(matrix.get(y, 0, 0) - 1.0) < 0.000000001, "self → 1")
+}
+
+// a→[+1,−1] (Δ=2.45), b→[−1,+1]: dot −2, supports 2 and 2 → cos −2/2 = −1 (fully opposed).
+test "fully-opposed ternary codes give cosine −1" {
+  let a = matrix.from_lists([[3.0, 0.0 - 4.0]])
+  let b = matrix.from_lists([[0.0 - 3.0, 4.0]])
+  let y = ternary_cosine_rows(a, b)
+  assert(float.abs(matrix.get(y, 0, 0) - (0.0 - 1.0)) < 0.000000001, "opposed → −1")
+}

@@ -1,0 +1,19 @@
+// inv_sqrt1px2 — x / √(1 + x²). An exp-free algebraic sigmoid: odd, saturates
+// to ±1, ISRU-with-α=1. Cheaper than tanh, no overflow. Elementwise.
+
+import math
+
+fn inv_sqrt1px2(m: Matrix) -> Matrix =
+  matrix.map(m, (x) => x / math.sqrt(1.0 + x * x))
+
+test "inv_sqrt1px2 at zero is zero" {
+  let y = inv_sqrt1px2(matrix.from_lists([[0.0]]))
+  assert_eq(matrix.get(y, 0, 0), 0.0)
+}
+
+// 1/√2 at x=1; odd.
+test "inv_sqrt1px2 at 1 and odd" {
+  let y = inv_sqrt1px2(matrix.from_lists([[1.0, -1.0]]))
+  assert(float.abs(matrix.get(y, 0, 0) - 0.7071067811865475) < 0.000000001, "1/√2")
+  assert(float.abs(matrix.get(y, 0, 1) + 0.7071067811865475) < 0.000000001, "odd")
+}

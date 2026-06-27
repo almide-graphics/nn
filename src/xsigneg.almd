@@ -1,0 +1,20 @@
+// x_times_sigmoid_neg — x·σ(-x) = x/(1+eˣ). The complement of SiLU
+// (x = silu(x) + x_times_sigmoid_neg(x)): passes x through for x≪0, gates to 0
+// for x≫0 — a "negative-pass" reverse SiLU. Elementwise.
+
+import math
+
+fn x_times_sigmoid_neg(m: Matrix) -> Matrix =
+  matrix.map(m, (x) => x * (1.0 / (1.0 + math.exp(x))))
+
+test "x_times_sigmoid_neg at zero is zero" {
+  let y = x_times_sigmoid_neg(matrix.from_lists([[0.0]]))
+  assert_eq(matrix.get(y, 0, 0), 0.0)
+}
+
+// large + gates to 0; large - passes x through.
+test "x_times_sigmoid_neg saturation" {
+  let y = x_times_sigmoid_neg(matrix.from_lists([[30.0, -30.0]]))
+  assert(float.abs(matrix.get(y, 0, 0)) < 0.000000001, "→ 0")
+  assert(float.abs(matrix.get(y, 0, 1) + 30.0) < 0.000000001, "→ x")
+}

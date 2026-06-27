@@ -1,0 +1,45 @@
+// dirichlet_energy_rows — per-row Dirichlet energy (axis=1):
+//   out_t = Σ_{j=0}^{D-2} (x_{t,j+1} − x_{t,j})²   → (T,1).
+// The squared-gradient smoothness of a row: the L2 energy of the adjacent differences, the quadratic
+// form xᵀLx of the 1-D path Laplacian. It is what Tikhonov / graph-Laplacian smoothness regularizers
+// penalize (penalizing big jumps quadratically, so a single large step costs far more than several
+// small ones). The L2 companion of total_variation_rows (which sums |Δ|, the L1 path length) — the
+// two relate exactly as l1_dist and l2_dist do. Distinct also from squared_diff_rows, the per-step
+// (x_t−x_{t-1})² along the *time* axis kept at shape (T,D); this reduces along the feature axis to
+// (T,1). One adjacent-difference scan. Output (T,1).
+
+import float
+
+fn dirichlet_energy_rows(x: Matrix) -> Matrix = {
+  let rx = matrix.to_lists(x)
+  let (t, d) = matrix.shape(x)
+  var out: List[List[Float]] = []
+  var i = 0
+  while i < t {
+    let xi = list.get_or(rx, i, [])
+    var s = 0.0
+    var j = 0
+    while j < d - 1 {
+      let dv = list.get_or(xi, j + 1, 0.0) - list.get_or(xi, j, 0.0)
+      s = s + dv * dv
+      j = j + 1
+    }
+    out = out + [[s]]
+    i = i + 1
+  }
+  matrix.from_lists(out)
+}
+
+// a constant row has no gradient → zero energy.
+test "dirichlet energy of a constant row is zero" {
+  let x = matrix.from_lists([[5.0, 5.0, 5.0]])
+  let y = dirichlet_energy_rows(x)
+  assert(float.abs(matrix.get(y, 0, 0)) < 0.000000001, "0")
+}
+
+// large jumps are penalized quadratically: [0,3,0] → 9 + 9 = 18 (vs TV's 3+3=6).
+test "dirichlet energy sums squared adjacent gaps" {
+  let x = matrix.from_lists([[0.0, 3.0, 0.0]])
+  let y = dirichlet_energy_rows(x)
+  assert(float.abs(matrix.get(y, 0, 0) - 18.0) < 0.000000001, "9+9=18")
+}

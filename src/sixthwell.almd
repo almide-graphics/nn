@@ -1,0 +1,22 @@
+// sixth_well — (x²-1)³. A degree-6 even polynomial with triple roots at x=±1:
+// negative inside the wells (-1 at x=0), positive outside, with flatter zero-
+// crossings than (x²-1)². A sharper-floored bistable landscape. Elementwise.
+
+fn sixth_well(m: Matrix) -> Matrix =
+  matrix.map(m, (x) => {
+    let s = x * x - 1.0
+    s * s * s
+  })
+
+// triple roots at x=±1 are exactly 0.
+test "sixth_well roots at plus minus one" {
+  let y = sixth_well(matrix.from_lists([[1.0, -1.0]]))
+  assert_eq(matrix.get(y, 0, 0), 0.0)
+  assert_eq(matrix.get(y, 0, 1), 0.0)
+}
+
+// (0-1)³ = -1 at x=0 (well floor).
+test "sixth_well floor at zero is minus one" {
+  let y = sixth_well(matrix.from_lists([[0.0]]))
+  assert_eq(matrix.get(y, 0, 0), 0.0 - 1.0)
+}

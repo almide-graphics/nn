@@ -1,0 +1,53 @@
+// rank_rows — per-row ordinal rank transform (axis=1):
+//   out_{t,j} = #{ k : x_{t,k} < x_{t,j} }   → (T,D), integer-valued ranks in 0 … D−1.
+// Each entry is replaced by its rank within the row (0 = smallest), the rank transform that underlies
+// rank normalization, Spearman correlation and rank-based attention. It is computed by an all-pairs
+// count — the same sort-free O(D²) pattern as gini_coeff_abs_rows — so no list.sort is needed; the
+// strict "<" comparison gives the standard ordinal rank (for continuous data there are no ties, so the
+// ranks are a permutation of 0 … D−1). Distinct from argmax_rows (which returns only the top index)
+// and from any sort (this places each element's rank in situ, keeping the (T,D) layout). Output (T,D).
+
+import float
+
+fn rank_rows(x: Matrix) -> Matrix = {
+  let rx = matrix.to_lists(x)
+  let (t, d) = matrix.shape(x)
+  var out: List[List[Float]] = []
+  var i = 0
+  while i < t {
+    let xi = list.get_or(rx, i, [])
+    var row: List[Float] = []
+    var j = 0
+    while j < d {
+      let xj = list.get_or(xi, j, 0.0)
+      var cnt = 0
+      var k = 0
+      while k < d {
+        cnt = if list.get_or(xi, k, 0.0) < xj then cnt + 1 else cnt
+        k = k + 1
+      }
+      row = row + [int.to_float(cnt)]
+      j = j + 1
+    }
+    out = out + [row]
+    i = i + 1
+  }
+  matrix.from_lists(out)
+}
+
+// rank within a row: 3 is largest → 2, 1 is smallest → 0, 2 → 1.
+test "rank gives each element's ordinal position" {
+  let x = matrix.from_lists([[3.0, 1.0, 2.0]])
+  let y = rank_rows(x)
+  assert(float.abs(matrix.get(y, 0, 0) - 2.0) < 0.000000001, "3 → 2")
+  assert(float.abs(matrix.get(y, 0, 1)) < 0.000000001, "1 → 0")
+  assert(float.abs(matrix.get(y, 0, 2) - 1.0) < 0.000000001, "2 → 1")
+}
+
+// an ascending row maps to the identity ranking 0,1,2,3.
+test "rank of an ascending row is the identity" {
+  let x = matrix.from_lists([[10.0, 20.0, 30.0, 40.0]])
+  let y = rank_rows(x)
+  assert(float.abs(matrix.get(y, 0, 0)) < 0.000000001, "0")
+  assert(float.abs(matrix.get(y, 0, 3) - 3.0) < 0.000000001, "3")
+}

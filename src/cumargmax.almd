@@ -1,0 +1,55 @@
+// cumargmax_rows — cumulative argmax over time (down the rows, per channel):
+//   out_{t,j} = argmax_{0 ≤ i ≤ t} x_{i,j}   (the row index where the running maximum first occurred)
+//   → (T,D), integer-valued.
+// Tracks *where* the best-so-far happened, not its value: the running peak-position used in online
+// max-tracking, beam/peak detection and "argmax up to now" queries. Distinct from cummax_rows, which
+// returns the running maximum *value* — this returns its location. Ties resolve to the earliest index
+// (strict ">" update), matching numpy's argmax convention. One O(D) carry of (best value, best index)
+// scanned over time. Output (T,D).
+
+fn cumargmax_rows(x: Matrix) -> Matrix = {
+  let rx = matrix.to_lists(x)
+  let (t, d) = matrix.shape(x)
+  var best = list.get_or(rx, 0, [])
+  var bidx: List[Float] = list.range(0, d) |> list.map((_) => 0.0)
+  var out: List[List[Float]] = []
+  var i = 0
+  while i < t {
+    let xi = list.get_or(rx, i, [])
+    var nb: List[Float] = []
+    var nx: List[Float] = []
+    var j = 0
+    while j < d {
+      let xv = list.get_or(xi, j, 0.0)
+      let bv = list.get_or(best, j, 0.0)
+      let iv = list.get_or(bidx, j, 0.0)
+      let upd = xv > bv
+      nb = nb + [if upd then xv else bv]
+      nx = nx + [if upd then int.to_float(i) else iv]
+      j = j + 1
+    }
+    best = nb
+    bidx = nx
+    out = out + [bidx]
+    i = i + 1
+  }
+  matrix.from_lists(out)
+}
+
+// an increasing column: the running argmax is always the current index → [0,1,2].
+test "cumulative argmax of an increasing column tracks the current index" {
+  let x = matrix.from_lists([[1.0], [2.0], [3.0]])
+  let y = cumargmax_rows(x)
+  assert_eq(matrix.get(y, 0, 0), 0.0)
+  assert_eq(matrix.get(y, 1, 0), 1.0)
+  assert_eq(matrix.get(y, 2, 0), 2.0)
+}
+
+// an early peak then smaller values: the index stays at the peak → [0,0,0].
+test "cumulative argmax stays at the earlier peak" {
+  let x = matrix.from_lists([[5.0], [1.0], [3.0]])
+  let y = cumargmax_rows(x)
+  assert_eq(matrix.get(y, 0, 0), 0.0)
+  assert_eq(matrix.get(y, 1, 0), 0.0)
+  assert_eq(matrix.get(y, 2, 0), 0.0)
+}

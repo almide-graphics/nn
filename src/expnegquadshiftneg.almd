@@ -1,0 +1,20 @@
+// exp_neg_quad_shift_neg — exp(-(x+2)²). A Gaussian RBF centered at -2 (mirror of
+// exp_neg_quad_shift). Together with the centers {-2,-1,1,2} it gives a symmetric
+// 4-atom RBF basis. Peaks at -2, symmetric about it. Elementwise.
+
+import math
+
+fn exp_neg_quad_shift_neg(m: Matrix) -> Matrix =
+  matrix.map(m, (x) => math.exp(0.0 - (x + 2.0) * (x + 2.0)))
+
+test "exp_neg_quad_shift_neg peaks at one when x=-2" {
+  let y = exp_neg_quad_shift_neg(matrix.from_lists([[-2.0]]))
+  assert_eq(matrix.get(y, 0, 0), 1.0)
+}
+
+// symmetric about x=-2: values at -1 and -3 are both exp(-1).
+test "exp_neg_quad_shift_neg symmetric about minus two" {
+  let y = exp_neg_quad_shift_neg(matrix.from_lists([[-1.0, -3.0]]))
+  assert(float.abs(matrix.get(y, 0, 0) - 0.36787944117144233) < 0.000000001, "e⁻¹")
+  assert(float.abs(matrix.get(y, 0, 1) - 0.36787944117144233) < 0.000000001, "sym")
+}

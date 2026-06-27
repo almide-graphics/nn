@@ -1,0 +1,51 @@
+// dilation1d_rows — 1-D grayscale morphological dilation along each row (axis=1):
+//   out_{t,j} = max( x_{t,j-1}, x_{t,j}, x_{t,j+1} )   (edge replication at the borders)   → (T,D).
+// The sliding 3-window maximum (stride 1, same padding): every position takes the largest value in
+// its immediate neighbourhood, so bright peaks spread outward and thin gaps fill in. This is the
+// max-companion of median3_filter_rows (which takes the window median) and is distinct from
+// max_pool1d (k=2, stride 2, which *downsamples* to (T,D/2)) — dilation keeps the (T,D) shape. Erosion
+// (the min-window filter) is the dual. One neighbourhood scan with replicated edges. Output (T,D).
+
+import float
+import math
+
+fn dilation1d_rows(x: Matrix) -> Matrix = {
+  let rx = matrix.to_lists(x)
+  let (t, d) = matrix.shape(x)
+  var out: List[List[Float]] = []
+  var i = 0
+  while i < t {
+    let xi = list.get_or(rx, i, [])
+    var row: List[Float] = []
+    var j = 0
+    while j < d {
+      let lo = if j > 0 then j - 1 else 0
+      let hi = if j < d - 1 then j + 1 else d - 1
+      let a = list.get_or(xi, lo, 0.0)
+      let b = list.get_or(xi, j, 0.0)
+      let c = list.get_or(xi, hi, 0.0)
+      row = row + [math.fmax(math.fmax(a, b), c)]
+      j = j + 1
+    }
+    out = out + [row]
+    i = i + 1
+  }
+  matrix.from_lists(out)
+}
+
+// a spike spreads to its two neighbours: [0,5,0] → [5,5,5].
+test "dilation spreads a spike to its neighbours" {
+  let x = matrix.from_lists([[0.0, 5.0, 0.0]])
+  let y = dilation1d_rows(x)
+  assert(float.abs(matrix.get(y, 0, 0) - 5.0) < 0.000000001, "max(0,0,5)=5")
+  assert(float.abs(matrix.get(y, 0, 1) - 5.0) < 0.000000001, "max(0,5,0)=5")
+  assert(float.abs(matrix.get(y, 0, 2) - 5.0) < 0.000000001, "max(5,0,0)=5")
+}
+
+// a monotone row takes the forward neighbour; the last edge replicates itself.
+test "dilation of a monotone row takes the forward neighbour" {
+  let x = matrix.from_lists([[1.0, 2.0, 3.0, 4.0]])
+  let y = dilation1d_rows(x)
+  assert(float.abs(matrix.get(y, 0, 0) - 2.0) < 0.000000001, "max(1,1,2)=2")
+  assert(float.abs(matrix.get(y, 0, 3) - 4.0) < 0.000000001, "max(3,4,4)=4")
+}

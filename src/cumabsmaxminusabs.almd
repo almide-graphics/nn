@@ -1,0 +1,45 @@
+// cumabsmax_minus_abs_rows — drawdown from the running |·| peak over time (down rows):
+//   peak_{t,j} = max_{i≤t} |x_{i,j}|,   out_{t,j} = peak_{t,j} − |x_{t,j}|.
+// The magnitude companion of x_minus_cummin: how far each channel's current magnitude
+// sits below the largest magnitude it has reached so far (its L∞ envelope, op
+// `cummax_abs_rows`). Always ≥ 0, and exactly 0 whenever the channel sets a new
+// magnitude high — so row 0 is all zeros. Running abs-max seeded from |first row|.
+// O(T), O(D) state. Output (T,D).
+
+import float
+import math
+
+fn cumabsmax_minus_abs_rows(x: Matrix) -> Matrix = {
+  let rx = matrix.to_lists(x)
+  let (t, _d) = matrix.shape(x)
+  let first = list.get_or(rx, 0, [])
+  var acc: List[Float] = first |> list.map((v) => float.abs(v))
+  var out: List[List[Float]] = []
+  var i = 0
+  while i < t {
+    let xi = list.get_or(rx, i, [])
+    let axi = xi |> list.map((v) => float.abs(v))
+    acc = list.zip_with(acc, axi, (a, b) => math.fmax(a, b))
+    out = out + [list.zip_with(acc, axi, (a, b) => a - b)]
+    i = i + 1
+  }
+  matrix.from_lists(out)
+}
+
+// column 0 = [2,-5,1,-3]: |x|=[2,5,1,3], peak=[2,5,5,5], drop=[0,0,4,2].
+test "cumabsmax-minus-abs measures the fall below the running magnitude peak" {
+  let x = matrix.from_lists([[2.0], [0.0 - 5.0], [1.0], [0.0 - 3.0]])
+  let y = cumabsmax_minus_abs_rows(x)
+  assert_eq(matrix.get(y, 0, 0), 0.0)
+  assert_eq(matrix.get(y, 1, 0), 0.0)
+  assert_eq(matrix.get(y, 2, 0), 4.0)
+  assert_eq(matrix.get(y, 3, 0), 2.0)
+}
+
+// the first row sets the initial peak, so its drawdown is zero everywhere.
+test "cumabsmax-minus-abs starts at zero on the first row" {
+  let x = matrix.from_lists([[0.0 - 2.0, 5.0], [7.0, 0.0 - 1.0]])
+  let y = cumabsmax_minus_abs_rows(x)
+  assert_eq(matrix.get(y, 0, 0), 0.0)
+  assert_eq(matrix.get(y, 0, 1), 0.0)
+}

@@ -1,0 +1,45 @@
+// ternary_twn_rows — TWN ternary quantization, per row (Li & Liu 2016).
+//   Δ_t = 0.7 · (1/D) Σ_j |x_{t,j}|        (per-row absmean threshold)
+//   out_{t,j} = +1 if x_{t,j} >  Δ_t
+//               −1 if x_{t,j} < −Δ_t
+//                0 otherwise
+// The ternary-weight substrate behind BitNet-style "beyond matmul" networks: each
+// row is collapsed to {−1, 0, 1} against its own 0.7·E[|x|] threshold. Two passes
+// per row (absmean, then threshold). Exact integer outputs. Output (T,D).
+
+import float
+
+fn ternary_twn_rows(x: Matrix) -> Matrix = {
+  let rx = matrix.to_lists(x)
+  let (t, d) = matrix.shape(x)
+  let df = int.to_float(d)
+  var out: List[List[Float]] = []
+  var i = 0
+  while i < t {
+    let xi = list.get_or(rx, i, [])
+    let s = xi |> list.fold(0.0, (acc, v) => acc + float.abs(v))
+    let delta = 0.7 * (s / df)
+    let row = xi |> list.map((v) =>
+      if v > delta then 1.0 else (if v < (0.0 - delta) then 0.0 - 1.0 else 0.0))
+    out = out + [row]
+    i = i + 1
+  }
+  matrix.from_lists(out)
+}
+
+// row [3,-4,0.1]: mean|x|=2.366..., Δ=0.7·2.366=1.656 → 3>Δ:+1, -4<-Δ:-1, 0.1:0.
+test "ternary-twn maps to sign where magnitude beats the absmean threshold" {
+  let x = matrix.from_lists([[3.0, 0.0 - 4.0, 0.1]])
+  let y = ternary_twn_rows(x)
+  assert_eq(matrix.get(y, 0, 0), 1.0)
+  assert_eq(matrix.get(y, 0, 1), 0.0 - 1.0)
+  assert_eq(matrix.get(y, 0, 2), 0.0)
+}
+
+// a constant-magnitude row sits exactly at mean|x|, well above 0.7·mean → all ±1.
+test "ternary-twn keeps signs on a flat-magnitude row" {
+  let x = matrix.from_lists([[2.0, 0.0 - 2.0]])
+  let y = ternary_twn_rows(x)
+  assert_eq(matrix.get(y, 0, 0), 1.0)
+  assert_eq(matrix.get(y, 0, 1), 0.0 - 1.0)
+}

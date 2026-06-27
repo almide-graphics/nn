@@ -1,0 +1,57 @@
+// gaussian_nll_rows — per-row Gaussian negative log-likelihood with predicted variance (3-input):
+//   ℓ = 0.5·( log(σ²) + (x − μ)² / σ² ),   σ² clamped to ≥ 1e-6,   out_t = (1/D) Σ_j ℓ_{t,j} → (T,1).
+// The heteroscedastic regression loss (torch.GaussianNLLLoss, full=False): the model predicts both
+// a mean μ and a per-element variance σ², and is scored by the Gaussian log-density of the target x.
+// Large residuals are penalized less where the model claims high variance, but claiming variance
+// costs the log(σ²) term — so it learns calibrated uncertainty. A different paradigm from the point
+// losses (mse/ce): it trains a distribution, not a value. Distinct from Poisson/Cauchy NLLs already
+// present. σ² is the third input; clamped like torch's eps. Output (T,1).
+
+import float
+import math
+
+fn gaussian_nll_rows(mu: Matrix, x: Matrix, sig2: Matrix) -> Matrix = {
+  let rmu = matrix.to_lists(mu)
+  let rx = matrix.to_lists(x)
+  let rs = matrix.to_lists(sig2)
+  let (t, d) = matrix.shape(mu)
+  let df = int.to_float(d)
+  var out: List[List[Float]] = []
+  var i = 0
+  while i < t {
+    let mui = list.get_or(rmu, i, [])
+    let xi = list.get_or(rx, i, [])
+    let si = list.get_or(rs, i, [])
+    var s = 0.0
+    var j = 0
+    while j < d {
+      let muv = list.get_or(mui, j, 0.0)
+      let xv = list.get_or(xi, j, 0.0)
+      let vv = math.fmax(list.get_or(si, j, 0.0), 0.000001)
+      let diff = xv - muv
+      s = s + 0.5 * (math.log(vv) + diff * diff / vv)
+      j = j + 1
+    }
+    out = out + [[s / df]]
+    i = i + 1
+  }
+  matrix.from_lists(out)
+}
+
+// perfect prediction (x=μ) with unit variance: 0.5·(log 1 + 0/1) = 0.
+test "perfect prediction with unit variance has zero loss" {
+  let mu = matrix.from_lists([[5.0]])
+  let x = matrix.from_lists([[5.0]])
+  let s = matrix.from_lists([[1.0]])
+  let l = gaussian_nll_rows(mu, x, s)
+  assert(float.abs(matrix.get(l, 0, 0)) < 0.000000001, "0.5·(0+0)=0")
+}
+
+// residual 2 at unit variance: 0.5·(log 1 + 4/1) = 2.
+test "gaussian nll penalizes the variance-scaled squared residual" {
+  let mu = matrix.from_lists([[0.0]])
+  let x = matrix.from_lists([[2.0]])
+  let s = matrix.from_lists([[1.0]])
+  let l = gaussian_nll_rows(mu, x, s)
+  assert(float.abs(matrix.get(l, 0, 0) - 2.0) < 0.000000001, "0.5·(0+4)=2")
+}

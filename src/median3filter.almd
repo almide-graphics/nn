@@ -1,0 +1,56 @@
+// median3_filter_rows — length-3 median filter over time (down the rows, per channel):
+//   out_t = median(x_{t-1}, x_t, x_{t+1})   with edge replication at the ends   → (T, D).
+// The classic non-linear despiking filter: replacing each sample by the median of its 3-neighbourhood
+// removes isolated spikes while preserving edges and monotone trends — unlike the linear smoothers
+// here (ema / mean / conv), which blur edges and only attenuate spikes. The median of exactly three
+// needs no sort: med3 = a+b+c − max(a,b,c) − min(a,b,c) (the middle value is the total minus the
+// extremes). Ends use replication (out_0, out_{T-1} reduce to the endpoint). Output (T, D).
+
+import float
+import math
+
+fn median3_filter_rows(x: Matrix) -> Matrix = {
+  let rx = matrix.to_lists(x)
+  let (t, d) = matrix.shape(x)
+  var out: List[List[Float]] = []
+  var i = 0
+  while i < t {
+    let lo = if i > 0 then i - 1 else 0
+    let hi = if i < t - 1 then i + 1 else t - 1
+    let al = list.get_or(rx, lo, [])
+    let bl = list.get_or(rx, i, [])
+    let cl = list.get_or(rx, hi, [])
+    var row: List[Float] = []
+    var j = 0
+    while j < d {
+      let a = list.get_or(al, j, 0.0)
+      let b = list.get_or(bl, j, 0.0)
+      let c = list.get_or(cl, j, 0.0)
+      let hi3 = math.fmax(math.fmax(a, b), c)
+      let lo3 = math.fmin(math.fmin(a, b), c)
+      row = row + [a + b + c - hi3 - lo3]
+      j = j + 1
+    }
+    out = out + [row]
+    i = i + 1
+  }
+  matrix.from_lists(out)
+}
+
+// a single spike is removed: column [0,10,0] → [0,0,0].
+test "median-3 filter removes a single spike" {
+  let x = matrix.from_lists([[0.0], [10.0], [0.0]])
+  let y = median3_filter_rows(x)
+  assert(float.abs(matrix.get(y, 0, 0)) < 0.000000001, "0")
+  assert(float.abs(matrix.get(y, 1, 0)) < 0.000000001, "spike → 0")
+  assert(float.abs(matrix.get(y, 2, 0)) < 0.000000001, "0")
+}
+
+// a monotone ramp is preserved: [1,2,3] → [1,2,3] (edges replicate).
+test "median-3 filter preserves a monotonic ramp" {
+  let x = matrix.from_lists([[1.0], [2.0], [3.0]])
+  let y = median3_filter_rows(x)
+  assert(float.abs(matrix.get(y, 0, 0) - 1.0) < 0.000000001, "1")
+  assert(float.abs(matrix.get(y, 1, 0) - 2.0) < 0.000000001, "2")
+  assert(float.abs(matrix.get(y, 2, 0) - 3.0) < 0.000000001, "3")
+}

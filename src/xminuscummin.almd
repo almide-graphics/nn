@@ -1,0 +1,41 @@
+// x_minus_cummin_rows — rise above the running minimum over time (down the rows):
+//   cummin_{t,j} = min_{i≤t} x_{i,j},   out_{t,j} = x_{t,j} − cummin_{t,j}.
+// The upside companion of cummax_minus_x (drawdown): how far each channel has climbed
+// off its own trough so far. Always ≥ 0, and exactly 0 at the step that sets a new low
+// (so row 0 is all zeros). Running min seeded from the first row. O(T), O(D) state.
+// Output (T,D).
+
+import math
+
+fn x_minus_cummin_rows(x: Matrix) -> Matrix = {
+  let rx = matrix.to_lists(x)
+  let (t, d) = matrix.shape(x)
+  var acc: List[Float] = list.get_or(rx, 0, [])
+  var out: List[List[Float]] = []
+  var i = 0
+  while i < t {
+    let xi = list.get_or(rx, i, [])
+    acc = list.zip_with(acc, xi, (a, b) => math.fmin(a, b))
+    out = out + [list.zip_with(xi, acc, (a, b) => a - b)]
+    i = i + 1
+  }
+  matrix.from_lists(out)
+}
+
+// column 0 = [3,1,4,2]: cummin = [3,1,1,1], rise = [0,0,3,1].
+test "x-minus-cummin measures the climb off the running trough" {
+  let x = matrix.from_lists([[3.0], [1.0], [4.0], [2.0]])
+  let y = x_minus_cummin_rows(x)
+  assert_eq(matrix.get(y, 0, 0), 0.0)
+  assert_eq(matrix.get(y, 1, 0), 0.0)
+  assert_eq(matrix.get(y, 2, 0), 3.0)
+  assert_eq(matrix.get(y, 3, 0), 1.0)
+}
+
+// the first row is always exactly the trough, so its rise is zero everywhere.
+test "x-minus-cummin starts at zero on the first row" {
+  let x = matrix.from_lists([[0.0 - 2.0, 5.0], [7.0, 0.0 - 1.0]])
+  let y = x_minus_cummin_rows(x)
+  assert_eq(matrix.get(y, 0, 0), 0.0)
+  assert_eq(matrix.get(y, 0, 1), 0.0)
+}

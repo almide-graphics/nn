@@ -1,0 +1,49 @@
+// softmax_weighted_var_rows — variance of values under the softmax attention weights (axis=1):
+//   m_t = max_j w_{t,j},   p_{t,j} = exp(w−m)/Σ exp(w−m)
+//   μ_t = Σ_j p_{t,j}·x_{t,j},   out_t = Σ_j p_{t,j}·(x_{t,j} − μ_t)²   → one value per row, (T,1).
+// The spread of the attended values: how dispersed the row's values are around the attention
+// mean attention_pool_rows reads out. Near 0 when the attention is peaked (it reads a single
+// value) and large when the weight is spread over differing values — an attention
+// uncertainty / sharpness diagnostic. The 2nd-moment companion to attention_pool_rows; reduces
+// to the plain population variance for uniform scores. Two-input, max-stabilized softmax then a
+// weighted central second moment. Output (T,1).
+
+import float
+import math
+
+fn softmax_weighted_var_rows(x: Matrix, w: Matrix) -> Matrix = {
+  let rx = matrix.to_lists(x)
+  let rw = matrix.to_lists(w)
+  let (t, _) = matrix.shape(x)
+  var out: List[List[Float]] = []
+  var i = 0
+  while i < t {
+    let xi = list.get_or(rx, i, [])
+    let wi = list.get_or(rw, i, [])
+    let m = wi |> list.fold(list.get_or(wi, 0, 0.0), (acc, v) => math.fmax(acc, v))
+    let e = wi |> list.map((v) => math.exp(v - m))
+    let z = e |> list.fold(0.0, (acc, v) => acc + v)
+    let p = e |> list.map((ej) => ej / z)
+    let mu = list.zip_with(p, xi, (pj, xj) => pj * xj) |> list.fold(0.0, (acc, v) => acc + v)
+    let wv = list.zip_with(p, xi, (pj, xj) => pj * (xj - mu) * (xj - mu)) |> list.fold(0.0, (acc, v) => acc + v)
+    out = out + [[wv]]
+    i = i + 1
+  }
+  matrix.from_lists(out)
+}
+
+// equal scores → uniform weights → plain population variance: var(1,3) = 1.
+test "weighted variance with equal scores is the plain variance" {
+  let x = matrix.from_lists([[1.0, 3.0]])
+  let w = matrix.from_lists([[0.0, 0.0]])
+  let y = softmax_weighted_var_rows(x, w)
+  assert(float.abs(matrix.get(y, 0, 0) - 1.0) < 0.000000001, "var(1,3)=1")
+}
+
+// a sharply peaked score puts all weight on one value → near-zero spread.
+test "a sharply peaked score gives near-zero weighted variance" {
+  let x = matrix.from_lists([[10.0, 20.0, 30.0]])
+  let w = matrix.from_lists([[100.0, 0.0, 0.0]])
+  let y = softmax_weighted_var_rows(x, w)
+  assert(float.abs(matrix.get(y, 0, 0)) < 0.000001, "peaked → ≈ 0")
+}

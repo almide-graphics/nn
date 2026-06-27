@@ -1,0 +1,42 @@
+// weighted_mean_rows — per-row weighted average with explicit (non-negative) weights (2-input):
+//   out_t = ( Σ_j w_{t,j}·x_{t,j} ) / ( Σ_j w_{t,j} + ε )   → (T,1).
+// The arithmetic mean of x weighted by a separate weight row w (importance / frequency / inverse-
+// variance weighting). Distinct from global_meanpool (uniform weights) and from attention_pool_rows,
+// which softmaxes its scores into the weights — here the weights are used *as given*, only normalized
+// by their own sum. Uniform weights recover the plain mean; a one-hot weight selects that element.
+// The +ε guards an all-zero weight row. Inputs: values x (any sign), weights w (non-negative). Output (T,1).
+
+import float
+
+fn weighted_mean_rows(x: Matrix, w: Matrix) -> Matrix = {
+  let rx = matrix.to_lists(x)
+  let rw = matrix.to_lists(w)
+  let (t, _) = matrix.shape(x)
+  var out: List[List[Float]] = []
+  var i = 0
+  while i < t {
+    let xi = list.get_or(rx, i, [])
+    let wi = list.get_or(rw, i, [])
+    let num = list.zip_with(xi, wi, (xv, wv) => xv * wv) |> list.fold(0.0, (acc, v) => acc + v)
+    let den = wi |> list.fold(0.0, (acc, v) => acc + v)
+    out = out + [[num / (den + 0.000000000001)]]
+    i = i + 1
+  }
+  matrix.from_lists(out)
+}
+
+// uniform weights recover the plain mean: mean([1,2,3,4]) = 10/4 = 2.5.
+test "weighted mean with uniform weights is the plain mean" {
+  let x = matrix.from_lists([[1.0, 2.0, 3.0, 4.0]])
+  let w = matrix.from_lists([[1.0, 1.0, 1.0, 1.0]])
+  let y = weighted_mean_rows(x, w)
+  assert(float.abs(matrix.get(y, 0, 0) - 2.5) < 0.000000001, "10/4=2.5")
+}
+
+// a one-hot weight selects that element: weight on index 1 → x[1] = 2.
+test "weighted mean concentrates on the heavily weighted entry" {
+  let x = matrix.from_lists([[1.0, 2.0, 3.0]])
+  let w = matrix.from_lists([[0.0, 1.0, 0.0]])
+  let y = weighted_mean_rows(x, w)
+  assert(float.abs(matrix.get(y, 0, 0) - 2.0) < 0.0000001, "2/1=2")
+}

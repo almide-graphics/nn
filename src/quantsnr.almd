@@ -1,0 +1,58 @@
+// quant_snr_rows — per-row signal-to-quantization-noise ratio of BitNet b1 (1-bit).
+//   β = (1 / (T·D)) Σ_{t,j} |x_{t,j}|                  (per-tensor absmean scale)
+//   e_{t,j} = x_{t,j} − β · sign⁺(x_{t,j})
+//   out_t = (Σ_j x_{t,j}²) / (Σ_j e_{t,j}² + ε)         → one ratio per row, (T,1).
+// The quantization quality of each row: how much of the row's energy survives the 1-bit
+// snap, as a power ratio (the linear SQNR a BitNet layer achieves). Unlike
+// quant_error_l2_rows, which reports only the noise norm ‖e‖, this normalizes it by the
+// signal power, so it is scale-free and directly comparable across rows. The +ε guards
+// the perfectly-quantizable row (e=0) against division by zero. Two passes (absmean, then
+// per-row signal/noise sums). Output (T,1).
+
+import float
+
+fn quant_snr_rows(x: Matrix) -> Matrix = {
+  let rx = matrix.to_lists(x)
+  let (t, d) = matrix.shape(x)
+  let n = int.to_float(t * d)
+  // pass 1: absmean scale β over the whole tensor.
+  var total = 0.0
+  var p = 0
+  while p < t {
+    let xp = list.get_or(rx, p, [])
+    let s = xp |> list.fold(0.0, (acc, v) => acc + float.abs(v))
+    total = total + s
+    p = p + 1
+  }
+  let beta = total / n
+  // pass 2: per-row signal power over residual (noise) power, ε-guarded.
+  var out: List[List[Float]] = []
+  var i = 0
+  while i < t {
+    let xi = list.get_or(rx, i, [])
+    let sig = xi |> list.fold(0.0, (acc, v) => acc + v * v)
+    let noise = xi |> list.fold(0.0, (acc, v) => {
+      let e = v - beta * (if v >= 0.0 then 1.0 else 0.0 - 1.0)
+      acc + e * e
+    })
+    out = out + [[sig / (noise + 0.000000000001)]]
+    i = i + 1
+  }
+  matrix.from_lists(out)
+}
+
+// β = mean|x| = 6/4 = 1.5; row0 [3,1]: sig=10, e=[1.5,−0.5], noise=2.5 → snr 4;
+//   row1 [−2,0]: sig=4, e=[−0.5,−1.5], noise=2.5 → snr 1.6.
+test "quant-snr is row signal power over quantization-noise power" {
+  let x = matrix.from_lists([[3.0, 1.0], [0.0 - 2.0, 0.0]])
+  let y = quant_snr_rows(x)
+  assert(float.abs(matrix.get(y, 0, 0) - 4.0) < 0.000000001, "row0 snr 4")
+  assert(float.abs(matrix.get(y, 1, 0) - 1.6) < 0.000000001, "row1 snr 1.6")
+}
+
+// β = mean|x| = 2; x = β·sign⁺ exactly → residual 0 → SNR = ‖x‖²/ε, large & finite (ε guard).
+test "a perfectly-quantizable row has near-zero noise and a huge finite SNR" {
+  let x = matrix.from_lists([[2.0, 2.0]])
+  let y = quant_snr_rows(x)
+  assert(matrix.get(y, 0, 0) > 1000000.0, "huge SNR, no div-by-zero")
+}

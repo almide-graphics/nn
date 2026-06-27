@@ -1,0 +1,24 @@
+// cosh_minus1 — cosh(x) - 1. An even, ≥0 penalty that rises like ½x² near 0 and
+// exponentially in the tails — a "stiff" L2-like loss that punishes large
+// residuals hard. cosh via exp (½(eˣ+e⁻ˣ)). Elementwise. (Distinct from cosm1 =
+// cos(x)-1.)
+
+import math
+
+fn cosh_minus1(m: Matrix) -> Matrix =
+  matrix.map(m, (x) => {
+    let e = math.exp(x)
+    0.5 * (e + 1.0 / e) - 1.0
+  })
+
+test "cosh_minus1 at zero is zero" {
+  let y = cosh_minus1(matrix.from_lists([[0.0]]))
+  assert_eq(matrix.get(y, 0, 0), 0.0)
+}
+
+// cosh(1)-1 at ±1; even.
+test "cosh_minus1 even at one" {
+  let y = cosh_minus1(matrix.from_lists([[1.0, -1.0]]))
+  assert(float.abs(matrix.get(y, 0, 0) - 0.5430806348152437) < 0.000000001, "cosh1-1")
+  assert(float.abs(matrix.get(y, 0, 1) - 0.5430806348152437) < 0.000000001, "even")
+}

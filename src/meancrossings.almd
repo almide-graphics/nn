@@ -1,0 +1,47 @@
+// mean_crossings_rows — number of times a row crosses its own mean (axis=1):
+//   μ_t = (1/D) Σ_j x_{t,j},   d_j = x_{t,j} − μ_t
+//   out_t = #{ j ∈ 0..D−2 : sign(d_j)·sign(d_{j+1}) < 0 }   → one count per row, (T,1).
+// The mean-crossing rate of a row treated as a 1-D signal — a frequency / oscillation feature
+// (the zero-crossing rate of the centered signal). Distinct from sign_change_rows /
+// cumsum_sign_change_rows, which mark sign flips of the raw values over time (axis=0, (T,D));
+// this counts, within each row, how often the centered value changes sign. Two passes
+// (mean, then an adjacent-sign-product scan). Integer-valued. Output (T,1).
+
+fn mean_crossings_rows(x: Matrix) -> Matrix = {
+  let rx = matrix.to_lists(x)
+  let (t, d) = matrix.shape(x)
+  let df = int.to_float(d)
+  var out: List[List[Float]] = []
+  var i = 0
+  while i < t {
+    let xi = list.get_or(rx, i, [])
+    let mean = (xi |> list.fold(0.0, (acc, v) => acc + v)) / df
+    var cnt = 0.0
+    var j = 0
+    while j < d - 1 {
+      let a = list.get_or(xi, j, 0.0) - mean
+      let b = list.get_or(xi, j + 1, 0.0) - mean
+      let sa = if a > 0.0 then 1.0 else (if a < 0.0 then 0.0 - 1.0 else 0.0)
+      let sb = if b > 0.0 then 1.0 else (if b < 0.0 then 0.0 - 1.0 else 0.0)
+      cnt = cnt + (if sa * sb < 0.0 then 1.0 else 0.0)
+      j = j + 1
+    }
+    out = out + [[cnt]]
+    i = i + 1
+  }
+  matrix.from_lists(out)
+}
+
+// monotone [1,2,3,4]: centered signs [−,−,+,+] cross once.
+test "a monotone row crosses its mean once" {
+  let x = matrix.from_lists([[1.0, 2.0, 3.0, 4.0]])
+  let y = mean_crossings_rows(x)
+  assert_eq(matrix.get(y, 0, 0), 1.0)
+}
+
+// alternating [1,−1,1,−1] about mean 0: every adjacent pair crosses → 3.
+test "an alternating row crosses its mean every step" {
+  let x = matrix.from_lists([[1.0, 0.0 - 1.0, 1.0, 0.0 - 1.0]])
+  let y = mean_crossings_rows(x)
+  assert_eq(matrix.get(y, 0, 0), 3.0)
+}

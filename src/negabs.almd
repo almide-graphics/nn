@@ -1,0 +1,17 @@
+// neg_abs — -|x|. The downward V (concave, even, ≤0, peak 0 at the origin).
+// A distance-penalty / inverted-ℓ1 feature. Elementwise.
+
+fn neg_abs(m: Matrix) -> Matrix =
+  matrix.map(m, (x) => 0.0 - float.abs(x))
+
+test "neg_abs at zero is zero" {
+  let y = neg_abs(matrix.from_lists([[0.0]]))
+  assert_eq(matrix.get(y, 0, 0), 0.0)
+}
+
+// -3 at ±3; even.
+test "neg_abs at 3 and even" {
+  let y = neg_abs(matrix.from_lists([[3.0, -3.0]]))
+  assert_eq(matrix.get(y, 0, 0), -3.0)
+  assert_eq(matrix.get(y, 0, 1), -3.0)
+}

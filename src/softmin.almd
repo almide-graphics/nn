@@ -1,0 +1,38 @@
+// softmin_rows — row-wise softmin = softmax(-x), numerically stable:
+//   softmin(x)_j = exp(-x_j - m) / Σ_i exp(-x_i - m),   m = max_i(-x_i) = -min_i x_i
+// Puts the most weight on the SMALLEST entries. Output (T,D). (stdlib has
+// softmax_rows but not softmin.)
+
+import math
+
+fn softmin_rows(x: Matrix) -> Matrix = {
+  let rx = matrix.to_lists(x)
+  let (t, _) = matrix.shape(x)
+  var out: List[List[Float]] = []
+  var n = 0
+  while n < t {
+    let xn = list.get_or(rx, n, [])
+    let mn = xn |> list.fold(1.0e38, (acc, v) => math.fmin(acc, v))
+    let m = 0.0 - mn
+    let exps = list.map(xn, (v) => math.exp((0.0 - v) - m))
+    let denom = exps |> list.fold(0.0, (acc, v) => acc + v)
+    out = out + [list.map(exps, (e) => e / denom)]
+    n = n + 1
+  }
+  matrix.from_lists(out)
+}
+
+// Each row is a distribution → sums to 1.
+test "softmin row sums to one" {
+  let y = softmin_rows(matrix.from_lists([[1.0, 2.0, 3.0]]))
+  let s = matrix.get(y, 0, 0) + matrix.get(y, 0, 1) + matrix.get(y, 0, 2)
+  assert(float.abs(s - 1.0) < 0.000000001, "sum 1")
+}
+
+// Equal logits → uniform; smaller value gets the larger weight.
+test "softmin uniform and min-favoring" {
+  let u = softmin_rows(matrix.from_lists([[0.0, 0.0]]))
+  assert(float.abs(matrix.get(u, 0, 0) - 0.5) < 0.000000001, "uniform")
+  let v = softmin_rows(matrix.from_lists([[0.0, 10.0]]))
+  assert(matrix.get(v, 0, 0) > 0.9, "min favored")
+}
