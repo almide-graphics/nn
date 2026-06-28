@@ -1,0 +1,53 @@
+// kendall_tau_rows — per-row Kendall rank correlation τ between two rows (2-input):
+//   out_t = ( Σ_{j<k} sign( (a_{t,j}−a_{t,k})·(b_{t,j}−b_{t,k}) ) ) / ( D·(D−1)/2 )   → (T,1) ∈ [−1,1].
+// Each unordered pair (j,k) is concordant (+1) if a and b order it the same way, discordant (−1)
+// otherwise; τ is the normalized excess of concordant over discordant pairs — a nonparametric measure
+// of monotone agreement, robust to outliers. Distinct from corr/pearson (linear, value-based) and
+// from a rank-then-correlate spearman (a composition); this is a single all-pairs computation over the
+// raw values, the same sort-free O(D²) pattern as rank_rows / gini. Float signs use a threshold (the
+// Int-only math.sign can't apply); for continuous data there are no ties, so each pair is ±1. Output (T,1).
+
+import float
+
+fn kendall_tau_rows(a: Matrix, b: Matrix) -> Matrix = {
+  let ra = matrix.to_lists(a)
+  let rb = matrix.to_lists(b)
+  let (t, d) = matrix.shape(a)
+  let npairs = int.to_float(d * (d - 1) / 2)
+  var out: List[List[Float]] = []
+  var i = 0
+  while i < t {
+    let ai = list.get_or(ra, i, [])
+    let bi = list.get_or(rb, i, [])
+    var s = 0.0
+    var j = 0
+    while j < d {
+      var k = j + 1
+      while k < d {
+        let p = (list.get_or(ai, j, 0.0) - list.get_or(ai, k, 0.0)) * (list.get_or(bi, j, 0.0) - list.get_or(bi, k, 0.0))
+        s = s + (if p > 0.0 then 1.0 else (if p < 0.0 then 0.0 - 1.0 else 0.0))
+        k = k + 1
+      }
+      j = j + 1
+    }
+    out = out + [[s / npairs]]
+    i = i + 1
+  }
+  matrix.from_lists(out)
+}
+
+// identical orderings → every pair concordant → τ = +1.
+test "kendall tau is +1 for perfectly concordant rows" {
+  let a = matrix.from_lists([[1.0, 2.0, 3.0, 4.0]])
+  let b = matrix.from_lists([[1.0, 2.0, 3.0, 4.0]])
+  let y = kendall_tau_rows(a, b)
+  assert(float.abs(matrix.get(y, 0, 0) - 1.0) < 0.000000001, "+1")
+}
+
+// reversed ordering → every pair discordant → τ = −1.
+test "kendall tau is -1 for perfectly discordant rows" {
+  let a = matrix.from_lists([[1.0, 2.0, 3.0, 4.0]])
+  let b = matrix.from_lists([[4.0, 3.0, 2.0, 1.0]])
+  let y = kendall_tau_rows(a, b)
+  assert(float.abs(matrix.get(y, 0, 0) + 1.0) < 0.000000001, "-1")
+}

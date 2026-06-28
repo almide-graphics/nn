@@ -275,6 +275,8 @@ Input kinds: `"matrix"` (2-D → `matrix.from_lists`) or `"vector"` (1-D → lis
 | `argmax_rows` | `src/argmax.almd` | per-row hard argmax index (classification prediction) (T,1) | numpy 1e-9 |
 | `argmin_rows` | `src/argmin.almd` | per-row hard argmin index (nearest-prototype / lowest-cost) (T,1) | numpy 1e-9 |
 | `rank_rows` | `src/rankrows.almd` | per-row ordinal rank transform Σ[x_k<x_j], sort-free all-pairs (T,D) | numpy 1e-9 |
+| `kendall_tau_rows` | `src/kendalltau.almd` | per-row Kendall τ rank correlation (concordant−discordant, all-pairs) (2-input, T,1) | numpy 1e-9 |
+| `median_rows` | `src/medianrows.almd` | per-row true median, sort-free via rank selection (robust center) (T,1) | numpy 1e-9 |
 | `hardmin_rows` | `src/hardmin.almd` | one-hot indicator of the row minimum (arg-min / hardest-negative select) (T,D) | numpy 1e-9 |
 | `silu` | `src/silu.almd` | SiLU activation | numpy 1e-9 |
 | `x_times_sigmoid_neg` | `src/xsigneg.almd` | x·σ(-x) = x/(1+eˣ) reverse SiLU | numpy 1e-9 |
