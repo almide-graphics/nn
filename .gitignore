@@ -1,3 +1,6 @@
 .almide/cache/
 
 **/.almide/
+*.wasm
+*.rmeta
+examples/_tmp*
