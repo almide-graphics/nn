@@ -126,7 +126,7 @@ fn fp16(raw: u16) -> f32 {
 
 #[allow(clippy::too_many_arguments)]
 pub fn load_model(
-    raw: &Vec<u8>,
+    raw: &[u8],
     n_layers: i64,
     n_heads: i64,
     n_kv_heads: i64,
@@ -138,8 +138,8 @@ pub fn load_model(
     eps: f64,
     emb_off: i64,
     out_norm_off: i64,
-    gammas_in: &Vec<i64>,
-    weights_in: &Vec<i64>,
+    gammas_in: &[i64],
+    weights_in: &[i64],
 ) -> i64 {
     let n_layers_u = n_layers as usize;
     let hidden_u = hidden as usize;
@@ -1037,8 +1037,399 @@ fn token_pass(st: &mut State, raw: &[u8], token: usize, pos: usize, nt: usize) {
     });
 }
 
+// Prefill is a matrix workload, not a sequence of independent GEMVs. Keep
+// the decode executor above as the numerical oracle and process a bounded
+// number of prompt rows together, layer by layer. No float weight copy or
+// repacking is needed: the Q8_0 weights are reused directly from `raw`.
+const PREFILL_CHUNK: usize = 64;
+const PREFILL_TILE: usize = 4;
+
+/// One Q8_0 weight row against four token rows. Each token retains exactly
+/// q8_row_dot_avx2's even/odd block accumulators and horizontal reduction.
+/// Weight bytes and F16C scale conversion are shared across the four rows.
+#[cfg(target_arch = "x86_64")]
+#[target_feature(enable = "avx2,fma,f16c")]
+unsafe fn q8_prefill_tile_avx2(
+    xs: &[f32], xq: &[i8], row: &[u8], scale_stride: usize, quant_stride: usize,
+) -> [f32; PREFILL_TILE] {
+    use std::arch::x86_64::*;
+    let mut even = [_mm256_setzero_ps(); PREFILL_TILE];
+    let mut odd = [_mm256_setzero_ps(); PREFILL_TILE];
+    let ones = _mm256_set1_epi16(1);
+    for b in 0..row.len() / Q8BB {
+        let blk = row.as_ptr().add(b * Q8BB);
+        let d = _mm_cvtss_f32(_mm_cvtph_ps(_mm_cvtsi32_si128(
+            u16::from_le_bytes([*blk, *blk.add(1)]) as i32,
+        )));
+        let w = _mm256_loadu_si256(blk.add(2) as *const __m256i);
+        for t in 0..PREFILL_TILE {
+            let x = _mm256_loadu_si256(xq.as_ptr().add(t * quant_stride + b * Q8B) as *const __m256i);
+            let ax = _mm256_sign_epi8(x, x);
+            let sw = _mm256_sign_epi8(w, x);
+            let p = _mm256_madd_epi16(_mm256_maddubs_epi16(ax, sw), ones);
+            let scale = _mm256_set1_ps(d * *xs.get_unchecked(t * scale_stride + b));
+            if b & 1 == 0 {
+                even[t] = _mm256_fmadd_ps(_mm256_cvtepi32_ps(p), scale, even[t]);
+            } else {
+                odd[t] = _mm256_fmadd_ps(_mm256_cvtepi32_ps(p), scale, odd[t]);
+            }
+        }
+    }
+    let mut out = [0.0; PREFILL_TILE];
+    for t in 0..PREFILL_TILE {
+        let acc = _mm256_add_ps(even[t], odd[t]);
+        let s4 = _mm_add_ps(_mm256_extractf128_ps(acc, 1), _mm256_castps256_ps128(acc));
+        let s2 = _mm_add_ps(s4, _mm_movehl_ps(s4, s4));
+        out[t] = _mm_cvtss_f32(_mm_add_ss(s2, _mm_shuffle_ps(s2, s2, 0b0000_0001)));
+    }
+    out
+}
+
+/// Parallelize output-column tiles. A task owns these columns for every
+/// token row; therefore all raw output writes are disjoint. Keeping a
+/// small weight-row tile hot in cache amortizes DRAM reads over the batch.
+#[allow(clippy::too_many_arguments)]
+fn prefill_gemm(
+    raw: &[u8], off: usize, rows: usize, n_in: usize,
+    xs: &[f32], xq: &[i8], quant_stride: usize, n_tokens: usize,
+    out: &mut [f32], out_stride: usize, out_column: usize, add_self: bool,
+) {
+    use rayon::prelude::*;
+    let row_bytes = n_in / Q8B * Q8BB;
+    let scale_stride = quant_stride / Q8B;
+    let op = Shared(out.as_mut_ptr());
+    // Each tile is only 16--64 KiB for the model's projection widths.
+    (0..rows.div_ceil(16)).into_par_iter().for_each(|tile| {
+        let first = tile * 16;
+        let end = (first + 16).min(rows);
+        for t in (0..n_tokens).step_by(PREFILL_TILE) {
+            for r in first..end {
+                let row = &raw[off + r * row_bytes..off + (r + 1) * row_bytes];
+                #[cfg(target_arch = "x86_64")]
+                if avx2() && t + PREFILL_TILE <= n_tokens {
+                    let dots = unsafe { q8_prefill_tile_avx2(
+                        &xs[t * scale_stride..], &xq[t * quant_stride..], row,
+                        scale_stride, quant_stride,
+                    ) };
+                    for (j, dot) in dots.into_iter().enumerate() {
+                        unsafe {
+                            let dst = op.ptr().add((t + j) * out_stride + out_column + r);
+                            *dst = if add_self { *dst + dot } else { dot };
+                        }
+                    }
+                    continue;
+                }
+                for j in t..(t + PREFILL_TILE).min(n_tokens) {
+                    let dot = q8_row_dot(&xs[j * scale_stride..], &xq[j * quant_stride..], row);
+                    unsafe {
+                        let dst = op.ptr().add(j * out_stride + out_column + r);
+                        *dst = if add_self { *dst + dot } else { dot };
+                    }
+                }
+            }
+        }
+    });
+}
+
+fn prefill_quantize(vals: &[f32], scales: &mut [f32], quants: &mut [i8]) {
+    for (b, block) in vals.chunks_exact(Q8B).enumerate() {
+        let dst = &mut quants[b * Q8B..(b + 1) * Q8B];
+        #[cfg(target_arch = "x86_64")]
+        if avx2() {
+            scales[b] = unsafe { quant_block_avx2(block, dst) };
+            continue;
+        }
+        let amax = block.iter().fold(0.0f32, |m, v| m.max(v.abs()));
+        let d = amax / 127.0;
+        let inv = if d > 0.0 { 1.0 / d } else { 0.0 };
+        scales[b] = d;
+        for k in 0..Q8B {
+            dst[k] = (block[k] * inv).round().clamp(-127.0, 127.0) as i8;
+        }
+    }
+}
+
+// The decode RMS uses one sum per lockstep worker, followed by a serial
+// reduction in worker order. Preserve that order even though prefill
+// assigns entire token rows to workers rather than splitting every row.
+fn prefill_rms_inv(src: &[f32], eps: f32, nt: usize) -> f32 {
+    let mut total = 0.0f32;
+    for tid in 0..nt {
+        let (s, e) = split(src.len(), nt, tid);
+        let mut local = 0.0f32;
+        for v in &src[s..e] {
+            local += v * v;
+        }
+        total += local;
+    }
+    1.0 / (total / src.len() as f32 + eps).sqrt()
+}
+
+#[allow(clippy::too_many_arguments)]
+fn prefill_rms_quant(
+    h: &[f32], hidden: usize, gamma: &[f32], eps: f32, nt: usize,
+    xs: &mut [f32], xq: &mut [i8], quant_stride: usize,
+) {
+    use rayon::prelude::*;
+    xs.par_chunks_mut(quant_stride / Q8B)
+        .zip(xq.par_chunks_mut(quant_stride))
+        .zip(h.par_chunks(hidden))
+        .for_each(|((scales, quants), row)| {
+            let inv = prefill_rms_inv(row, eps, nt);
+            for b in 0..hidden / Q8B {
+                let mut vals = [0.0; Q8B];
+                for k in 0..Q8B {
+                    let i = b * Q8B + k;
+                    vals[k] = row[i] * inv * gamma[i];
+                }
+                prefill_quantize(&vals, &mut scales[b..b + 1], &mut quants[b * Q8B..(b + 1) * Q8B]);
+            }
+        });
+}
+
+/// Exactly the decode softmax order, including its SIMD exp and tail.
+fn prefill_softmax(scores: &mut [f32], m: f32) -> f32 {
+    let seq = scores.len();
+    let mut sum = 0.0f32;
+    #[cfg(target_arch = "x86_64")]
+    if avx2() {
+        unsafe {
+            use std::arch::x86_64::*;
+            let mv = _mm256_set1_ps(m);
+            let mut sv = _mm256_setzero_ps();
+            let mut j = 0;
+            while j + 8 <= seq {
+                let s8 = _mm256_loadu_ps(scores.as_ptr().add(j));
+                let e = exp8_avx2(_mm256_sub_ps(s8, mv));
+                _mm256_storeu_ps(scores.as_mut_ptr().add(j), e);
+                sv = _mm256_add_ps(sv, e);
+                j += 8;
+            }
+            let s4 = _mm_add_ps(_mm256_extractf128_ps(sv, 1), _mm256_castps256_ps128(sv));
+            let s2 = _mm_add_ps(s4, _mm_movehl_ps(s4, s4));
+            sum = _mm_cvtss_f32(_mm_add_ss(s2, _mm_shuffle_ps(s2, s2, 0b0000_0001)));
+            while j < seq {
+                let e = (scores[j] - m).exp();
+                scores[j] = e;
+                sum += e;
+                j += 1;
+            }
+        }
+        return 1.0 / sum;
+    }
+    for score in scores {
+        *score = (*score - m).exp();
+        sum += *score;
+    }
+    1.0 / sum
+}
+
+fn prefill_pass(st: &mut State, raw: &[u8], tokens: &[i64], start: usize, nt: usize) {
+    use rayon::prelude::*;
+    let cfg = &st.cfg;
+    let hidden = cfg.hidden;
+    let q_hidden = cfg.q_hidden;
+    let kv_hidden = cfg.kv_hidden;
+    let qkv_width = q_hidden + 2 * kv_hidden;
+    let ffn = cfg.ffn;
+    let dh = cfg.head_dim;
+    let stride = hidden.max(ffn).max(q_hidden);
+    // Bounded scratch: approximately 4 MiB at 64 tokens for Qwen3-0.6B.
+    let capacity = tokens.len().min(PREFILL_CHUNK);
+    let mut h = vec![0.0f32; capacity * hidden];
+    let mut qkv = vec![0.0f32; capacity * qkv_width];
+    let mut attn = vec![0.0f32; capacity * q_hidden];
+    let mut gate = vec![0.0f32; capacity * ffn];
+    let mut up = vec![0.0f32; capacity * ffn];
+    let mut xs = vec![0.0f32; capacity * stride / Q8B];
+    let mut xq = vec![0i8; capacity * stride];
+    let mut rope = vec![0.0f32; capacity * dh];
+
+    for (chunk_index, chunk) in tokens.chunks(PREFILL_CHUNK).enumerate() {
+        let n = chunk.len();
+        let chunk_start = start + chunk_index * PREFILL_CHUNK;
+        let h = &mut h[..n * hidden];
+        let qkv = &mut qkv[..n * qkv_width];
+        let attn = &mut attn[..n * q_hidden];
+        let gate = &mut gate[..n * ffn];
+        let up = &mut up[..n * ffn];
+        let xs = &mut xs[..n * stride / Q8B];
+        let xq = &mut xq[..n * stride];
+        let rope = &mut rope[..n * dh];
+        h.par_chunks_mut(hidden).enumerate().for_each(|(t, out)| {
+            let rb = hidden / Q8B * Q8BB;
+            let row = &raw[cfg.emb_off + chunk[t] as usize * rb..cfg.emb_off + (chunk[t] as usize + 1) * rb];
+            for (b, block) in row.chunks_exact(Q8BB).enumerate() {
+                let d = fp16_inline(u16::from_le_bytes([block[0], block[1]]));
+                for k in 0..Q8B {
+                    out[b * Q8B + k] = d * (block[2 + k] as i8) as f32;
+                }
+            }
+        });
+        rope.par_chunks_mut(dh).enumerate().for_each(|(t, row)| {
+            for j in 0..dh / 2 {
+                let (sn, cs) = ((chunk_start + t) as f32 * st.inv_freq[j]).sin_cos();
+                row[j * 2] = sn;
+                row[j * 2 + 1] = cs;
+            }
+        });
+        for l in 0..cfg.n_layers {
+            let go = &st.layer_goffs[l];
+            let wo = &st.layer_woffs[l];
+            prefill_rms_quant(h, hidden, &st.gammas[go[0]..go[0] + hidden], cfg.eps, nt, xs, xq, stride);
+            prefill_gemm(raw, wo[0], q_hidden, hidden, xs, xq, stride, n, qkv, qkv_width, 0, false);
+            prefill_gemm(raw, wo[1], kv_hidden, hidden, xs, xq, stride, n, qkv, qkv_width, q_hidden, false);
+            prefill_gemm(raw, wo[2], kv_hidden, hidden, xs, xq, stride, n, qkv, qkv_width, q_hidden + kv_hidden, false);
+            qkv.par_chunks_mut(qkv_width).enumerate().for_each(|(t, row)| {
+                for hh in 0..cfg.n_heads + cfg.n_kv {
+                    let (base, g) = if hh < cfg.n_heads {
+                        (hh * dh, go[1])
+                    } else {
+                        (q_hidden + (hh - cfg.n_heads) * dh, go[2])
+                    };
+                    let mut ss = 0.0f32;
+                    for k in 0..dh { ss += row[base + k] * row[base + k]; }
+                    let inv = 1.0 / (ss / dh as f32 + cfg.eps).sqrt();
+                    for k in 0..dh { row[base + k] *= inv * st.gammas[g + k]; }
+                    for j in 0..dh / 2 {
+                        let sn = rope[t * dh + j * 2];
+                        let cs = rope[t * dh + j * 2 + 1];
+                        let x0 = row[base + j];
+                        let x1 = row[base + dh / 2 + j];
+                        row[base + j] = x0 * cs - x1 * sn;
+                        row[base + dh / 2 + j] = x0 * sn + x1 * cs;
+                    }
+                }
+            });
+            // Publish all K/V rows for this layer before attention. The
+            // query's absolute position still bounds the visible prefix.
+            st.k_cache[l][chunk_start * kv_hidden..(chunk_start + n) * kv_hidden]
+                .par_chunks_mut(kv_hidden).zip(qkv.par_chunks(qkv_width))
+                .for_each(|(dst, row)| dst.copy_from_slice(&row[q_hidden..q_hidden + kv_hidden]));
+            st.v_cache[l][chunk_start * kv_hidden..(chunk_start + n) * kv_hidden]
+                .par_chunks_mut(kv_hidden).zip(qkv.par_chunks(qkv_width))
+                .for_each(|(dst, row)| dst.copy_from_slice(&row[q_hidden + kv_hidden..]));
+            let kc = &st.k_cache[l];
+            let vc = &st.v_cache[l];
+            attn.par_chunks_mut(dh).enumerate().for_each(|(index, out)| {
+                let t = index / cfg.n_heads;
+                let hh = index % cfg.n_heads;
+                let seq = chunk_start + t + 1;
+                let kvb = (hh / (cfg.n_heads / cfg.n_kv)) * dh;
+                let qr = &qkv[t * qkv_width + hh * dh..t * qkv_width + (hh + 1) * dh];
+                let scale = 1.0 / (dh as f32).sqrt();
+                let mut scores = [0.0f32; MAX_SEQ];
+                let mut m = f32::NEG_INFINITY;
+                for j in 0..seq {
+                    let kr = &kc[j * kv_hidden + kvb..j * kv_hidden + kvb + dh];
+                    let dot;
+                    #[cfg(target_arch = "x86_64")]
+                    { dot = if avx2() { unsafe { f32_dot_avx2(qr, kr, dh) } } else {
+                        qr.iter().zip(kr).fold(0.0f32, |sum, (&q, &k)| sum + q * k)
+                    }; }
+                    #[cfg(not(target_arch = "x86_64"))]
+                    { dot = qr.iter().zip(kr).fold(0.0f32, |sum, (&q, &k)| sum + q * k); }
+                    scores[j] = dot * scale;
+                    m = m.max(scores[j]);
+                }
+                let inv = prefill_softmax(&mut scores[..seq], m);
+                out.fill(0.0);
+                for j in 0..seq {
+                    let w = scores[j] * inv;
+                    let vr = &vc[j * kv_hidden + kvb..j * kv_hidden + kvb + dh];
+                    #[cfg(target_arch = "x86_64")]
+                    if avx2() {
+                        unsafe { f32_axpy_avx2(out, vr, w, dh) };
+                        continue;
+                    }
+                    for k in 0..dh { out[k] += w * vr[k]; }
+                }
+            });
+            xs.par_chunks_mut(stride / Q8B).zip(xq.par_chunks_mut(stride))
+                .zip(attn.par_chunks(q_hidden)).for_each(|((s, q), v)| prefill_quantize(v, s, q));
+            prefill_gemm(raw, wo[3], hidden, q_hidden, xs, xq, stride, n, h, hidden, 0, true);
+            prefill_rms_quant(h, hidden, &st.gammas[go[3]..go[3] + hidden], cfg.eps, nt, xs, xq, stride);
+            prefill_gemm(raw, wo[4], ffn, hidden, xs, xq, stride, n, gate, ffn, 0, false);
+            prefill_gemm(raw, wo[5], ffn, hidden, xs, xq, stride, n, up, ffn, 0, false);
+            // As in token_pass, keep SIMD silu groups inside each decode
+            // worker's range (important for the scalar tail on odd shapes).
+            gate.par_chunks_mut(ffn).zip(up.par_chunks(ffn)).for_each(|(g, u)| {
+                for tid in 0..nt {
+                    let (s, e) = split(ffn, nt, tid);
+                    #[cfg(target_arch = "x86_64")]
+                    if avx2() {
+                        // Copy one SIMD-width input before writing it, so
+                        // the source and destination references never alias.
+                        let mut i = s;
+                        while i + 8 <= e {
+                            let mut gi = [0.0f32; 8];
+                            gi.copy_from_slice(&g[i..i + 8]);
+                            unsafe { silu_mul_avx2(&gi, &u[i..i + 8], &mut g[i..i + 8], 8) };
+                            i += 8;
+                        }
+                        while i < e { g[i] = g[i] / (1.0 + (-g[i]).exp()) * u[i]; i += 1; }
+                        continue;
+                    }
+                    for i in s..e { g[i] = g[i] / (1.0 + (-g[i]).exp()) * u[i]; }
+                }
+            });
+            xs.par_chunks_mut(stride / Q8B).zip(xq.par_chunks_mut(stride))
+                .zip(gate.par_chunks(ffn)).for_each(|((s, q), v)| prefill_quantize(v, s, q));
+            prefill_gemm(raw, wo[6], hidden, ffn, xs, xq, stride, n, h, hidden, 0, true);
+        }
+        // Only this last row is needed by the decode state; logits for
+        // earlier prompt rows would never be observed by generation.
+        st.h.copy_from_slice(&h[(n - 1) * hidden..n * hidden]);
+    }
+    let inv = prefill_rms_inv(&st.h, cfg.eps, nt);
+    for i in 0..hidden {
+        st.xn[i] = st.h[i] * inv * st.gammas[cfg.out_norm_g + i];
+    }
+    prefill_quantize(&st.xn[..hidden], &mut st.xq_s, &mut st.xq);
+    let rb = hidden / Q8B * Q8BB;
+    st.logits.par_iter_mut().enumerate().for_each(|(r, out)| {
+        *out = q8_row_dot(&st.xq_s, &st.xq, &raw[cfg.emb_off + r * rb..cfg.emb_off + (r + 1) * rb]);
+    });
+}
+
+fn prefill_pool() -> &'static rayon::ThreadPool {
+    static POOL: OnceLock<rayon::ThreadPool> = OnceLock::new();
+    POOL.get_or_init(|| rayon::ThreadPoolBuilder::new().num_threads(lockstep_threads()).build().unwrap())
+}
+
+/// Feed a nonempty token slice starting at an absolute position. Previous
+/// positions must already have valid KV state, as for decode_argmax.
+/// Returns -1 without a model, -2 for an invalid context range, and -3 for
+/// an empty prompt or invalid token ID. Invalid calls do not modify state.
+pub fn prefill_argmax(raw: &[u8], tokens: &[i64], start_pos: i64) -> i64 {
+    let mut guard = cell().lock().unwrap();
+    let Some(st) = guard.as_mut() else { return -1 };
+    if start_pos < 0 || (start_pos as usize).checked_add(tokens.len()).map_or(true, |end| end > MAX_SEQ) { return -2 }
+    if tokens.is_empty() || tokens.iter().any(|&t| t < 0 || t as usize >= st.cfg.vocab) { return -3 }
+    let nt = lockstep_threads();
+    prefill_pool().install(|| prefill_pass(st, raw, tokens, start_pos as usize, nt));
+    let mut best = 0usize;
+    let mut value = f32::NEG_INFINITY;
+    for (i, &v) in st.logits.iter().enumerate() {
+        if v > value { value = v; best = i; }
+    }
+    best as i64
+}
+
+/// Prefill parity hook: same execution as prefill_argmax, returning the
+/// final prompt row's full logits. Invalid calls return an empty vector.
+pub fn prefill_logits(raw: &[u8], tokens: &[i64], start_pos: i64) -> Vec<f64> {
+    let mut guard = cell().lock().unwrap();
+    let Some(st) = guard.as_mut() else { return vec![] };
+    if start_pos < 0 || (start_pos as usize).checked_add(tokens.len()).map_or(true, |end| end > MAX_SEQ)
+        || tokens.is_empty() || tokens.iter().any(|&t| t < 0 || t as usize >= st.cfg.vocab) { return vec![] }
+    let nt = lockstep_threads();
+    prefill_pool().install(|| prefill_pass(st, raw, tokens, start_pos as usize, nt));
+    st.logits.iter().map(|&v| v as f64).collect()
+}
+
 /// Feed one token at absolute position `pos`; returns argmax token id.
-pub fn decode_argmax(raw: impl std::ops::Deref<Target = Vec<u8>>, token: i64, pos: i64) -> i64 {
+pub fn decode_argmax(raw: &[u8], token: i64, pos: i64) -> i64 {
     let mut cell = cell().lock().unwrap();
     let Some(st) = cell.as_mut() else { return -1 };
     if pos as usize >= MAX_SEQ { return -2 }
@@ -1061,7 +1452,7 @@ pub fn decode_argmax(raw: impl std::ops::Deref<Target = Vec<u8>>, token: i64, po
 /// stream. Sampling stays native: shipping 152k logits across the FFI and
 /// sorting them in Almide per token would dominate the decode step.
 pub fn decode_sample(
-    raw: impl std::ops::Deref<Target = Vec<u8>>,
+    raw: &[u8],
     token: i64,
     pos: i64,
     temp: f64,
@@ -1125,11 +1516,88 @@ pub fn decode_sample(
 }
 
 /// Parity variant: full logits.
-pub fn decode_logits(raw: impl std::ops::Deref<Target = Vec<u8>>, token: i64, pos: i64) -> Vec<f64> {
+pub fn decode_logits(raw: &[u8], token: i64, pos: i64) -> Vec<f64> {
     let mut cell = cell().lock().unwrap();
     let Some(st) = cell.as_mut() else { return vec![] };
     if pos as usize >= MAX_SEQ { return vec![] }
     let nt = lockstep_threads();
     token_pass(st, &raw, token as usize, pos as usize, nt);
     st.logits.iter().map(|&v| v as f64).collect()
+}
+
+#[cfg(test)]
+mod prefill_tests {
+    use super::*;
+
+    fn weights(rows: usize, blocks: usize) -> Vec<u8> {
+        let mut raw = vec![0u8; rows * blocks * Q8BB];
+        for r in 0..rows {
+            for b in 0..blocks {
+                let off = (r * blocks + b) * Q8BB;
+                let half = [0x2800u16, 0x3400, 0x3800, 0x3c00][(r + b) % 4].to_le_bytes();
+                raw[off..off + 2].copy_from_slice(&half);
+                for k in 0..Q8B {
+                    raw[off + 2 + k] = (((r * 17 + b * 31 + k * 7) % 255) as i16 - 127) as i8 as u8;
+                }
+            }
+        }
+        raw
+    }
+
+    fn activations(tokens: usize, stride: usize) -> (Vec<f32>, Vec<i8>) {
+        let mut scales = vec![0.0f32; tokens * stride / Q8B];
+        let mut quants = vec![0i8; tokens * stride];
+        for (i, scale) in scales.iter_mut().enumerate() { *scale = (1 + i % 13) as f32 / 127.0; }
+        for (i, quant) in quants.iter_mut().enumerate() { *quant = ((i * 37 % 255) as i16 - 127) as i8; }
+        (scales, quants)
+    }
+
+    #[test]
+    #[cfg(target_arch = "x86_64")]
+    fn prefill_tile_preserves_decode_dot_bits() {
+        if !avx2() { return; }
+        for blocks in [1, 2, 3, 8, 24, 48, 96] {
+            let stride = (blocks + 3) * Q8B;
+            let raw = weights(1, blocks);
+            let (scales, quants) = activations(PREFILL_TILE, stride);
+            let got = unsafe { q8_prefill_tile_avx2(&scales, &quants, &raw, stride / Q8B, stride) };
+            for t in 0..PREFILL_TILE {
+                let expected = q8_row_dot(&scales[t * stride / Q8B..], &quants[t * stride..], &raw);
+                assert_eq!(got[t].to_bits(), expected.to_bits(), "blocks={blocks}, token={t}");
+            }
+        }
+    }
+
+    #[test]
+    fn prefill_gemm_covers_tiles_tails_strides_and_residuals() {
+        let pool = rayon::ThreadPoolBuilder::new().num_threads(4).build().unwrap();
+        pool.install(|| {
+            for tokens in [1, 3, 4, 5, 7, 64] {
+                let rows = 19;
+                let blocks = 8;
+                let stride = 12 * Q8B;
+                let out_stride = rows + 9;
+                let column = 3;
+                let raw = weights(rows, blocks);
+                let (scales, quants) = activations(tokens, stride);
+                for add in [false, true] {
+                    let mut out = vec![0.375f32; tokens * out_stride];
+                    prefill_gemm(&raw, 0, rows, blocks * Q8B, &scales, &quants, stride, tokens,
+                        &mut out, out_stride, column, add);
+                    for t in 0..tokens {
+                        for r in 0..out_stride {
+                            let expected = if r >= column && r < column + rows {
+                                let wr = r - column;
+                                let dot = q8_row_dot(&scales[t * stride / Q8B..], &quants[t * stride..],
+                                    &raw[wr * blocks * Q8BB..(wr + 1) * blocks * Q8BB]);
+                                if add { 0.375 + dot } else { dot }
+                            } else { 0.375 };
+                            assert_eq!(out[t * out_stride + r].to_bits(), expected.to_bits(),
+                                "tokens={tokens}, row={r}, token={t}, residual={add}");
+                        }
+                    }
+                }
+            }
+        });
+    }
 }
