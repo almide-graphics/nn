@@ -32,6 +32,21 @@ class GateTests(unittest.TestCase):
             with contextlib.redirect_stdout(io.StringIO()):passed=gate.compare(root,manifest)
             return passed,json.loads((root/'summary.json').read_text())
 
+    def sample_gate(self,ids=(0,0),cur=(2.,1.),missing=False):
+        with tempfile.TemporaryDirectory() as d:
+            root=Path(d)
+            manifest=dict(threads=[1],vocab=2,sample_cases=[dict(name='sample',chunk_ends=[1],continuation=[0],temp=.6,top_p=.9,seed=42)])
+            for mode,values,sampled in [('reference',[2.,1.],[0,0]),('candidate',cur,ids)]:
+                p=root/'t1'/mode;p.mkdir(parents=True)
+                (p/'sampled-complete').write_text('ok\n')
+                (p/'sample.sampled.ids').write_text(' '.join(map(str,sampled)))
+                np.array(values,dtype='<f4').tofile(p/'sample.sampled.f32')
+            if missing:(root/'t1/candidate/sample.sampled.ids').unlink()
+            return gate.compare_samples(root,manifest)['passed']
+    def test_sampled_exact_passes(self):self.assertTrue(self.sample_gate())
+    def test_sampled_wrong_ids_fail(self):self.assertFalse(self.sample_gate(ids=(0,1)))
+    def test_sampled_error_fails(self):self.assertFalse(self.sample_gate(cur=(2.002,1.)))
+    def test_sampled_missing_fails(self):self.assertFalse(self.sample_gate(missing=True))
     def test_thread_guards(self):
         gate.validate_threads([1])
         for threads in [[],[0],[1,1],[10**9]]:

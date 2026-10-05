@@ -21,6 +21,7 @@ BASE_SHA = '7501f5e7d8eb98691c27678c01a8257fc3a4d8f3ef49033ceb93319b0b15589d'
 REAL_SHA = '3d1cfc4b845efcda96d63415c986d51781d02b2f55f93fc6add142cd56b4e314'
 ABS_TOL = 1e-3
 NORMALIZED_TOL = 1e-4
+OVERRIDE_NAMES = ['NN_PREFILL_PROFILE','NN_PREFILL_KERNEL','NN_PREFILL_ATTENTION']
 
 
 def sha(p):
@@ -71,6 +72,50 @@ def make_cases(vocab, tiny):
     return cases
 
 
+def make_sample_cases(vocab):
+    cases=[]
+    for length,ends in [(1,[1]),(5,[5]),(9,[3,9]),(65,[1,65])]:
+        for temp in [0.0,0.6,1.0]:
+            for top_p in [-0.1,0.0,0.5,0.9,1.0,1.1]:
+                for seed in [0,42,-1,9223372036854775807]:
+                    cases.append(dict(name=f'sample-{len(cases):03}',tokens=forced(42,length,vocab),
+                        continuation=forced(123,4,vocab),chunk_ends=ends,temp=temp,top_p=top_p,seed=seed))
+    return cases
+
+
+def compare_samples(out,manifest):
+    import numpy as np
+    records=[]; failures=[]
+    for nt in manifest['threads']:
+        base=out/f't{nt}'
+        for mode in ['reference','candidate']:
+            if not (base/mode/'sampled-complete').exists():failures.append(f't{nt}/{mode}: incomplete')
+        for case in manifest['sample_cases']:
+            name=case['name'];count=len(case['chunk_ends'])+len(case['continuation'])
+            try:
+                sampled=[[int(x) for x in (base/mode/f'{name}.sampled.ids').read_text().split()]
+                         for mode in ['reference','candidate']]
+                ref,cur=[np.fromfile(base/mode/f'{name}.sampled.f32',dtype='<f4') for mode in ['reference','candidate']]
+                assert len(ref)==len(cur)==manifest['vocab'] and len(sampled[0])==len(sampled[1])==count
+                finite=bool(np.isfinite(ref).all() and np.isfinite(cur).all())
+                err=float(np.max(np.abs(ref.astype('float64')-cur.astype('float64')))) if finite else None
+                norm=err/max(float(np.max(np.abs(ref))),float(np.finfo('float32').tiny)) if finite else None
+                ids_equal=sampled[0]==sampled[1] and all(0<=t<manifest['vocab'] for t in sampled[0])
+                passed=finite and err<=ABS_TOL and norm<=NORMALIZED_TOL and int(np.argmax(ref))==int(np.argmax(cur)) and ids_equal
+                row=dict(case=name,threads=nt,temp=case['temp'],top_p=case['top_p'],seed=case['seed'],
+                    reference_ids=sampled[0],candidate_ids=sampled[1],sampled_ids_match=ids_equal,
+                    finite=finite,max_abs_error=err,normalized_max_error=norm,passed=bool(passed),
+                    bit_identical=bool(np.array_equal(ref.view('u4'),cur.view('u4'))))
+                records.append(row)
+                if not passed:failures.append(f't{nt}/{name}: sampled IDs or continued logits differ')
+            except (AssertionError,OSError,ValueError) as e:failures.append(f't{nt}/{name}: missing/malformed artifact: {e}')
+    report=dict(passed=not failures and bool(records),cases=len(manifest['sample_cases']),
+        checked_cases=len(records),checked_sampled_ids=sum(len(r['reference_ids']) for r in records),
+        all_bit_identical=bool(records) and all(r['bit_identical'] for r in records),failures=failures,results=records)
+    save(out/'sampling-summary.json',report)
+    return {k:v for k,v in report.items() if k!='results'}
+
+
 def metadata(model):
     import gguf
     r = gguf.GGUFReader(str(model))
@@ -96,7 +141,7 @@ def metadata(model):
     return cfg,gs,ws
 
 
-def build(out, reference):
+def build(out, reference, candidate_source=None):
     snapshots = out/'sources'; snapshots.mkdir(exist_ok=True)
     if reference:
         original = reference.read_bytes()
@@ -106,7 +151,7 @@ def build(out, reference):
         original = original.replace(b'impl std::ops::Deref<Target = Vec<u8>>',b'&[u8]')
     assert hashlib.sha256(original).hexdigest() == BASE_SHA, 'immutable baseline hash mismatch'
     (snapshots/'original.rs').write_bytes(original)
-    shutil.copyfile(REPO/'native/cpu_fast.rs', snapshots/'candidate.rs')
+    shutil.copyfile(candidate_source or REPO/'native/cpu_fast.rs', snapshots/'candidate.rs')
     env = os.environ.copy()
     env.update(CPU_PARITY_ORIGINAL=str(snapshots/'original.rs'),
                CPU_PARITY_CANDIDATE=str(snapshots/'candidate.rs'), CARGO_TARGET_DIR=str(out/'target'))
@@ -118,7 +163,7 @@ def build(out, reference):
     binary = out/'target/release/cpu-prefill-parity'
     return dict(reference_revision=BASE_REV, reference_sha256=sha(snapshots/'original.rs'),
         candidate_sha256=sha(snapshots/'candidate.rs'), binary_sha256=sha(binary),
-        driver_sha256=sha(HERE/'src/main.rs'), runner_sha256=sha(HERE/'run.py'),
+        driver_sha256=sha(HERE/'src/main.rs'), sampling_driver_sha256=sha(HERE/'src/sampling.rs'), runner_sha256=sha(HERE/'run.py'),
         rustc=subprocess.check_output(['rustc','--version'],text=True).strip(),
         rustflags=env['RUSTFLAGS'], binary=str(binary))
 
@@ -126,7 +171,7 @@ def build(out, reference):
 def compare(out, manifest):
     import numpy as np
     records = []; missing = []; v = manifest['vocab']
-    for name in ['config.txt','cases.tsv']:
+    for name in manifest.get('input_sha256', {'config.txt':None,'cases.tsv':None}):
         if sha(out/name) != manifest.get('input_sha256',{}).get(name):
             missing.append(name+': input fingerprint missing or changed')
     for nt in manifest['threads']:
@@ -181,6 +226,12 @@ def compare(out, manifest):
         max_normalized_error=max((r['normalized_max_error'] for r in records if r['finite']),default=None),
         top1_matches=sum(r['reference_top1']==r['candidate_logits_top1']==r['candidate_argmax_top1'] for r in records),
         failed_checkpoints=len(failed),missing=missing,failures=failed,results=records)
+    report['runtime_overrides']=manifest.get('runtime_overrides',{})
+    report['run_id']=manifest.get('run_id')
+    report['manifest_sha256']=sha(out/'manifest.json') if (out/'manifest.json').exists() else None
+    if manifest.get('sample_cases'):
+        report['sampling']=compare_samples(out,manifest)
+        report['passed']=report['passed'] and report['sampling']['passed']
     save(out/'summary.json',report)
     print(json.dumps({k:v for k,v in report.items() if k not in ('results','failures')},indent=2))
     return report['passed']
@@ -191,6 +242,8 @@ def main():
     p.add_argument('--model',type=Path,default=REPO/'testdata/tiny-qwen3-q8_0.gguf')
     p.add_argument('--gguf-py',type=Path,help='path to official llama.cpp/gguf-py')
     p.add_argument('--reference',type=Path,help='optional immutable signature-adapted original source')
+    p.add_argument('--candidate',type=Path,help='explicit frozen candidate source; defaults to native/cpu_fast.rs')
+    p.add_argument('--sampled',action='store_true',help='also run tiny-only sampled-ID and continued-KV cases')
     p.add_argument('--real-model',action='store_true',help='explicit opt-in for non-tiny model')
     p.add_argument('--out',type=Path,required=True)
     p.add_argument('--threads',default='1,4')
@@ -202,6 +255,7 @@ def main():
         validate_threads(selected_threads)
         if args.gguf_py:sys.path.insert(0,str(args.gguf_py.resolve()))
         model=args.model.resolve(); tiny=sha(model)==sha(REPO/'testdata/tiny-qwen3-q8_0.gguf')
+        assert not args.sampled or tiny, '--sampled is intentionally tiny-only'
         assert tiny or args.real_model, 'non-tiny weights require --real-model'
         if not tiny: assert sha(model)==REAL_SHA, 'unexpected real model SHA256'
         cfg,gs,ws=metadata(model)
@@ -211,17 +265,25 @@ def main():
         for marker in out.glob('t*/*/execution.json'): marker.unlink()
         manifest=dict(run_id=uuid.uuid4().hex,platform=platform.platform(),
             affinity=sorted(os.sched_getaffinity(0)) if hasattr(os,'sched_getaffinity') else None,
+            runtime_overrides={name:os.environ.get(name) for name in OVERRIDE_NAMES},
+            sample_cases=make_sample_cases(cfg[6]) if args.sampled else [],
             model=str(model),model_sha256=sha(model),vocab=cfg[6],tiny=tiny,
             threads=selected_threads,cases=cases,
             full_suite=args.case_regex=='.*',thresholds=dict(max_absolute=ABS_TOL,
                 max_error_over_max_abs_reference=NORMALIZED_TOL,exact_top1=True,finite_only=True),
             comparison='candidate batched prefill and continuation vs immutable sequential nn',
             continuation_policy='16 teacher-forced LCG IDs, or remaining positions at 2048 limit',
-            build=build(out,args.reference))
+            build=build(out,args.reference,args.candidate))
         (out/'config.txt').write_text('\n'.join(' '.join(map(str,x)) for x in [cfg,gs,ws])+'\n')
         (out/'cases.tsv').write_text(''.join(c['name']+'\t'+'\t'.join(' '.join(map(str,c[k]))
                                     for k in ['tokens','continuation','chunk_ends'])+'\n' for c in cases))
-        manifest['input_sha256']={name:sha(out/name) for name in ['config.txt','cases.tsv']}
+        input_names=['config.txt','cases.tsv']
+        if manifest['sample_cases']:
+            (out/'sample-cases.tsv').write_text(''.join(c['name']+'\t'+'\t'.join(' '.join(map(str,c[k]))
+                for k in ['tokens','continuation','chunk_ends'])+'\t'+'\t'.join(str(c[k]) for k in ['temp','top_p','seed'])+'\n'
+                for c in manifest['sample_cases']))
+            input_names.append('sample-cases.tsv')
+        manifest['input_sha256']={name:sha(out/name) for name in input_names}
         save(out/'manifest.json',manifest)
         if args.phase=='prepare':return
     else:manifest=json.loads((out/'manifest.json').read_text())
@@ -235,9 +297,13 @@ def main():
                 (dest/'complete').unlink(missing_ok=True)
                 (dest/'execution.json').unlink(missing_ok=True)
                 env=os.environ.copy();env.update(ALMIDE_LOCKSTEP_THREADS=str(nt),RAYON_NUM_THREADS=str(nt))
+                for name,value in manifest.get('runtime_overrides',{}).items():
+                    if value is None:env.pop(name,None)
+                    else:env[name]=value
+                extra=[str(out/'sample-cases.tsv')] if manifest.get('sample_cases') else []
                 with (dest/'stderr.log').open('w') as log:
                     subprocess.run([manifest['build']['binary'],mode,manifest['model'],str(out/'config.txt'),
-                                    str(out/'cases.tsv'),str(dest)],env=env,stderr=log,check=True)
+                                    str(out/'cases.tsv'),str(dest)]+extra,env=env,stderr=log,check=True)
                 save(dest/'execution.json',dict(run_id=manifest['run_id'],mode=mode,threads=nt,
                     binary_sha256=manifest['build']['binary_sha256']))
     if args.phase in ['all','compare']:

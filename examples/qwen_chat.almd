@@ -30,6 +30,9 @@ fn cpu_load_model(
 @extern(rs, "cpu_fast", "decode_sample")
 fn cpu_decode_sample(raw: Bytes, token: Int, pos: Int, temp: Float, top_p: Float, seed: Int) -> Int
 
+@extern(rs, "cpu_fast", "prefill_sample")
+fn cpu_prefill_sample(raw: Bytes, tokens: List[Int], start_pos: Int, temp: Float, top_p: Float, seed: Int) -> Int
+
 // Vocab id of an exact token string (special tokens never pass through BPE).
 fn tok_id(t: qwen_tokenizer.QwenTokenizer, s: String) -> Int =
   qwen_tokenizer.token_to_id(t, s)
@@ -145,11 +148,8 @@ effect fn main() -> () = {
         for id in turn { list.push(ids, id) }
 
         // prefill; the last feed's return value is the first sampled token
-        var next = 0
-        for tk in ids {
-          next = cpu_decode_sample(raw, tk, pos, temp, top_p, seed)
-          pos = pos + 1
-        }
+        var next = cpu_prefill_sample(raw, ids, pos, temp, top_p, seed)
+        pos = pos + list.len(ids)
 
         // sampled decode, streaming. Dictionary reads stay inline on `t`
         // (a helper call would clone the whole tokenizer per token).

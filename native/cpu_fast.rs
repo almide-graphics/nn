@@ -1056,24 +1056,28 @@ unsafe fn q8_prefill_tile_avx2(
     let mut even = [_mm256_setzero_ps(); PREFILL_TILE];
     let mut odd = [_mm256_setzero_ps(); PREFILL_TILE];
     let ones = _mm256_set1_epi16(1);
-    for b in 0..row.len() / Q8BB {
-        let blk = row.as_ptr().add(b * Q8BB);
-        let d = _mm_cvtss_f32(_mm_cvtph_ps(_mm_cvtsi32_si128(
-            u16::from_le_bytes([*blk, *blk.add(1)]) as i32,
-        )));
-        let w = _mm256_loadu_si256(blk.add(2) as *const __m256i);
-        for t in 0..PREFILL_TILE {
-            let x = _mm256_loadu_si256(xq.as_ptr().add(t * quant_stride + b * Q8B) as *const __m256i);
-            let ax = _mm256_sign_epi8(x, x);
-            let sw = _mm256_sign_epi8(w, x);
-            let p = _mm256_madd_epi16(_mm256_maddubs_epi16(ax, sw), ones);
-            let scale = _mm256_set1_ps(d * *xs.get_unchecked(t * scale_stride + b));
-            if b & 1 == 0 {
-                even[t] = _mm256_fmadd_ps(_mm256_cvtepi32_ps(p), scale, even[t]);
-            } else {
-                odd[t] = _mm256_fmadd_ps(_mm256_cvtepi32_ps(p), scale, odd[t]);
+    let nb = row.len() / Q8BB;
+    macro_rules! block {
+        ($b:expr, $acc:ident) => {{
+            let b = $b;
+            let blk = row.as_ptr().add(b * Q8BB);
+            let d = _mm_cvtss_f32(_mm_cvtph_ps(_mm_cvtsi32_si128(
+                u16::from_le_bytes([*blk, *blk.add(1)]) as i32,
+            )));
+            let w = _mm256_loadu_si256(blk.add(2) as *const __m256i);
+            for t in 0..PREFILL_TILE {
+                let x = _mm256_loadu_si256(xq.as_ptr().add(t * quant_stride + b * Q8B) as *const __m256i);
+                let ax = _mm256_sign_epi8(x, x);
+                let sw = _mm256_sign_epi8(w, x);
+                let p = _mm256_madd_epi16(_mm256_maddubs_epi16(ax, sw), ones);
+                let scale = _mm256_set1_ps(d * *xs.get_unchecked(t * scale_stride + b));
+                $acc[t] = _mm256_fmadd_ps(_mm256_cvtepi32_ps(p), scale, $acc[t]);
             }
-        }
+        }};
+    }
+    for b in (0..nb).step_by(2) {
+        block!(b, even);
+        if b + 1 < nb { block!(b + 1, odd); }
     }
     let mut out = [0.0; PREFILL_TILE];
     for t in 0..PREFILL_TILE {
@@ -1083,6 +1087,85 @@ unsafe fn q8_prefill_tile_avx2(
         out[t] = _mm_cvtss_f32(_mm_add_ss(s2, _mm_shuffle_ps(s2, s2, 0b0000_0001)));
     }
     out
+}
+
+/// Two weight rows by four prompt rows, using 512-bit integer dot products.
+/// Each 512-bit value packs two *independent* 8-lane decode accumulators;
+/// no floating-point reduction is reassociated. Runtime dispatch keeps the
+/// binary usable on AVX2-only machines.
+#[cfg(target_arch = "x86_64")]
+#[target_feature(enable = "avx2,avx512f,avx512bw,avx512vl,avx512vnni,avx512dq,fma,f16c")]
+unsafe fn q8_prefill_tile_vnni(
+    xs: &[f32], xq: &[i8], rows: &[u8], row_bytes: usize, scale_stride: usize, quant_stride: usize,
+) -> [[f32; PREFILL_TILE]; 2] {
+    use std::arch::x86_64::*;
+    let zero = _mm512_setzero_si512();
+    let mut even = [[_mm512_setzero_ps(); 2]; 2];
+    let mut odd = [[_mm512_setzero_ps(); 2]; 2];
+    let nb = row_bytes / Q8BB;
+    macro_rules! block {
+        ($b:expr, $acc:ident) => {{
+            let b = $b;
+            let p0 = rows.as_ptr().add(b * Q8BB);
+            let p1 = p0.add(row_bytes);
+            let d = [
+                _mm_cvtss_f32(_mm_cvtph_ps(_mm_cvtsi32_si128(u16::from_le_bytes([*p0, *p0.add(1)]) as i32))),
+                _mm_cvtss_f32(_mm_cvtph_ps(_mm_cvtsi32_si128(u16::from_le_bytes([*p1, *p1.add(1)]) as i32))),
+            ];
+            let w = [
+                _mm512_broadcast_i64x4(_mm256_loadu_si256(p0.add(2) as *const __m256i)),
+                _mm512_broadcast_i64x4(_mm256_loadu_si256(p1.add(2) as *const __m256i)),
+            ];
+            for pair in 0..2 {
+                let t = pair * 2;
+                let x0 = _mm256_loadu_si256(xq.as_ptr().add(t * quant_stride + b * Q8B) as *const __m256i);
+                let x1 = _mm256_loadu_si256(xq.as_ptr().add((t + 1) * quant_stride + b * Q8B) as *const __m256i);
+                let x = _mm512_inserti64x4::<1>(_mm512_castsi256_si512(x0), x1);
+                let ax = _mm512_abs_epi8(x);
+                let negative = _mm512_movepi8_mask(x);
+                for r in 0..2 {
+                    let sw = _mm512_mask_sub_epi8(w[r], negative, zero, w[r]);
+                    let p = _mm512_dpbusd_epi32(zero, ax, sw);
+                    let s0 = d[r] * *xs.get_unchecked(t * scale_stride + b);
+                    let s1 = d[r] * *xs.get_unchecked((t + 1) * scale_stride + b);
+                    let scale = _mm512_insertf32x8::<1>(_mm512_castps256_ps512(_mm256_set1_ps(s0)), _mm256_set1_ps(s1));
+                    $acc[r][pair] = _mm512_fmadd_ps(_mm512_cvtepi32_ps(p), scale, $acc[r][pair]);
+                }
+            }
+        }};
+    }
+    for b in (0..nb).step_by(2) {
+        block!(b, even);
+        if b + 1 < nb { block!(b + 1, odd); }
+    }
+    let mut out = [[0.0; PREFILL_TILE]; 2];
+    for r in 0..2 {
+        for pair in 0..2 {
+            let acc = _mm512_add_ps(even[r][pair], odd[r][pair]);
+            let halves = [_mm512_castps512_ps256(acc), _mm512_extractf32x8_ps::<1>(acc)];
+            for t in 0..2 {
+                let v = halves[t];
+                let s4 = _mm_add_ps(_mm256_extractf128_ps(v, 1), _mm256_castps256_ps128(v));
+                let s2 = _mm_add_ps(s4, _mm_movehl_ps(s4, s4));
+                out[r][pair * 2 + t] = _mm_cvtss_f32(_mm_add_ss(s2, _mm_shuffle_ps(s2, s2, 1)));
+            }
+        }
+    }
+    out
+}
+
+#[cfg(target_arch = "x86_64")]
+fn prefill_vnni() -> bool {
+    static AVAILABLE: OnceLock<bool> = OnceLock::new();
+    *AVAILABLE.get_or_init(|| {
+        std::env::var("NN_PREFILL_KERNEL").ok().as_deref() != Some("avx2")
+            && avx2()
+            && std::is_x86_feature_detected!("avx512f")
+            && std::is_x86_feature_detected!("avx512bw")
+            && std::is_x86_feature_detected!("avx512vl")
+            && std::is_x86_feature_detected!("avx512dq")
+            && std::is_x86_feature_detected!("avx512vnni")
+    })
 }
 
 /// Parallelize output-column tiles. A task owns these columns for every
@@ -1103,7 +1186,27 @@ fn prefill_gemm(
         let first = tile * 16;
         let end = (first + 16).min(rows);
         for t in (0..n_tokens).step_by(PREFILL_TILE) {
-            for r in first..end {
+            let mut r = first;
+            #[cfg(target_arch = "x86_64")]
+            if prefill_vnni() && t + PREFILL_TILE <= n_tokens {
+                while r + 2 <= end {
+                    let dots = unsafe { q8_prefill_tile_vnni(
+                        &xs[t * scale_stride..], &xq[t * quant_stride..],
+                        &raw[off + r * row_bytes..off + (r + 2) * row_bytes],
+                        row_bytes, scale_stride, quant_stride,
+                    ) };
+                    for (col, values) in dots.into_iter().enumerate() {
+                        for (j, dot) in values.into_iter().enumerate() {
+                            unsafe {
+                                let dst = op.ptr().add((t + j) * out_stride + out_column + r + col);
+                                *dst = if add_self { *dst + dot } else { dot };
+                            }
+                        }
+                    }
+                    r += 2;
+                }
+            }
+            for r in r..end {
                 let row = &raw[off + r * row_bytes..off + (r + 1) * row_bytes];
                 #[cfg(target_arch = "x86_64")]
                 if avx2() && t + PREFILL_TILE <= n_tokens {
@@ -1224,8 +1327,170 @@ fn prefill_softmax(scores: &mut [f32], m: f32) -> f32 {
     1.0 / sum
 }
 
+/// Four independent query/key dots. A 512-bit accumulator holds the old
+/// AVX2 dot's even and odd 8-lane accumulators in its lower/upper halves.
+#[cfg(target_arch = "x86_64")]
+#[target_feature(enable = "avx2,avx512f,avx512dq,fma")]
+unsafe fn prefill_qk_tile(q: &[f32], q_stride: usize, key: &[f32], dh: usize) -> [f32; 4] {
+    use std::arch::x86_64::*;
+    let mut acc = [_mm512_setzero_ps(); 4];
+    let mut i = 0;
+    while i + 16 <= dh {
+        let k = _mm512_loadu_ps(key.as_ptr().add(i));
+        for t in 0..4 {
+            let v = _mm512_loadu_ps(q.as_ptr().add(t * q_stride + i));
+            acc[t] = _mm512_fmadd_ps(v, k, acc[t]);
+        }
+        i += 16;
+    }
+    let mut out = [0.0f32; 4];
+    for t in 0..4 {
+        let v = _mm256_add_ps(_mm512_castps512_ps256(acc[t]), _mm512_extractf32x8_ps::<1>(acc[t]));
+        let s4 = _mm_add_ps(_mm256_extractf128_ps(v, 1), _mm256_castps256_ps128(v));
+        let s2 = _mm_add_ps(s4, _mm_movehl_ps(s4, s4));
+        out[t] = _mm_cvtss_f32(_mm_add_ss(s2, _mm_shuffle_ps(s2, s2, 1)));
+        for j in i..dh { out[t] += q[t * q_stride + j] * key[j]; }
+    }
+    out
+}
+
+/// Four causal weighted-V rows. Keep a cache-line-wide output panel in
+/// registers for the complete prefix, sharing each V load four ways.
+/// Every output element sees the same sequence of FMAs as decode.
+#[cfg(target_arch = "x86_64")]
+#[target_feature(enable = "avx2,avx512f,fma")]
+unsafe fn prefill_v_tile(
+    weights: &[[f32; MAX_SEQ]; 4], values: &[f32], dh: usize,
+    first_seq: usize, out: *mut f32, out_stride: usize,
+) {
+    use std::arch::x86_64::*;
+    let mut i = 0;
+    while i + 16 <= dh {
+        let mut acc = [_mm512_setzero_ps(); 4];
+        for j in 0..first_seq {
+            let v = _mm512_loadu_ps(values.as_ptr().add(j * dh + i));
+            for t in 0..4 {
+                let w = _mm512_set1_ps(weights[t][j]);
+                acc[t] = _mm512_fmadd_ps(w, v, acc[t]);
+            }
+        }
+        // Each subsequent query sees one additional key. Do not perform
+        // zero-weight updates for masked positions, even for signed zero.
+        for t in 1..4 {
+            for j in first_seq..first_seq + t {
+                let v = _mm512_loadu_ps(values.as_ptr().add(j * dh + i));
+                acc[t] = _mm512_fmadd_ps(_mm512_set1_ps(weights[t][j]), v, acc[t]);
+            }
+        }
+        for t in 0..4 { _mm512_storeu_ps(out.add(t * out_stride + i), acc[t]); }
+        i += 16;
+    }
+    if i + 8 <= dh {
+        let mut acc = [_mm256_setzero_ps(); 4];
+        for t in 0..4 {
+            for j in 0..first_seq + t {
+                let v = _mm256_loadu_ps(values.as_ptr().add(j * dh + i));
+                acc[t] = _mm256_fmadd_ps(_mm256_set1_ps(weights[t][j]), v, acc[t]);
+            }
+            _mm256_storeu_ps(out.add(t * out_stride + i), acc[t]);
+        }
+        i += 8;
+    }
+    // The existing axpy has a non-FMA scalar tail below eight elements.
+    for k in i..dh {
+        for t in 0..4 {
+            let mut value = 0.0f32;
+            for j in 0..first_seq + t { value += weights[t][j] * values[j * dh + k]; }
+            *out.add(t * out_stride + k) = value;
+        }
+    }
+}
+
+#[cfg(target_arch = "x86_64")]
+fn prefill_wide_attention() -> bool {
+    static AVAILABLE: OnceLock<bool> = OnceLock::new();
+    *AVAILABLE.get_or_init(|| std::env::var("NN_PREFILL_ATTENTION").ok().as_deref() != Some("rows")
+        && avx2() && std::is_x86_feature_detected!("avx512f") && std::is_x86_feature_detected!("avx512dq"))
+}
+
+/// Head-major KV panels turn the position stride into contiguous cache
+/// lines. Each head task owns disjoint columns across every output row.
+#[cfg(target_arch = "x86_64")]
+#[allow(clippy::too_many_arguments)]
+fn prefill_attention_tiled(
+    qkv: &[f32], keys: &[f32], values: &[f32], panel_stride: usize,
+    cfg: &Cfg, start: usize, n: usize, out: &mut [f32],
+) {
+    use rayon::prelude::*;
+    let dh = cfg.head_dim;
+    let q_stride = cfg.q_hidden + 2 * cfg.kv_hidden;
+    let group = cfg.n_heads / cfg.n_kv;
+    let scale = 1.0 / (dh as f32).sqrt();
+    let op = Shared(out.as_mut_ptr());
+    (0..cfg.n_kv).into_par_iter().for_each(|kh| {
+        let kp = &keys[kh * panel_stride..(kh + 1) * panel_stride];
+        let vp = &values[kh * panel_stride..(kh + 1) * panel_stride];
+        let mut scores = [[0.0f32; MAX_SEQ]; 4];
+        for hh in kh * group..(kh + 1) * group {
+            let mut t = 0;
+            while t + 4 <= n {
+                let first_seq = start + t + 1;
+                let max_seq = first_seq + 3;
+                let qs = &qkv[t * q_stride + hh * dh..];
+                let mut maxima = [f32::NEG_INFINITY; 4];
+                for j in 0..max_seq {
+                    let dots = unsafe { prefill_qk_tile(qs, q_stride, &kp[j * dh..(j + 1) * dh], dh) };
+                    for r in 0..4 {
+                        if j < first_seq + r {
+                            let value = dots[r] * scale;
+                            scores[r][j] = value;
+                            maxima[r] = maxima[r].max(value);
+                        }
+                    }
+                }
+                for r in 0..4 {
+                    let seq = first_seq + r;
+                    let inv = prefill_softmax(&mut scores[r][..seq], maxima[r]);
+                    for s in &mut scores[r][..seq] { *s *= inv; }
+                }
+                unsafe { prefill_v_tile(&scores, vp, dh, first_seq,
+                    op.ptr().add(t * cfg.q_hidden + hh * dh), cfg.q_hidden); }
+                t += 4;
+            }
+            // Partial query tiles use the exact existing one-row kernels.
+            while t < n {
+                let seq = start + t + 1;
+                let qr = &qkv[t * q_stride + hh * dh..t * q_stride + (hh + 1) * dh];
+                let mut m = f32::NEG_INFINITY;
+                for j in 0..seq {
+                    let v = unsafe { f32_dot_avx2(qr, &kp[j * dh..(j + 1) * dh], dh) } * scale;
+                    scores[0][j] = v;
+                    m = m.max(v);
+                }
+                let inv = prefill_softmax(&mut scores[0][..seq], m);
+                unsafe {
+                    let dst = std::slice::from_raw_parts_mut(op.ptr().add(t * cfg.q_hidden + hh * dh), dh);
+                    dst.fill(0.0);
+                    for j in 0..seq { f32_axpy_avx2(dst, &vp[j * dh..(j + 1) * dh], scores[0][j] * inv, dh); }
+                }
+                t += 1;
+            }
+        }
+    });
+}
+
 fn prefill_pass(st: &mut State, raw: &[u8], tokens: &[i64], start: usize, nt: usize) {
     use rayon::prelude::*;
+    let profile = std::env::var_os("NN_PREFILL_PROFILE").is_some();
+    let mut times = [std::time::Duration::ZERO; 12];
+    let mut stamp = profile.then(std::time::Instant::now);
+    let tick = |index: usize, times: &mut [std::time::Duration; 12], stamp: &mut Option<std::time::Instant>| {
+        if let Some(previous) = stamp.as_mut() {
+            let now = std::time::Instant::now();
+            times[index] += now.duration_since(*previous);
+            *previous = now;
+        }
+    };
     let cfg = &st.cfg;
     let hidden = cfg.hidden;
     let q_hidden = cfg.q_hidden;
@@ -1244,6 +1509,15 @@ fn prefill_pass(st: &mut State, raw: &[u8], tokens: &[i64], start: usize, nt: us
     let mut xs = vec![0.0f32; capacity * stride / Q8B];
     let mut xq = vec![0i8; capacity * stride];
     let mut rope = vec![0.0f32; capacity * dh];
+    let wide_attention = false;
+    #[cfg(target_arch = "x86_64")]
+    let wide_attention = prefill_wide_attention();
+    let panel_stride = (start + tokens.len()) * dh;
+    // Only one layer's head-major panels are live. At context 2048 the
+    // additional K+V scratch is 16 MiB for Qwen3-0.6B.
+    let panel_len = if wide_attention { cfg.n_kv * panel_stride } else { 0 };
+    let mut k_panel = vec![0.0f32; panel_len];
+    let mut v_panel = vec![0.0f32; panel_len];
 
     for (chunk_index, chunk) in tokens.chunks(PREFILL_CHUNK).enumerate() {
         let n = chunk.len();
@@ -1273,13 +1547,16 @@ fn prefill_pass(st: &mut State, raw: &[u8], tokens: &[i64], start: usize, nt: us
                 row[j * 2 + 1] = cs;
             }
         });
+        tick(0, &mut times, &mut stamp);
         for l in 0..cfg.n_layers {
             let go = &st.layer_goffs[l];
             let wo = &st.layer_woffs[l];
             prefill_rms_quant(h, hidden, &st.gammas[go[0]..go[0] + hidden], cfg.eps, nt, xs, xq, stride);
+            tick(1, &mut times, &mut stamp);
             prefill_gemm(raw, wo[0], q_hidden, hidden, xs, xq, stride, n, qkv, qkv_width, 0, false);
             prefill_gemm(raw, wo[1], kv_hidden, hidden, xs, xq, stride, n, qkv, qkv_width, q_hidden, false);
             prefill_gemm(raw, wo[2], kv_hidden, hidden, xs, xq, stride, n, qkv, qkv_width, q_hidden + kv_hidden, false);
+            tick(2, &mut times, &mut stamp);
             qkv.par_chunks_mut(qkv_width).enumerate().for_each(|(t, row)| {
                 for hh in 0..cfg.n_heads + cfg.n_kv {
                     let (base, g) = if hh < cfg.n_heads {
@@ -1309,8 +1586,24 @@ fn prefill_pass(st: &mut State, raw: &[u8], tokens: &[i64], start: usize, nt: us
             st.v_cache[l][chunk_start * kv_hidden..(chunk_start + n) * kv_hidden]
                 .par_chunks_mut(kv_hidden).zip(qkv.par_chunks(qkv_width))
                 .for_each(|(dst, row)| dst.copy_from_slice(&row[q_hidden + kv_hidden..]));
+            if wide_attention {
+                k_panel.par_chunks_mut(panel_stride).zip(v_panel.par_chunks_mut(panel_stride))
+                    .enumerate().for_each(|(head, (kp, vp))| {
+                        for j in 0..chunk_start + n {
+                            let src = j * kv_hidden + head * dh;
+                            kp[j * dh..(j + 1) * dh].copy_from_slice(&st.k_cache[l][src..src + dh]);
+                            vp[j * dh..(j + 1) * dh].copy_from_slice(&st.v_cache[l][src..src + dh]);
+                        }
+                    });
+            }
+            tick(3, &mut times, &mut stamp);
             let kc = &st.k_cache[l];
             let vc = &st.v_cache[l];
+            #[cfg(target_arch = "x86_64")]
+            if wide_attention {
+                prefill_attention_tiled(qkv, &k_panel, &v_panel, panel_stride, cfg, chunk_start, n, attn);
+            }
+            if !wide_attention {
             attn.par_chunks_mut(dh).enumerate().for_each(|(index, out)| {
                 let t = index / cfg.n_heads;
                 let hh = index % cfg.n_heads;
@@ -1345,12 +1638,18 @@ fn prefill_pass(st: &mut State, raw: &[u8], tokens: &[i64], start: usize, nt: us
                     for k in 0..dh { out[k] += w * vr[k]; }
                 }
             });
+            }
+            tick(4, &mut times, &mut stamp);
             xs.par_chunks_mut(stride / Q8B).zip(xq.par_chunks_mut(stride))
                 .zip(attn.par_chunks(q_hidden)).for_each(|((s, q), v)| prefill_quantize(v, s, q));
+            tick(5, &mut times, &mut stamp);
             prefill_gemm(raw, wo[3], hidden, q_hidden, xs, xq, stride, n, h, hidden, 0, true);
+            tick(6, &mut times, &mut stamp);
             prefill_rms_quant(h, hidden, &st.gammas[go[3]..go[3] + hidden], cfg.eps, nt, xs, xq, stride);
+            tick(1, &mut times, &mut stamp);
             prefill_gemm(raw, wo[4], ffn, hidden, xs, xq, stride, n, gate, ffn, 0, false);
             prefill_gemm(raw, wo[5], ffn, hidden, xs, xq, stride, n, up, ffn, 0, false);
+            tick(7, &mut times, &mut stamp);
             // As in token_pass, keep SIMD silu groups inside each decode
             // worker's range (important for the scalar tail on odd shapes).
             gate.par_chunks_mut(ffn).zip(up.par_chunks(ffn)).for_each(|(g, u)| {
@@ -1375,12 +1674,15 @@ fn prefill_pass(st: &mut State, raw: &[u8], tokens: &[i64], start: usize, nt: us
             });
             xs.par_chunks_mut(stride / Q8B).zip(xq.par_chunks_mut(stride))
                 .zip(gate.par_chunks(ffn)).for_each(|((s, q), v)| prefill_quantize(v, s, q));
+            tick(8, &mut times, &mut stamp);
             prefill_gemm(raw, wo[6], hidden, ffn, xs, xq, stride, n, h, hidden, 0, true);
+            tick(9, &mut times, &mut stamp);
         }
         // Only this last row is needed by the decode state; logits for
         // earlier prompt rows would never be observed by generation.
         st.h.copy_from_slice(&h[(n - 1) * hidden..n * hidden]);
     }
+    tick(10, &mut times, &mut stamp);
     let inv = prefill_rms_inv(&st.h, cfg.eps, nt);
     for i in 0..hidden {
         st.xn[i] = st.h[i] * inv * st.gammas[cfg.out_norm_g + i];
@@ -1390,6 +1692,14 @@ fn prefill_pass(st: &mut State, raw: &[u8], tokens: &[i64], start: usize, nt: us
     st.logits.par_iter_mut().enumerate().for_each(|(r, out)| {
         *out = q8_row_dot(&st.xq_s, &st.xq, &raw[cfg.emb_off + r * rb..cfg.emb_off + (r + 1) * rb]);
     });
+    tick(11, &mut times, &mut stamp);
+    if profile {
+        let names = ["embed_rope", "rms_quant", "qkv_gemm", "qk_norm_kv", "attention", "attn_quant",
+            "o_gemm", "gate_up_gemm", "silu_quant", "down_gemm", "finish_hidden", "output_head"];
+        eprint!("NN_PREFILL_PROFILE tokens={} start={} threads={}", tokens.len(), start, nt);
+        for (name, time) in names.iter().zip(times) { eprint!(" {}_ms={:.3}", name, time.as_secs_f64() * 1000.0); }
+        eprintln!();
+    }
 }
 
 fn prefill_pool() -> &'static rayon::ThreadPool {
@@ -1426,6 +1736,21 @@ pub fn prefill_logits(raw: &[u8], tokens: &[i64], start_pos: i64) -> Vec<f64> {
     let nt = lockstep_threads();
     prefill_pool().install(|| prefill_pass(st, raw, tokens, start_pos as usize, nt));
     st.logits.iter().map(|&v| v as f64).collect()
+}
+
+/// Prefill and sample from the final prompt row with the same sampler
+/// used by decode_sample. The seed position is the final absolute prompt
+/// position, exactly as in sequential prompt evaluation.
+pub fn prefill_sample(
+    raw: &[u8], tokens: &[i64], start_pos: i64, temp: f64, top_p: f64, seed: i64,
+) -> i64 {
+    let mut guard = cell().lock().unwrap();
+    let Some(st) = guard.as_mut() else { return -1 };
+    if start_pos < 0 || (start_pos as usize).checked_add(tokens.len()).map_or(true, |end| end > MAX_SEQ) { return -2 }
+    if tokens.is_empty() || tokens.iter().any(|&t| t < 0 || t as usize >= st.cfg.vocab) { return -3 }
+    let nt = lockstep_threads();
+    prefill_pool().install(|| prefill_pass(st, raw, tokens, start_pos as usize, nt));
+    sample_logits(&st.logits, start_pos + tokens.len() as i64 - 1, temp, top_p, seed)
 }
 
 /// Feed one token at absolute position `pos`; returns argmax token id.
@@ -1466,10 +1791,14 @@ pub fn decode_sample(
     }
     let nt = lockstep_threads();
     token_pass(st, &raw, token as usize, pos as usize, nt);
+    sample_logits(&st.logits, pos, temp, top_p, seed)
+}
+
+fn sample_logits(logits: &[f32], pos: i64, temp: f64, top_p: f64, seed: i64) -> i64 {
     if temp <= 0.0 {
         let mut best = 0usize;
         let mut bv = f32::NEG_INFINITY;
-        for (i, &v) in st.logits.iter().enumerate() {
+        for (i, &v) in logits.iter().enumerate() {
             if v > bv {
                 bv = v;
                 best = i;
@@ -1479,7 +1808,7 @@ pub fn decode_sample(
     }
     // top-K preselect (K=256 covers any practical nucleus), then top-p cut
     const K: usize = 256;
-    let mut pairs: Vec<(f32, u32)> = st.logits.iter().enumerate().map(|(i, &v)| (v, i as u32)).collect();
+    let mut pairs: Vec<(f32, u32)> = logits.iter().enumerate().map(|(i, &v)| (v, i as u32)).collect();
     let k = K.min(pairs.len());
     pairs.select_nth_unstable_by(k - 1, |a, b| b.0.partial_cmp(&a.0).unwrap());
     pairs.truncate(k);
@@ -1564,6 +1893,60 @@ mod prefill_tests {
             for t in 0..PREFILL_TILE {
                 let expected = q8_row_dot(&scales[t * stride / Q8B..], &quants[t * stride..], &raw);
                 assert_eq!(got[t].to_bits(), expected.to_bits(), "blocks={blocks}, token={t}");
+            }
+        }
+    }
+
+    #[test]
+    #[cfg(target_arch = "x86_64")]
+    fn prefill_vnni_preserves_decode_dot_bits() {
+        if !prefill_vnni() { return; }
+        for blocks in [1, 2, 3, 8, 24, 48, 96] {
+            let stride = (blocks + 3) * Q8B;
+            let raw = weights(2, blocks);
+            let (scales, quants) = activations(PREFILL_TILE, stride);
+            let got = unsafe { q8_prefill_tile_vnni(&scales, &quants, &raw, blocks * Q8BB, stride / Q8B, stride) };
+            for r in 0..2 {
+                for t in 0..PREFILL_TILE {
+                    let expected = q8_row_dot(&scales[t * stride / Q8B..], &quants[t * stride..],
+                        &raw[r * blocks * Q8BB..(r + 1) * blocks * Q8BB]);
+                    assert_eq!(got[r][t].to_bits(), expected.to_bits(), "blocks={blocks}, row={r}, token={t}");
+                }
+            }
+        }
+    }
+
+    #[test]
+    #[cfg(target_arch = "x86_64")]
+    fn prefill_attention_tiles_preserve_decode_bits() {
+        if !prefill_wide_attention() { return; }
+        for dh in [16, 24, 32, 128, 136, 139] {
+            let stride = dh + 19;
+            let q: Vec<f32> = (0..4 * stride).map(|i| ((i * 23 % 127) as f32 - 63.0) / 17.0).collect();
+            let key: Vec<f32> = (0..dh).map(|i| ((i * 41 % 127) as f32 - 63.0) / 19.0).collect();
+            let dots = unsafe { prefill_qk_tile(&q, stride, &key, dh) };
+            for t in 0..4 {
+                let expected = unsafe { f32_dot_avx2(&q[t * stride..t * stride + dh], &key, dh) };
+                assert_eq!(dots[t].to_bits(), expected.to_bits(), "QK dh={dh}, token={t}");
+            }
+            for first_seq in [1, 2, 7, 8, 9, 64, 1024, 2045] {
+                let values: Vec<f32> = (0..(first_seq + 3) * dh).map(|i| ((i * 37 % 127) as f32 - 63.0) / 23.0).collect();
+                let mut weights = [[0.0f32; MAX_SEQ]; 4];
+                for t in 0..4 {
+                    for j in 0..first_seq + t { weights[t][j] = (1 + (j * 31 + t * 47) % 127) as f32 / 8191.0; }
+                }
+                let mut out = vec![0.375f32; 4 * stride];
+                unsafe { prefill_v_tile(&weights, &values, dh, first_seq, out.as_mut_ptr(), stride) };
+                for t in 0..4 {
+                    let mut expected = vec![0.0f32; dh];
+                    for j in 0..first_seq + t {
+                        unsafe { f32_axpy_avx2(&mut expected, &values[j * dh..(j + 1) * dh], weights[t][j], dh) };
+                    }
+                    for k in 0..dh {
+                        assert_eq!(out[t * stride + k].to_bits(), expected[k].to_bits(), "V dh={dh}, seq={first_seq}, token={t}, k={k}");
+                    }
+                    assert!(out[t * stride + dh..(t + 1) * stride].iter().all(|&v| v == 0.375));
+                }
             }
         }
     }

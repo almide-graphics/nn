@@ -25,6 +25,7 @@ mod gpu {
 }
 mod original { include!(env!("CPU_PARITY_ORIGINAL")); }
 mod candidate { include!(env!("CPU_PARITY_CANDIDATE")); }
+mod sampling;
 
 fn ids(s: &str) -> Vec<i64> {
     s.split_whitespace().map(|x| x.parse().unwrap()).collect()
@@ -35,7 +36,7 @@ fn write_logits(out: &mut BufWriter<fs::File>, logits: &[f64], vocab: usize) {
 }
 fn main() {
     let a: Vec<String> = env::args().collect();
-    assert_eq!(a.len(), 6, "mode model config cases out_dir");
+    assert!(a.len()==6 || a.len()==7, "mode model config cases out_dir [sample_cases]");
     let threads: usize = env::var("ALMIDE_LOCKSTEP_THREADS").expect("explicit thread count required").parse().unwrap();
     let available = std::thread::available_parallelism().expect("cannot determine safe worker limit").get();
     assert!(threads > 0 && threads <= available,
@@ -55,6 +56,7 @@ fn main() {
     let load = if is_ref { original::load_model } else { candidate::load_model };
     if !is_ref {
         assert_eq!(candidate::prefill_argmax(&raw,&[0],0),-1);
+        assert_eq!(candidate::prefill_sample(&raw,&[0],0,0.6,0.9,42),-1);
         assert!(candidate::prefill_logits(&raw,&[0],0).is_empty());
     }
     assert_eq!(load(&raw, c[0],c[1],c[2],c[3],c[4],c[5],c[6],
@@ -132,5 +134,6 @@ fn main() {
         assert!(candidate::prefill_logits(&raw,&[0],2048).is_empty());
         assert_eq!(candidate::prefill_argmax(&raw,&[0],2048),-2);
     }
+    if a.len()==7 { sampling::run(&raw,&a[6],output,vocab,is_ref); }
     fs::write(output.join("complete"),"ok\n").unwrap();
 }

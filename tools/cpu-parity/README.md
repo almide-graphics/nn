@@ -107,3 +107,23 @@ or explicitly fetch that commit). Upload `summary.json`, `manifest.json`, and lo
 on all runs, with raw `.f32` files on failures. This requires no real-model download.
 A larger scheduled/opt-in job can run the two-thread-count real-model gate when the
 approved pinned weights and at least four available CPUs are supplied.
+
+## Sampled prefill and execution provenance
+
+`--sampled` adds a tiny-only exact sampled-ID gate against the original `decode_sample`:
+288 combinations of temperatures 0/0.6/1, top-p -0.1/0/0.5/0.9/1/1.1, seeds
+0/42/-1/i64::MAX, and single/multiple/split nonzero-start prefixes. Four identical
+teacher-forced continuation steps verify sampled IDs; the final continuation's full
+logits also pass the original fixed numerical gate. Invalid sampled-prefill calls
+must reject without disturbing continuation. Results live in `sampling-summary.json`
+and also gate the main `summary.json`. This never changes the original numeric cases
+or thresholds. Example: add `--sampled --threads 1,4` to the normal tiny command.
+
+`--candidate /path/to/frozen/cpu_fast.rs` selects an explicit candidate snapshot.
+Otherwise the current native source is copied once before compilation. Keep separate
+output directories for different candidates. `NN_PREFILL_KERNEL`,
+`NN_PREFILL_ATTENTION` and `NN_PREFILL_PROFILE` are recorded in the manifest/summary
+and restored for every phase, preventing a phase from silently testing a different
+path. The benchmark's default-path gate requires all three unset. Summaries record
+the manifest hash and run identity; older evidence lacking these fields remains
+historical and must be rerun for the hardened benchmark protocol.
