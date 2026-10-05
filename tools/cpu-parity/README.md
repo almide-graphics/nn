@@ -127,3 +127,23 @@ and restored for every phase, preventing a phase from silently testing a differe
 path. The benchmark's default-path gate requires all three unset. Summaries record
 the manifest hash and run identity; older evidence lacking these fields remains
 historical and must be rerun for the hardened benchmark protocol.
+
+## Native kernel unit tests
+
+After preparing any gate output directory, the frozen candidate's `#[test]`
+regressions can also run through this Cargo project. This exercises packed dot
+products, causal attention, invalid projection ranges and mixed cache appends.
+Use a separate target directory and run these outside performance timing:
+
+```sh
+GATE=/absolute/path/to/prepared-gate
+CPU_PARITY_ORIGINAL="$GATE/sources/original.rs" \
+CPU_PARITY_CANDIDATE="$GATE/sources/candidate.rs" \
+CARGO_TARGET_DIR="$GATE/unit-target" \
+RUSTFLAGS='-C target-cpu=native' \
+cargo test --release --offline --locked \
+  --manifest-path tools/cpu-parity/Cargo.toml -- --test-threads=1
+```
+
+Unit tests supplement the immutable-model gate; they do not replace it or
+establish model-quality equivalence with another inference engine.

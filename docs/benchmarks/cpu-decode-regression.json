@@ -1,0 +1,157 @@
+{
+  "completed_utc": "2026-10-05T14:10:04Z",
+  "correctness": "all 40 x 128 timed output IDs, every warmup, and final 151936-logit bits after all 40 runs matched the original reference",
+  "replay_validation": "tiny input128/input1024 fresh/poisoned-KV/repeated/fresh-reload ID and final full-logit bit checks passed",
+  "source_sha256": {
+    "original": "7501f5e7d8eb98691c27678c01a8257fc3a4d8f3ef49033ceb93319b0b15589d",
+    "candidate": "a7e5d99e95e5f1c0ca06db6cc5eba4368d68452fdf71e249dab35fddd9b4e1f5"
+  },
+  "model_sha256": "3d1cfc4b845efcda96d63415c986d51781d02b2f55f93fc6add142cd56b4e314",
+  "binary_sha256": "cb2aefc2409c20af1ee1301c19801a79857e908e1d869227903fb7c7c72762cb",
+  "cpus": [
+    0,
+    1,
+    2,
+    3
+  ],
+  "threads": 4,
+  "margin": 0.0,
+  "all_cases_conservative_within_margin": true,
+  "percentile_method": "nearest-rank; n=10 p95 is maximum, so tail estimates are coarse",
+  "caveats": [
+    "decoder-only, fixed 128 decode calls after untimed prompt, no EOS termination",
+    "same process and shared model bytes; no cross-engine RSS claim",
+    "five balanced blocks per input, exploratory bootstrap; shared-host interference remains possible",
+    "not an end-to-end latency, batched-prefill, or llama.cpp comparison"
+  ],
+  "results": {
+    "input-128": {
+      "original": {
+        "runs": 10,
+        "seconds": [
+          2.689111226,
+          2.991108003,
+          2.675331571,
+          2.836315619,
+          3.088449439,
+          2.708107102,
+          2.982562341,
+          2.781469918,
+          3.029934154,
+          2.606669626
+        ],
+        "median_seconds": 2.8088927685,
+        "p95_seconds": 3.088449439,
+        "median_tokens_per_second": 45.573901125488476,
+        "p05_tokens_per_second": 41.444745179783396,
+        "median_milliseconds_per_decode": 21.94447475390625
+      },
+      "candidate": {
+        "runs": 10,
+        "seconds": [
+          2.672823252,
+          2.469373061,
+          2.872612094,
+          2.278104393,
+          2.624477626,
+          2.448438466,
+          2.575026945,
+          2.562086614,
+          2.312203474,
+          2.04897573
+        ],
+        "median_seconds": 2.5157298375000003,
+        "p95_seconds": 2.872612094,
+        "median_tokens_per_second": 50.89714909980991,
+        "p05_tokens_per_second": 44.55874855757674,
+        "median_milliseconds_per_decode": 19.654139355468754
+      },
+      "median_duration_ratio_candidate_over_original": 0.895630429795099,
+      "median_duration_change_percent": -10.436957020490102,
+      "block_geometric_duration_ratios": [
+        0.9058536594199121,
+        0.9286652983752623,
+        0.8765220953637638,
+        0.8917761309890302,
+        0.774500746712556
+      ],
+      "block_geometric_ratio": 0.8737587999683829,
+      "exploratory_block_bootstrap_two_sided_95pct": [
+        0.8194367591213014,
+        0.9134393418853681
+      ],
+      "exploratory_block_bootstrap_one_sided_95pct_upper": 0.9091962445655339,
+      "observed_median_within_margin": true,
+      "conservative_within_margin": true,
+      "separately_labeled_5pct_sensitivity": {
+        "observed_median_within_5pct": true,
+        "bootstrap_upper_within_5pct": true,
+        "note": "Sensitivity analysis only; does not set the main pass criterion"
+      }
+    },
+    "input-1024": {
+      "original": {
+        "runs": 10,
+        "seconds": [
+          4.080120756,
+          4.025768741,
+          4.248264688,
+          4.1867431,
+          4.367907744,
+          4.490194039,
+          4.692095204,
+          4.644806505,
+          4.98001817,
+          5.380091388
+        ],
+        "median_seconds": 4.4290508915,
+        "p95_seconds": 5.380091388,
+        "median_tokens_per_second": 28.90560570494228,
+        "p05_tokens_per_second": 23.791417425640205,
+        "median_milliseconds_per_decode": 34.60196008984375
+      },
+      "candidate": {
+        "runs": 10,
+        "seconds": [
+          2.626328854,
+          3.143170339,
+          3.315016833,
+          2.861790365,
+          3.394051064,
+          2.80855872,
+          4.148143002,
+          3.483252158,
+          3.796334881,
+          3.564512571
+        ],
+        "median_seconds": 3.3545339485000003,
+        "p95_seconds": 4.148143002,
+        "median_tokens_per_second": 38.16260840410755,
+        "p05_tokens_per_second": 30.857181138231162,
+        "median_milliseconds_per_decode": 26.207296472656253
+      },
+      "median_duration_ratio_candidate_over_original": 0.7573934079054825,
+      "median_duration_change_percent": -24.260659209451752,
+      "block_geometric_duration_ratios": [
+        0.7089205916189554,
+        0.7303278079665452,
+        0.6971587093789973,
+        0.8142393675232772,
+        0.7106766441582419
+      ],
+      "block_geometric_ratio": 0.7310957258838031,
+      "exploratory_block_bootstrap_two_sided_95pct": [
+        0.7045407347596787,
+        0.7723624590583795
+      ],
+      "exploratory_block_bootstrap_one_sided_95pct_upper": 0.7677805524094174,
+      "observed_median_within_margin": true,
+      "conservative_within_margin": true,
+      "separately_labeled_5pct_sensitivity": {
+        "observed_median_within_5pct": true,
+        "bootstrap_upper_within_5pct": true,
+        "note": "Sensitivity analysis only; does not set the main pass criterion"
+      }
+    }
+  }
+}
