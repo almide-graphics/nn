@@ -1,0 +1,62 @@
+[
+  {
+    "input": 128,
+    "engine": "nn",
+    "repetitions": 3,
+    "prefill_s": 0.77021255,
+    "decode_s": 3.122520044,
+    "total_s": 3.892732594,
+    "decode_tps": 40.99253109550256,
+    "rss_mib": 671.0390625
+  },
+  {
+    "input": 128,
+    "engine": "llama-f32",
+    "repetitions": 3,
+    "prefill_s": 0.489369815,
+    "decode_s": 3.144174689,
+    "total_s": 3.633544504,
+    "decode_tps": 40.7102062261,
+    "rss_mib": 1114.41015625
+  },
+  {
+    "input": 128,
+    "engine": "llama-f16",
+    "repetitions": 3,
+    "prefill_s": 0.541682933,
+    "decode_s": 3.038894007,
+    "total_s": 3.5805769400000003,
+    "decode_tps": 42.1205871956,
+    "rss_mib": 889.8203125
+  },
+  {
+    "input": 1024,
+    "engine": "nn",
+    "repetitions": 3,
+    "prefill_s": 9.556157758,
+    "decode_s": 4.997875103,
+    "total_s": 14.554032861,
+    "decode_tps": 25.610884098157502,
+    "rss_mib": 867.04296875
+  },
+  {
+    "input": 1024,
+    "engine": "llama-f32",
+    "repetitions": 3,
+    "prefill_s": 4.106596893,
+    "decode_s": 5.270713964,
+    "total_s": 9.377310857,
+    "decode_tps": 24.2851349692,
+    "rss_mib": 1132.76953125
+  },
+  {
+    "input": 1024,
+    "engine": "llama-f16",
+    "repetitions": 3,
+    "prefill_s": 4.01242117,
+    "decode_s": 4.658748719,
+    "total_s": 8.671169889,
+    "decode_tps": 27.4751886656,
+    "rss_mib": 908.79296875
+  }
+]

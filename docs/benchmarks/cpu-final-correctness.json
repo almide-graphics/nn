@@ -1,0 +1,34 @@
+{
+  "passed": true,
+  "full_suite": true,
+  "model_sha256": "3d1cfc4b845efcda96d63415c986d51781d02b2f55f93fc6add142cd56b4e314",
+  "candidate_sha256": "a7e5d99e95e5f1c0ca06db6cc5eba4368d68452fdf71e249dab35fddd9b4e1f5",
+  "reference_sha256": "7501f5e7d8eb98691c27678c01a8257fc3a4d8f3ef49033ceb93319b0b15589d",
+  "thresholds": {
+    "max_absolute": 0.001,
+    "max_error_over_max_abs_reference": 0.0001,
+    "exact_top1": true,
+    "finite_only": true
+  },
+  "cases": 41,
+  "threads": [
+    1,
+    4
+  ],
+  "checkpoints": 1370,
+  "all_bit_identical": true,
+  "max_abs_error": 0.0,
+  "max_normalized_error": 0.0,
+  "top1_matches": 1370,
+  "failed_checkpoints": 0,
+  "missing": [],
+  "runtime_overrides": {
+    "NN_PREFILL_PROFILE": null,
+    "NN_PREFILL_KERNEL": null,
+    "NN_PREFILL_ATTENTION": null
+  },
+  "run_id": "9feab7ff168d4b50a6f0840ed5c38336",
+  "manifest_sha256": "46cd499e21a16196e099356cd346b5b520b5a0fe72c410a17b26129e587daa06",
+  "sampling": "3,168 IDs plus final logits, default and forced AVX2/row-attention paths, tiny fixture",
+  "native_unit_tests": 10
+}

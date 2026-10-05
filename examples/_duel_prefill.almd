@@ -1,0 +1,104 @@
+// Matched CPU benchmark for batched prefill; original decode path is retained.
+// args: model.gguf token_ids.txt decode_steps threads output_prefix [logits]
+import datetime
+import fs
+import process
+import self.qwen
+import self.qwen_loader
+
+@extern(rs, "cpu_fast", "load_model")
+fn cpu_load_model(raw: Bytes, n_layers: Int, n_heads: Int, n_kv_heads: Int, head_dim: Int,
+  ffn_hidden: Int, hidden: Int, vocab: Int, rope_theta: Float, eps: Float,
+  emb_off: Int, out_norm_off: Int, gammas: List[Int], weights: List[Int]) -> Int
+@extern(rs, "cpu_fast", "decode_argmax")
+fn cpu_decode_argmax(raw: Bytes, token: Int, pos: Int) -> Int
+@extern(rs, "cpu_fast", "decode_logits")
+fn cpu_decode_logits(raw: Bytes, token: Int, pos: Int) -> List[Float]
+@extern(rs, "cpu_fast", "prefill_argmax")
+fn cpu_prefill_argmax(raw: Bytes, tokens: List[Int], start_pos: Int) -> Int
+@extern(rs, "cpu_fast", "prefill_logits")
+fn cpu_prefill_logits(raw: Bytes, tokens: List[Int], start_pos: Int) -> List[Float]
+
+fn ms(t0: Int, t1: Int) -> Float = int.to_float(t1 - t0) / 1000000.0
+fn ids_string(ids: List[Int]) -> String = ids |> list.map((t) => int.to_string(t)) |> list.join(",")
+fn floats_string(xs: List[Float]) -> String = xs |> list.map((x) => float.to_string(x)) |> list.join(",")
+
+effect fn main() -> () = {
+  let args = process.args()
+  let model_path = list.get(args, 1) ?? "../models/qwen3-0.6b-q8_0.gguf"
+  let token_path = list.get(args, 2) ?? "../results/smoke.tokens"
+  let steps = int.parse(list.get(args, 3) ?? "128") ?? 128
+  let threads = int.parse(list.get(args, 4) ?? "4") ?? 4
+  let prefix = list.get(args, 5) ?? "../results/nn-smoke"
+  let mode = list.get(args, 6) ?? ""
+  let dump = mode == "logits"
+  let prompt = string.split(string.trim(fs.read_text(token_path)!), " ")
+    |> list.filter_map((s) => int.parse(string.trim(s))?)
+  assert(list.len(prompt) > 0, "empty prompt")
+  assert(list.len(prompt) + steps <= 2048, "context exceeds nn limit")
+  let t0 = datetime.monotonic_ns()
+  let (raw, cfg, gammas, weights) = qwen_loader.load_f32(model_path)!
+  assert(cfg.wtype == 8, "cpu_fast requires Q8_0")
+  let loaded = cpu_load_model(raw, cfg.n_layers, cfg.n_heads, cfg.n_kv_heads, cfg.head_dim,
+    cfg.ffn_hidden, cfg.hidden, cfg.vocab, cfg.rope_theta, cfg.eps,
+    cfg.emb_off, cfg.out_norm_off, gammas |> list.flat_map((g) => g), weights |> list.flat_map((w) => w))
+  assert(loaded == 1, "model load failed")
+  let t1 = datetime.monotonic_ns()
+  var pos = 0
+  var next = 0
+  if not dump and mode != "cold" then {
+    next = cpu_prefill_argmax(raw, prompt, 0)
+    assert(next >= 0, "warmup prefill returned error")
+    pos = list.len(prompt)
+    for _k in list.range(0, 8) {
+      next = cpu_decode_argmax(raw, next, pos)
+      pos = pos + 1
+    }
+  }
+  pos = 0
+  let tp0 = datetime.monotonic_ns()
+  var prompt_logits: List[Float] = []
+  if dump then {
+    prompt_logits = cpu_prefill_logits(raw, prompt, 0)
+    assert(list.len(prompt_logits) == cfg.vocab, "prefill logits missing")
+    next = qwen.argmax(prompt_logits)
+  } else {
+    next = cpu_prefill_argmax(raw, prompt, 0)
+  }
+  assert(next >= 0, "prefill returned error")
+  pos = list.len(prompt)
+  let tp1 = datetime.monotonic_ns()
+  var out = [next]
+  var latencies: List[Float] = []
+  var first_decode_logits: List[Float] = []
+  let td0 = datetime.monotonic_ns()
+  for k in list.range(0, steps) {
+    let ts0 = datetime.monotonic_ns()
+    if dump and k == 0 then {
+      first_decode_logits = cpu_decode_logits(raw, next, pos)
+      next = qwen.argmax(first_decode_logits)
+    } else {
+      next = cpu_decode_argmax(raw, next, pos)
+    }
+    let ts1 = datetime.monotonic_ns()
+    assert(next >= 0, "decode returned error")
+    pos = pos + 1
+    out = out + [next]
+    latencies = latencies + [ms(ts0, ts1)]
+  }
+  let td1 = datetime.monotonic_ns()
+  let load_ms = ms(t0, t1)
+  let prefill_ms = ms(tp0, tp1)
+  let decode_ms = ms(td0, td1)
+  let payload = "{\"engine\":\"nn\",\"prefill_mode\":\"batched\",\"n_prompt\":" + int.to_string(list.len(prompt))
+    + ",\"n_decode\":" + int.to_string(steps) + ",\"threads\":" + int.to_string(threads)
+    + ",\"load_ms\":" + float.to_string(load_ms) + ",\"prefill_ms\":" + float.to_string(prefill_ms)
+    + ",\"decode_ms\":" + float.to_string(decode_ms) + ",\"decode_tps\":" + float.to_string(int.to_float(steps) * 1000.0 / decode_ms)
+    + ",\"ids\":[" + ids_string(out) + "],\"latencies_ms\":[" + floats_string(latencies) + "]}"
+  fs.write(prefix + ".json", payload)!
+  if dump then {
+    fs.write(prefix + ".prompt_logits.txt", floats_string(prompt_logits))!
+    fs.write(prefix + ".first_decode_logits.txt", floats_string(first_decode_logits))!
+  }
+  println(payload)
+}

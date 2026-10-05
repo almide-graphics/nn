@@ -1,0 +1,267 @@
+{
+  "kind": "diagnostic_not_confirmatory",
+  "source_sha256": "4d08f6db6b49b208b0277c4878c443de6837064ad6a9d01e255e512fbc0bc94a",
+  "binary_sha256": "edb0b75e550d9e94ceaf702cab65b273fd400cd53532dfbed5993ae557ff6e19",
+  "model_sha256": "3d1cfc4b845efcda96d63415c986d51781d02b2f55f93fc6add142cd56b4e314",
+  "llama_sha": "8e1642198dcd4e408f8776222d6ae31b74d01187",
+  "quality": {
+    "passed": true,
+    "full_suite": false,
+    "cases": 22,
+    "threads": [
+      4
+    ],
+    "checkpoints": 374,
+    "all_bit_identical": true,
+    "max_abs_error": 0.0,
+    "max_normalized_error": 0.0,
+    "top1_matches": 374,
+    "runtime_overrides": {
+      "NN_PREFILL_PROFILE": null,
+      "NN_PREFILL_KERNEL": null,
+      "NN_PREFILL_ATTENTION": null
+    }
+  },
+  "summary": [
+    {
+      "input": 128,
+      "engine": "nn",
+      "repetitions": 3,
+      "prefill_s": {
+        "median": 0.435241769,
+        "min": 0.38838572699999996,
+        "max": 0.46553870599999997
+      },
+      "decode_s": {
+        "median": 2.72401135,
+        "min": 2.6874882120000003,
+        "max": 3.272112836
+      },
+      "total_s": {
+        "median": 3.189550056,
+        "min": 3.1227299810000004,
+        "max": 3.660498563
+      },
+      "decode_tokens_per_s": {
+        "median": 46.9895252088432,
+        "min": 39.11845538813198,
+        "max": 47.62811588473676
+      },
+      "peak_rss_mib": {
+        "median": 678.99609375,
+        "min": 674.59375,
+        "max": 679.25390625
+      },
+      "latency_median_ms": {
+        "median": 21.1856345,
+        "min": 20.982947,
+        "max": 25.144492
+      },
+      "latency_p95_ms": {
+        "median": 26.407008,
+        "min": 25.83203,
+        "max": 29.809316
+      }
+    },
+    {
+      "input": 128,
+      "engine": "llama-f32",
+      "repetitions": 3,
+      "prefill_s": {
+        "median": 0.49802442900000005,
+        "min": 0.40284117,
+        "max": 0.5134631630000001
+      },
+      "decode_s": {
+        "median": 2.864878242,
+        "min": 2.705556081,
+        "max": 3.05237833
+      },
+      "total_s": {
+        "median": 3.378341405,
+        "min": 3.108397251,
+        "max": 3.550402759
+      },
+      "decode_tokens_per_s": {
+        "median": 44.67903665973669,
+        "min": 41.93451340614124,
+        "max": 47.31005241358366
+      },
+      "peak_rss_mib": {
+        "median": 1114.4609375,
+        "min": 1114.36328125,
+        "max": 1114.62109375
+      },
+      "latency_median_ms": {
+        "median": 21.7715445,
+        "min": 20.726335499999998,
+        "max": 23.130672
+      },
+      "latency_p95_ms": {
+        "median": 27.57594,
+        "min": 24.575497,
+        "max": 28.297769
+      }
+    },
+    {
+      "input": 128,
+      "engine": "llama-f16",
+      "repetitions": 3,
+      "prefill_s": {
+        "median": 0.438816235,
+        "min": 0.351864577,
+        "max": 0.470292622
+      },
+      "decode_s": {
+        "median": 2.924148635,
+        "min": 2.684020971,
+        "max": 3.127729709
+      },
+      "total_s": {
+        "median": 3.394441257,
+        "min": 3.035885548,
+        "max": 3.566545944
+      },
+      "decode_tokens_per_s": {
+        "median": 43.77342467066487,
+        "min": 40.924252383983735,
+        "max": 47.68964228782101
+      },
+      "peak_rss_mib": {
+        "median": 889.921875,
+        "min": 889.69140625,
+        "max": 889.921875
+      },
+      "latency_median_ms": {
+        "median": 22.312978,
+        "min": 20.3155575,
+        "max": 23.578637999999998
+      },
+      "latency_p95_ms": {
+        "median": 26.853098,
+        "min": 25.863977,
+        "max": 30.541635
+      }
+    },
+    {
+      "input": 1024,
+      "engine": "nn",
+      "repetitions": 3,
+      "prefill_s": {
+        "median": 3.262364475,
+        "min": 3.099205723,
+        "max": 3.33461992
+      },
+      "decode_s": {
+        "median": 4.693037997999999,
+        "min": 4.63194795,
+        "max": 5.051334266
+      },
+      "total_s": {
+        "median": 7.96656787,
+        "min": 7.9554024729999995,
+        "max": 8.150539988999999
+      },
+      "decode_tokens_per_s": {
+        "median": 27.27444355970459,
+        "min": 25.33983958685026,
+        "max": 27.634161994415333
+      },
+      "peak_rss_mib": {
+        "median": 881.6875,
+        "min": 881.63671875,
+        "max": 881.8671875
+      },
+      "latency_median_ms": {
+        "median": 36.258684,
+        "min": 34.8355155,
+        "max": 38.619033
+      },
+      "latency_p95_ms": {
+        "median": 44.652715,
+        "min": 43.798432,
+        "max": 47.51475
+      }
+    },
+    {
+      "input": 1024,
+      "engine": "llama-f32",
+      "repetitions": 3,
+      "prefill_s": {
+        "median": 3.785804943,
+        "min": 3.6544075560000002,
+        "max": 3.833722366
+      },
+      "decode_s": {
+        "median": 5.452306465,
+        "min": 4.808591956,
+        "max": 5.691893077
+      },
+      "total_s": {
+        "median": 9.106714021,
+        "min": 8.594396899,
+        "max": 9.525615443
+      },
+      "decode_tokens_per_s": {
+        "median": 23.476303252884005,
+        "min": 22.488124472546204,
+        "max": 26.619018866902586
+      },
+      "peak_rss_mib": {
+        "median": 1132.8125,
+        "min": 1132.53515625,
+        "max": 1132.96484375
+      },
+      "latency_median_ms": {
+        "median": 41.887609,
+        "min": 36.54576350000001,
+        "max": 45.6850245
+      },
+      "latency_p95_ms": {
+        "median": 52.500266,
+        "min": 46.171737,
+        "max": 54.705472
+      }
+    },
+    {
+      "input": 1024,
+      "engine": "llama-f16",
+      "repetitions": 3,
+      "prefill_s": {
+        "median": 3.881608751,
+        "min": 3.365323433,
+        "max": 4.130319097
+      },
+      "decode_s": {
+        "median": 4.482219761,
+        "min": 4.055267852,
+        "max": 5.353362403
+      },
+      "total_s": {
+        "median": 8.612538858,
+        "min": 7.420591285,
+        "max": 9.234971154
+      },
+      "decode_tokens_per_s": {
+        "median": 28.55727894328919,
+        "min": 23.910206401918423,
+        "max": 31.563882996501015
+      },
+      "peak_rss_mib": {
+        "median": 908.93359375,
+        "min": 908.85546875,
+        "max": 908.9609375
+      },
+      "latency_median_ms": {
+        "median": 34.550298999999995,
+        "min": 31.149680500000002,
+        "max": 40.776549
+      },
+      "latency_p95_ms": {
+        "median": 42.0684,
+        "min": 36.509657,
+        "max": 55.493355
+      }
+    }
+  ]
+}
