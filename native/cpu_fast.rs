@@ -103,7 +103,7 @@ struct State {
     // quantized activation scratch: scales + i8 (max over hidden/ffn)
     xq_s: Vec<f32>,
     xq: Vec<i8>,
-    // KV cache pool: [layer][pos*kv_hidden + i]
+    // KV cache pool: [layer][kv_head][position][head_dim]
     k_cache: Vec<Vec<f32>>,
     v_cache: Vec<Vec<f32>>,
     // per-token rope table: head_dim/2 × (sin, cos)
@@ -596,6 +596,32 @@ fn avx2() -> bool {
     *A.get_or_init(|| std::is_x86_feature_detected!("avx2") && std::is_x86_feature_detected!("fma") && std::is_x86_feature_detected!("f16c"))
 }
 
+/// A head owns a contiguous sequence panel in the primary KV cache.
+/// Shared by the one-token and batched append paths; copying preserves
+/// every K/V bit and does not change the arithmetic in either executor.
+fn store_kv_head(
+    row: &[f32], cfg: &Cfg, head: usize, pos: usize,
+    keys: &mut [f32], values: &mut [f32],
+) {
+    let dh = cfg.head_dim;
+    let dst = pos * dh;
+    let src = head * dh;
+    keys[dst..dst + dh].copy_from_slice(&row[cfg.q_hidden + src..cfg.q_hidden + src + dh]);
+    values[dst..dst + dh].copy_from_slice(&row[cfg.q_hidden + cfg.kv_hidden + src..cfg.q_hidden + cfg.kv_hidden + src + dh]);
+}
+
+fn prefill_append_kv(qkv: &[f32], cfg: &Cfg, start: usize, keys: &mut [f32], values: &mut [f32]) {
+    use rayon::prelude::*;
+    let head_stride = MAX_SEQ * cfg.head_dim;
+    let row_stride = cfg.q_hidden + 2 * cfg.kv_hidden;
+    keys.par_chunks_mut(head_stride).zip(values.par_chunks_mut(head_stride))
+        .enumerate().for_each(|(head, (kp, vp))| {
+            for (t, row) in qkv.chunks_exact(row_stride).enumerate() {
+                store_kv_head(row, cfg, head, start + t, kp, vp);
+            }
+        });
+}
+
 #[allow(clippy::too_many_arguments)]
 fn token_pass(st: &mut State, raw: &[u8], token: usize, pos: usize, nt: usize) {
     let cfg = &st.cfg;
@@ -863,12 +889,16 @@ fn token_pass(st: &mut State, raw: &[u8], token: usize, pos: usize, nt: usize) {
                     }
                     bar.wait();
 
-                    // kv append into the pool (split kv_hidden)
+                    // Each worker publishes disjoint complete KV heads.
                     {
-                        let (i0, i1) = split(kv_hidden, nt, tid);
-                        let dst = pos * kv_hidden;
-                        kcache[dst + i0..dst + i1].copy_from_slice(&qkv[q_hidden + i0..q_hidden + i1]);
-                        vcache[dst + i0..dst + i1].copy_from_slice(&qkv[q_hidden + kv_hidden + i0..q_hidden + kv_hidden + i1]);
+                        let head_stride = MAX_SEQ * dh;
+                        let (h0, h1) = split(n_kv, nt, tid);
+                        for head in h0..h1 {
+                            let base = head * head_stride;
+                            store_kv_head(qkv, cfg, head, pos,
+                                &mut kcache[base..base + head_stride],
+                                &mut vcache[base..base + head_stride]);
+                        }
                     }
                     bar.wait();
 
@@ -879,12 +909,12 @@ fn token_pass(st: &mut State, raw: &[u8], token: usize, pos: usize, nt: usize) {
                         let mut scores = [0.0f32; MAX_SEQ];
                         for hh in h0..h1 {
                             let qb = hh * dh;
-                            let kvb = (hh / group) * dh;
+                            let kvb = (hh / group) * MAX_SEQ * dh;
                             let scale = 1.0 / (dh as f32).sqrt();
                             let mut m = f32::NEG_INFINITY;
                             let qrow = &qkv[qb..qb + dh];
                             for j in 0..seq {
-                                let kb = j * kv_hidden + kvb;
+                                let kb = kvb + j * dh;
                                 let sv;
                                 #[cfg(target_arch = "x86_64")]
                                 {
@@ -956,7 +986,7 @@ fn token_pass(st: &mut State, raw: &[u8], token: usize, pos: usize, nt: usize) {
                             }
                             for j in 0..seq {
                                 let w = scores[j] * invs;
-                                let vb = j * kv_hidden + kvb;
+                                let vb = kvb + j * dh;
                                 #[cfg(target_arch = "x86_64")]
                                 {
                                     if avx2() {
@@ -1041,7 +1071,7 @@ fn token_pass(st: &mut State, raw: &[u8], token: usize, pos: usize, nt: usize) {
 // the decode executor above as the numerical oracle and process a bounded
 // number of prompt rows together, layer by layer. No float weight copy or
 // repacking is needed: the Q8_0 weights are reused directly from `raw`.
-const PREFILL_CHUNK: usize = 64;
+const PREFILL_CHUNK: usize = 512;
 const PREFILL_TILE: usize = 4;
 
 /// One Q8_0 weight row against four token rows. Each token retains exactly
@@ -1154,6 +1184,61 @@ unsafe fn q8_prefill_tile_vnni(
     out
 }
 
+/// 256-bit VNNI keeps each decode accumulator in one YMM register and
+/// uses PSIGNB directly. AVX512-VL supplies 32 registers without packing
+/// separate token rows into ZMM values or rebuilding per-byte sign masks.
+#[cfg(target_arch = "x86_64")]
+#[target_feature(enable = "avx2,avx512f,avx512vl,avx512vnni,fma,f16c")]
+unsafe fn q8_prefill_tile_vnni256(
+    xs: &[f32], xq: &[i8], rows: &[u8], row_bytes: usize, scale_stride: usize, quant_stride: usize,
+) -> [[f32; PREFILL_TILE]; 2] {
+    use std::arch::x86_64::*;
+    let zero = _mm256_setzero_si256();
+    let mut even = [[_mm256_setzero_ps(); PREFILL_TILE]; 2];
+    let mut odd = [[_mm256_setzero_ps(); PREFILL_TILE]; 2];
+    let nb = row_bytes / Q8BB;
+    macro_rules! block {
+        ($b:expr, $acc:ident) => {{
+            let b = $b;
+            let p0 = rows.as_ptr().add(b * Q8BB);
+            let p1 = p0.add(row_bytes);
+            let d0 = _mm_cvtss_f32(_mm_cvtph_ps(_mm_cvtsi32_si128(u16::from_le_bytes([*p0, *p0.add(1)]) as i32)));
+            let d1 = _mm_cvtss_f32(_mm_cvtph_ps(_mm_cvtsi32_si128(u16::from_le_bytes([*p1, *p1.add(1)]) as i32)));
+            let w0 = _mm256_loadu_si256(p0.add(2) as *const __m256i);
+            let w1 = _mm256_loadu_si256(p1.add(2) as *const __m256i);
+            for t in 0..PREFILL_TILE {
+                let x = _mm256_loadu_si256(xq.as_ptr().add(t * quant_stride + b * Q8B) as *const __m256i);
+                let ax = _mm256_sign_epi8(x, x);
+                let p0 = _mm256_dpbusd_epi32(zero, ax, _mm256_sign_epi8(w0, x));
+                let p1 = _mm256_dpbusd_epi32(zero, ax, _mm256_sign_epi8(w1, x));
+                let s = *xs.get_unchecked(t * scale_stride + b);
+                $acc[0][t] = _mm256_fmadd_ps(_mm256_cvtepi32_ps(p0), _mm256_set1_ps(d0 * s), $acc[0][t]);
+                $acc[1][t] = _mm256_fmadd_ps(_mm256_cvtepi32_ps(p1), _mm256_set1_ps(d1 * s), $acc[1][t]);
+            }
+        }};
+    }
+    for b in (0..nb).step_by(2) {
+        block!(b, even);
+        if b + 1 < nb { block!(b + 1, odd); }
+    }
+    let mut out = [[0.0; PREFILL_TILE]; 2];
+    for r in 0..2 {
+        for t in 0..PREFILL_TILE {
+            let acc = _mm256_add_ps(even[r][t], odd[r][t]);
+            let s4 = _mm_add_ps(_mm256_extractf128_ps(acc, 1), _mm256_castps256_ps128(acc));
+            let s2 = _mm_add_ps(s4, _mm_movehl_ps(s4, s4));
+            out[r][t] = _mm_cvtss_f32(_mm_add_ss(s2, _mm_shuffle_ps(s2, s2, 1)));
+        }
+    }
+    out
+}
+
+#[cfg(target_arch = "x86_64")]
+fn prefill_use_vnni512() -> bool {
+    static ENABLED: OnceLock<bool> = OnceLock::new();
+    *ENABLED.get_or_init(|| std::env::var("NN_PREFILL_KERNEL").ok().as_deref() != Some("vnni256"))
+}
+
 #[cfg(target_arch = "x86_64")]
 fn prefill_vnni() -> bool {
     static AVAILABLE: OnceLock<bool> = OnceLock::new();
@@ -1168,6 +1253,169 @@ fn prefill_vnni() -> bool {
     })
 }
 
+// Row-lane GEMM retains the original eight partial lanes, even/odd
+// block accumulation and horizontal reduction order exactly.
+#[derive(Clone)]
+#[repr(C, align(64))]
+struct PrefillRowPanel {
+    scales: [f32; 16],
+    quants: [[i8; 64]; 8],
+}
+
+#[cfg(target_arch = "x86_64")]
+fn prefill_rows16() -> bool {
+    static ENABLED: OnceLock<bool> = OnceLock::new();
+    *ENABLED.get_or_init(|| std::env::var("NN_PREFILL_KERNEL").ok().map_or(true, |kernel| kernel == "rows16")
+        && prefill_vnni())
+}
+
+#[cfg(target_arch = "x86_64")]
+#[target_feature(enable = "avx2,avx512f,avx512bw,avx512vnni,fma")]
+unsafe fn q8_rows16_tile(
+    xs: &[f32], x_unsigned: &[u8], x_bias: &[i32], panels: &[PrefillRowPanel], scale_stride: usize, quant_stride: usize,
+) -> [[f32; 16]; 4] {
+    use std::arch::x86_64::*;
+    let mut out = [[0.0f32; 16]; 4];
+    for t in 0..4 {
+        let mut even = [_mm512_setzero_ps(); 8];
+        let mut odd = [_mm512_setzero_ps(); 8];
+        macro_rules! block {
+            ($b:expr, $acc:ident) => {{
+                let b = $b;
+                let panel = panels.get_unchecked(b);
+                let scale = _mm512_mul_ps(_mm512_load_ps(panel.scales.as_ptr()),
+                    _mm512_set1_ps(*xs.get_unchecked(t * scale_stride + b)));
+                macro_rules! lane {
+                    ($k:expr) => {{
+                        let weights = _mm512_load_si512(panel.quants[$k].as_ptr() as *const __m512i);
+                        let bias = _mm512_set1_epi32(*x_bias.get_unchecked(t * (quant_stride / 4) + b * 8 + $k));
+                        let bits = (x_unsigned.as_ptr().add(t * quant_stride + b * Q8B + $k * 4) as *const i32).read_unaligned();
+                        let dot = _mm512_dpbusd_epi32(bias, weights, _mm512_set1_epi32(bits));
+                        $acc[$k] = _mm512_fmadd_ps(_mm512_cvtepi32_ps(dot), scale, $acc[$k]);
+                    }};
+                }
+                lane!(0); lane!(1); lane!(2); lane!(3);
+                lane!(4); lane!(5); lane!(6); lane!(7);
+            }};
+        }
+        for b in (0..panels.len()).step_by(2) {
+            block!(b, even);
+            if b + 1 < panels.len() { block!(b + 1, odd); }
+        }
+        let mut sum = [_mm512_setzero_ps(); 8];
+        for k in 0..8 { sum[k] = _mm512_add_ps(even[k], odd[k]); }
+        // Identical tree to q8_row_dot_avx2's high/low, movehl, shuffle reduction.
+        let s0 = _mm512_add_ps(sum[4], sum[0]);
+        let s1 = _mm512_add_ps(sum[5], sum[1]);
+        let s2 = _mm512_add_ps(sum[6], sum[2]);
+        let s3 = _mm512_add_ps(sum[7], sum[3]);
+        _mm512_storeu_ps(out[t].as_mut_ptr(),
+            _mm512_add_ps(_mm512_add_ps(s0, s2), _mm512_add_ps(s1, s3)));
+    }
+    out
+}
+
+/// Pack 16 rows with four-byte moves rather than per-byte index/scans.
+/// Raw GGUF Q8_0 rows stay unchanged; unsigned bytes are private scratch.
+#[cfg(target_arch = "x86_64")]
+#[target_feature(enable = "avx2,f16c")]
+unsafe fn pack_prefill_panel(
+    raw: &[u8], off: usize, row_bytes: usize, rows: usize,
+    first_row: usize, block: usize, panel: &mut PrefillRowPanel,
+) -> bool {
+    use std::arch::x86_64::*;
+    let mut unusual = false;
+    for lane in 0..16 {
+        let row = first_row + lane;
+        if row >= rows { break; }
+        let p = off + row * row_bytes + block * Q8BB;
+        let rp = raw.as_ptr().add(p);
+        let half = u16::from_le_bytes([*rp, *rp.add(1)]) as i32;
+        panel.scales[lane] = _mm_cvtss_f32(_mm_cvtph_ps(_mm_cvtsi32_si128(half)));
+        let q = rp.add(2);
+        let values = _mm256_loadu_si256(q as *const __m256i);
+        unusual |= _mm256_movemask_epi8(_mm256_cmpeq_epi8(values, _mm256_set1_epi8(i8::MIN))) != 0;
+        for k in 0..8 {
+            let bits = (q.add(k * 4) as *const u32).read_unaligned() ^ 0x8080_8080;
+            (panel.quants[k].as_mut_ptr().add(lane * 4) as *mut u32).write(bits);
+        }
+    }
+    unusual
+}
+
+#[cfg(target_arch = "x86_64")]
+#[allow(clippy::too_many_arguments)]
+fn prefill_gemm_rows16(
+    raw: &[u8], off: usize, rows: usize, n_in: usize,
+    xs: &[f32], xq: &[i8], quant_stride: usize, n_tokens: usize,
+    out: &mut [f32], out_stride: usize, out_column: usize, add_self: bool,
+) -> bool {
+    use rayon::prelude::*;
+    let blocks = n_in / Q8B;
+    let row_bytes = blocks.checked_mul(Q8BB).expect("prefill weight row overflow");
+    let projection_bytes = rows.checked_mul(row_bytes).expect("prefill projection overflow");
+    let projection_end = off.checked_add(projection_bytes).expect("prefill projection offset overflow");
+    // Establish one checked allocation range before the unchecked SIMD loads.
+    let projection = &raw[off..projection_end];
+    let groups = rows.div_ceil(16);
+    let mut panels = vec![PrefillRowPanel { scales: [0.0; 16], quants: [[0; 64]; 8] }; groups * blocks];
+    let unusual_weight = std::sync::atomic::AtomicBool::new(false);
+    panels.par_chunks_mut(blocks).enumerate().for_each(|(group, group_panels)| {
+        let mut unusual = false;
+        for (b, panel) in group_panels.iter_mut().enumerate() {
+            unusual |= unsafe { pack_prefill_panel(projection, 0, row_bytes, rows, group * 16, b, panel) };
+        }
+        if unusual { unusual_weight.store(true, Ordering::Relaxed); }
+    });
+    // Preserve the original sign+maddubs behavior even for the unusual
+    // -128 weight byte (ordinary GGUF Q8_0 quantization uses -127..127).
+    if unusual_weight.load(Ordering::Relaxed) { return false; }
+    let mut unsigned = vec![0u8; n_tokens * n_in];
+    unsigned.par_chunks_mut(n_in).zip(xq.par_chunks(quant_stride)).for_each(|(dst, src)| {
+        for k in 0..n_in { dst[k] = src[k] as u8; }
+    });
+    // Each activation bias is shared across all 16-row panels. Keeping
+    // it out of each weight panel halves the hot weight working set.
+    let mut x_bias = vec![0i32; n_tokens * n_in / 4];
+    x_bias.par_chunks_mut(n_in / 4).zip(xq.par_chunks(quant_stride)).for_each(|(dst, src)| {
+        for (k, xs) in src[..n_in].chunks_exact(4).enumerate() {
+            dst[k] = -128 * (xs[0] as i32 + xs[1] as i32 + xs[2] as i32 + xs[3] as i32);
+        }
+    });
+    let op = Shared(out.as_mut_ptr());
+    let scale_stride = quant_stride / Q8B;
+    (0..groups).into_par_iter().for_each(|g| {
+        let valid = (rows - g * 16).min(16);
+        let mut t = 0;
+        while t + 4 <= n_tokens {
+            let dots = unsafe { q8_rows16_tile(&xs[t * scale_stride..], &unsigned[t * n_in..], &x_bias[t * n_in / 4..],
+                &panels[g * blocks..(g + 1) * blocks], scale_stride, n_in) };
+            for j in 0..4 {
+                for r in 0..valid {
+                    unsafe {
+                        let p = op.ptr().add((t + j) * out_stride + out_column + g * 16 + r);
+                        *p = if add_self { *p + dots[j][r] } else { dots[j][r] };
+                    }
+                }
+            }
+            t += 4;
+        }
+        while t < n_tokens {
+            for r in 0..valid {
+                let rr = g * 16 + r;
+                let dot = q8_row_dot(&xs[t * scale_stride..], &xq[t * quant_stride..],
+                    &raw[off + rr * row_bytes..off + (rr + 1) * row_bytes]);
+                unsafe {
+                    let p = op.ptr().add(t * out_stride + out_column + rr);
+                    *p = if add_self { *p + dot } else { dot };
+                }
+            }
+            t += 1;
+        }
+    });
+    true
+}
+
 /// Parallelize output-column tiles. A task owns these columns for every
 /// token row; therefore all raw output writes are disjoint. Keeping a
 /// small weight-row tile hot in cache amortizes DRAM reads over the batch.
@@ -1178,6 +1426,9 @@ fn prefill_gemm(
     out: &mut [f32], out_stride: usize, out_column: usize, add_self: bool,
 ) {
     use rayon::prelude::*;
+    #[cfg(target_arch = "x86_64")]
+    if n_tokens >= PREFILL_TILE && prefill_rows16() && prefill_gemm_rows16(raw, off, rows, n_in, xs, xq, quant_stride,
+        n_tokens, out, out_stride, out_column, add_self) { return; }
     let row_bytes = n_in / Q8B * Q8BB;
     let scale_stride = quant_stride / Q8B;
     let op = Shared(out.as_mut_ptr());
@@ -1190,11 +1441,16 @@ fn prefill_gemm(
             #[cfg(target_arch = "x86_64")]
             if prefill_vnni() && t + PREFILL_TILE <= n_tokens {
                 while r + 2 <= end {
-                    let dots = unsafe { q8_prefill_tile_vnni(
-                        &xs[t * scale_stride..], &xq[t * quant_stride..],
-                        &raw[off + r * row_bytes..off + (r + 2) * row_bytes],
-                        row_bytes, scale_stride, quant_stride,
-                    ) };
+                    let dots = unsafe {
+                        let scales = &xs[t * scale_stride..];
+                        let quants = &xq[t * quant_stride..];
+                        let weights = &raw[off + r * row_bytes..off + (r + 2) * row_bytes];
+                        if prefill_use_vnni512() {
+                            q8_prefill_tile_vnni(scales, quants, weights, row_bytes, scale_stride, quant_stride)
+                        } else {
+                            q8_prefill_tile_vnni256(scales, quants, weights, row_bytes, scale_stride, quant_stride)
+                        }
+                    };
                     for (col, values) in dots.into_iter().enumerate() {
                         for (j, dot) in values.into_iter().enumerate() {
                             unsafe {
@@ -1354,7 +1610,45 @@ unsafe fn prefill_qk_tile(q: &[f32], q_stride: usize, key: &[f32], dh: usize) ->
     out
 }
 
-/// Four causal weighted-V rows. Keep a cache-line-wide output panel in
+/// Four keys by four queries. Sixteen independent ZMM accumulators keep
+/// the decode dot's lower/upper even/odd lanes unchanged, while a query
+/// vector load is reused across four keys. Results are [key][query].
+#[cfg(target_arch = "x86_64")]
+#[target_feature(enable = "avx2,avx512f,avx512dq,fma")]
+unsafe fn prefill_qk_4x4(
+    q: &[f32], q_stride: usize, keys: &[f32], key_stride: usize, dh: usize,
+) -> [[f32; 4]; 4] {
+    use std::arch::x86_64::*;
+    let mut acc = [[_mm512_setzero_ps(); 4]; 4];
+    let mut i = 0;
+    while i + 16 <= dh {
+        let qv = [
+            _mm512_loadu_ps(q.as_ptr().add(i)),
+            _mm512_loadu_ps(q.as_ptr().add(q_stride + i)),
+            _mm512_loadu_ps(q.as_ptr().add(2 * q_stride + i)),
+            _mm512_loadu_ps(q.as_ptr().add(3 * q_stride + i)),
+        ];
+        for k in 0..4 {
+            let kv = _mm512_loadu_ps(keys.as_ptr().add(k * key_stride + i));
+            for t in 0..4 { acc[k][t] = _mm512_fmadd_ps(qv[t], kv, acc[k][t]); }
+        }
+        i += 16;
+    }
+    let mut out = [[0.0f32; 4]; 4];
+    for k in 0..4 {
+        for t in 0..4 {
+            let a = acc[k][t];
+            let v = _mm256_add_ps(_mm512_castps512_ps256(a), _mm512_extractf32x8_ps::<1>(a));
+            let s4 = _mm_add_ps(_mm256_extractf128_ps(v, 1), _mm256_castps256_ps128(v));
+            let s2 = _mm_add_ps(s4, _mm_movehl_ps(s4, s4));
+            out[k][t] = _mm_cvtss_f32(_mm_add_ss(s2, _mm_shuffle_ps(s2, s2, 1)));
+            for j in i..dh { out[k][t] += q[t * q_stride + j] * keys[k * key_stride + j]; }
+        }
+    }
+    out
+}
+
+/// Four causal weighted-V rows. Keep a four-cache-line output panel in
 /// registers for the complete prefix, sharing each V load four ways.
 /// Every output element sees the same sequence of FMAs as decode.
 #[cfg(target_arch = "x86_64")]
@@ -1365,6 +1659,35 @@ unsafe fn prefill_v_tile(
 ) {
     use std::arch::x86_64::*;
     let mut i = 0;
+    while i + 64 <= dh {
+        // Four queries by four ZMM output vectors: 16 accumulators leave
+        // room for four input vectors and one shared weight broadcast.
+        let mut acc = [[_mm512_setzero_ps(); 4]; 4];
+        for j in 0..first_seq {
+            let vp = values.as_ptr().add(j * dh + i);
+            let v = [
+                _mm512_loadu_ps(vp), _mm512_loadu_ps(vp.add(16)),
+                _mm512_loadu_ps(vp.add(32)), _mm512_loadu_ps(vp.add(48)),
+            ];
+            for t in 0..4 {
+                let w = _mm512_set1_ps(weights[t][j]);
+                for p in 0..4 { acc[t][p] = _mm512_fmadd_ps(w, v[p], acc[t][p]); }
+            }
+        }
+        for t in 1..4 {
+            for j in first_seq..first_seq + t {
+                let vp = values.as_ptr().add(j * dh + i);
+                let w = _mm512_set1_ps(weights[t][j]);
+                for p in 0..4 {
+                    acc[t][p] = _mm512_fmadd_ps(w, _mm512_loadu_ps(vp.add(p * 16)), acc[t][p]);
+                }
+            }
+        }
+        for t in 0..4 {
+            for p in 0..4 { _mm512_storeu_ps(out.add(t * out_stride + i + p * 16), acc[t][p]); }
+        }
+        i += 64;
+    }
     while i + 16 <= dh {
         let mut acc = [_mm512_setzero_ps(); 4];
         for j in 0..first_seq {
@@ -1438,7 +1761,22 @@ fn prefill_attention_tiled(
                 let max_seq = first_seq + 3;
                 let qs = &qkv[t * q_stride + hh * dh..];
                 let mut maxima = [f32::NEG_INFINITY; 4];
-                for j in 0..max_seq {
+                let mut j = 0;
+                while j + 4 <= max_seq {
+                    let dots = unsafe { prefill_qk_4x4(qs, q_stride,
+                        &kp[j * dh..(j + 4) * dh], dh, dh) };
+                    for k in 0..4 {
+                        for r in 0..4 {
+                            if j + k < first_seq + r {
+                                let value = dots[k][r] * scale;
+                                scores[r][j + k] = value;
+                                maxima[r] = maxima[r].max(value);
+                            }
+                        }
+                    }
+                    j += 4;
+                }
+                while j < max_seq {
                     let dots = unsafe { prefill_qk_tile(qs, q_stride, &kp[j * dh..(j + 1) * dh], dh) };
                     for r in 0..4 {
                         if j < first_seq + r {
@@ -1447,6 +1785,7 @@ fn prefill_attention_tiled(
                             maxima[r] = maxima[r].max(value);
                         }
                     }
+                    j += 1;
                 }
                 for r in 0..4 {
                     let seq = first_seq + r;
@@ -1479,6 +1818,50 @@ fn prefill_attention_tiled(
     });
 }
 
+/// Scalar/AVX2 row fallback over the same primary head-major cache.
+/// Its query, score, softmax and weighted-V order matches token_pass.
+fn prefill_attention_rows(
+    qkv: &[f32], kc: &[f32], vc: &[f32], cfg: &Cfg, chunk_start: usize, attn: &mut [f32],
+) {
+    use rayon::prelude::*;
+    let dh = cfg.head_dim;
+    let qkv_width = cfg.q_hidden + 2 * cfg.kv_hidden;
+    attn.par_chunks_mut(dh).enumerate().for_each(|(index, out)| {
+        let t = index / cfg.n_heads;
+        let hh = index % cfg.n_heads;
+        let seq = chunk_start + t + 1;
+        let kvb = (hh / (cfg.n_heads / cfg.n_kv)) * MAX_SEQ * dh;
+        let qr = &qkv[t * qkv_width + hh * dh..t * qkv_width + (hh + 1) * dh];
+        let scale = 1.0 / (dh as f32).sqrt();
+        let mut scores = [0.0f32; MAX_SEQ];
+        let mut m = f32::NEG_INFINITY;
+        for j in 0..seq {
+            let kr = &kc[kvb + j * dh..kvb + j * dh + dh];
+            let dot;
+            #[cfg(target_arch = "x86_64")]
+            { dot = if avx2() { unsafe { f32_dot_avx2(qr, kr, dh) } } else {
+                qr.iter().zip(kr).fold(0.0f32, |sum, (&q, &k)| sum + q * k)
+            }; }
+            #[cfg(not(target_arch = "x86_64"))]
+            { dot = qr.iter().zip(kr).fold(0.0f32, |sum, (&q, &k)| sum + q * k); }
+            scores[j] = dot * scale;
+            m = m.max(scores[j]);
+        }
+        let inv = prefill_softmax(&mut scores[..seq], m);
+        out.fill(0.0);
+        for j in 0..seq {
+            let w = scores[j] * inv;
+            let vr = &vc[kvb + j * dh..kvb + j * dh + dh];
+            #[cfg(target_arch = "x86_64")]
+            if avx2() {
+                unsafe { f32_axpy_avx2(out, vr, w, dh) };
+                continue;
+            }
+            for k in 0..dh { out[k] += w * vr[k]; }
+        }
+    });
+}
+
 fn prefill_pass(st: &mut State, raw: &[u8], tokens: &[i64], start: usize, nt: usize) {
     use rayon::prelude::*;
     let profile = std::env::var_os("NN_PREFILL_PROFILE").is_some();
@@ -1499,7 +1882,9 @@ fn prefill_pass(st: &mut State, raw: &[u8], tokens: &[i64], start: usize, nt: us
     let ffn = cfg.ffn;
     let dh = cfg.head_dim;
     let stride = hidden.max(ffn).max(q_hidden);
-    // Bounded scratch: approximately 4 MiB at 64 tokens for Qwen3-0.6B.
+    // Bounded scratch: approximately 28 MiB at 512 tokens for Qwen3-0.6B,
+    // plus 3.375 MiB packed weights and activation byte/bias scratch.
+    // Attention reads the primary head-major KV cache directly.
     let capacity = tokens.len().min(PREFILL_CHUNK);
     let mut h = vec![0.0f32; capacity * hidden];
     let mut qkv = vec![0.0f32; capacity * qkv_width];
@@ -1512,12 +1897,7 @@ fn prefill_pass(st: &mut State, raw: &[u8], tokens: &[i64], start: usize, nt: us
     let wide_attention = false;
     #[cfg(target_arch = "x86_64")]
     let wide_attention = prefill_wide_attention();
-    let panel_stride = (start + tokens.len()) * dh;
-    // Only one layer's head-major panels are live. At context 2048 the
-    // additional K+V scratch is 16 MiB for Qwen3-0.6B.
-    let panel_len = if wide_attention { cfg.n_kv * panel_stride } else { 0 };
-    let mut k_panel = vec![0.0f32; panel_len];
-    let mut v_panel = vec![0.0f32; panel_len];
+    let panel_stride = MAX_SEQ * dh;
 
     for (chunk_index, chunk) in tokens.chunks(PREFILL_CHUNK).enumerate() {
         let n = chunk.len();
@@ -1580,64 +1960,16 @@ fn prefill_pass(st: &mut State, raw: &[u8], tokens: &[i64], start: usize, nt: us
             });
             // Publish all K/V rows for this layer before attention. The
             // query's absolute position still bounds the visible prefix.
-            st.k_cache[l][chunk_start * kv_hidden..(chunk_start + n) * kv_hidden]
-                .par_chunks_mut(kv_hidden).zip(qkv.par_chunks(qkv_width))
-                .for_each(|(dst, row)| dst.copy_from_slice(&row[q_hidden..q_hidden + kv_hidden]));
-            st.v_cache[l][chunk_start * kv_hidden..(chunk_start + n) * kv_hidden]
-                .par_chunks_mut(kv_hidden).zip(qkv.par_chunks(qkv_width))
-                .for_each(|(dst, row)| dst.copy_from_slice(&row[q_hidden + kv_hidden..]));
-            if wide_attention {
-                k_panel.par_chunks_mut(panel_stride).zip(v_panel.par_chunks_mut(panel_stride))
-                    .enumerate().for_each(|(head, (kp, vp))| {
-                        for j in 0..chunk_start + n {
-                            let src = j * kv_hidden + head * dh;
-                            kp[j * dh..(j + 1) * dh].copy_from_slice(&st.k_cache[l][src..src + dh]);
-                            vp[j * dh..(j + 1) * dh].copy_from_slice(&st.v_cache[l][src..src + dh]);
-                        }
-                    });
-            }
+            prefill_append_kv(qkv, cfg, chunk_start, &mut st.k_cache[l], &mut st.v_cache[l]);
             tick(3, &mut times, &mut stamp);
             let kc = &st.k_cache[l];
             let vc = &st.v_cache[l];
             #[cfg(target_arch = "x86_64")]
             if wide_attention {
-                prefill_attention_tiled(qkv, &k_panel, &v_panel, panel_stride, cfg, chunk_start, n, attn);
+                prefill_attention_tiled(qkv, kc, vc, panel_stride, cfg, chunk_start, n, attn);
             }
             if !wide_attention {
-            attn.par_chunks_mut(dh).enumerate().for_each(|(index, out)| {
-                let t = index / cfg.n_heads;
-                let hh = index % cfg.n_heads;
-                let seq = chunk_start + t + 1;
-                let kvb = (hh / (cfg.n_heads / cfg.n_kv)) * dh;
-                let qr = &qkv[t * qkv_width + hh * dh..t * qkv_width + (hh + 1) * dh];
-                let scale = 1.0 / (dh as f32).sqrt();
-                let mut scores = [0.0f32; MAX_SEQ];
-                let mut m = f32::NEG_INFINITY;
-                for j in 0..seq {
-                    let kr = &kc[j * kv_hidden + kvb..j * kv_hidden + kvb + dh];
-                    let dot;
-                    #[cfg(target_arch = "x86_64")]
-                    { dot = if avx2() { unsafe { f32_dot_avx2(qr, kr, dh) } } else {
-                        qr.iter().zip(kr).fold(0.0f32, |sum, (&q, &k)| sum + q * k)
-                    }; }
-                    #[cfg(not(target_arch = "x86_64"))]
-                    { dot = qr.iter().zip(kr).fold(0.0f32, |sum, (&q, &k)| sum + q * k); }
-                    scores[j] = dot * scale;
-                    m = m.max(scores[j]);
-                }
-                let inv = prefill_softmax(&mut scores[..seq], m);
-                out.fill(0.0);
-                for j in 0..seq {
-                    let w = scores[j] * inv;
-                    let vr = &vc[j * kv_hidden + kvb..j * kv_hidden + kvb + dh];
-                    #[cfg(target_arch = "x86_64")]
-                    if avx2() {
-                        unsafe { f32_axpy_avx2(out, vr, w, dh) };
-                        continue;
-                    }
-                    for k in 0..dh { out[k] += w * vr[k]; }
-                }
-            });
+            prefill_attention_rows(qkv, kc, vc, cfg, chunk_start, attn);
             }
             tick(4, &mut times, &mut stamp);
             xs.par_chunks_mut(stride / Q8B).zip(xq.par_chunks_mut(stride))
@@ -1906,11 +2238,13 @@ mod prefill_tests {
             let raw = weights(2, blocks);
             let (scales, quants) = activations(PREFILL_TILE, stride);
             let got = unsafe { q8_prefill_tile_vnni(&scales, &quants, &raw, blocks * Q8BB, stride / Q8B, stride) };
+            let got256 = unsafe { q8_prefill_tile_vnni256(&scales, &quants, &raw, blocks * Q8BB, stride / Q8B, stride) };
             for r in 0..2 {
                 for t in 0..PREFILL_TILE {
                     let expected = q8_row_dot(&scales[t * stride / Q8B..], &quants[t * stride..],
                         &raw[r * blocks * Q8BB..(r + 1) * blocks * Q8BB]);
                     assert_eq!(got[r][t].to_bits(), expected.to_bits(), "blocks={blocks}, row={r}, token={t}");
+                    assert_eq!(got256[r][t].to_bits(), expected.to_bits(), "VL blocks={blocks}, row={r}, token={t}");
                 }
             }
         }
@@ -1918,9 +2252,159 @@ mod prefill_tests {
 
     #[test]
     #[cfg(target_arch = "x86_64")]
+    fn prefill_qk_4x4_preserves_decode_bits() {
+        if !prefill_wide_attention() { return; }
+        for dh in [0, 1, 7, 8, 15, 16, 24, 31, 32, 63, 64, 65, 128, 139] {
+            let q_stride = dh + 19;
+            let key_stride = dh + 13;
+            let q: Vec<f32> = (0..4 * q_stride).map(|i| ((i * 23 % 127) as f32 - 63.0) / 17.0).collect();
+            let keys: Vec<f32> = (0..4 * key_stride).map(|i| ((i * 41 % 127) as f32 - 63.0) / 19.0).collect();
+            let got = unsafe { prefill_qk_4x4(&q, q_stride, &keys, key_stride, dh) };
+            for k in 0..4 {
+                for t in 0..4 {
+                    let expected = unsafe { f32_dot_avx2(
+                        &q[t * q_stride..t * q_stride + dh],
+                        &keys[k * key_stride..k * key_stride + dh], dh) };
+                    assert_eq!(got[k][t].to_bits(), expected.to_bits(), "dh={dh}, key={k}, query={t}");
+                }
+            }
+        }
+    }
+
+    fn cache_test_row(cfg: &Cfg, pos: usize) -> Vec<f32> {
+        let width = cfg.q_hidden + 2 * cfg.kv_hidden;
+        (0..width).map(|i| (((pos * 37 + i * 23) % 127) as f32 - 63.0) / 128.0).collect()
+    }
+
+    #[test]
+    fn primary_head_cache_preserves_prefix_and_mixed_appends() {
+        let pool = rayon::ThreadPoolBuilder::new().num_threads(4).build().unwrap();
+        pool.install(|| {
+            for (n_heads, n_kv, dh) in [(2, 1, 16), (6, 3, 128)] {
+                let q_hidden = n_heads * dh;
+                let kv_hidden = n_kv * dh;
+                let row_stride = q_hidden + 2 * kv_hidden;
+                let head_stride = MAX_SEQ * dh;
+                let cfg = Cfg { n_layers: 0, n_heads, n_kv, head_dim: dh,
+                    hidden: q_hidden, q_hidden, kv_hidden, ffn: 0, vocab: 0,
+                    rope_theta: 10_000.0, eps: 1e-6, emb_off: 0, out_norm_g: 0 };
+                for start in [0, 5, 511, MAX_SEQ - 7] {
+                    let end = start + 7;
+                    let mut keys = vec![f32::NAN; n_kv * head_stride];
+                    let mut values = vec![f32::NAN; n_kv * head_stride];
+                    // Seed a real preceding prefix through the decode
+                    // append helper, with head slices disjoint as at run time.
+                    for pos in 0..start {
+                        let row = cache_test_row(&cfg, pos);
+                        for head in 0..n_kv {
+                            let base = head * head_stride;
+                            store_kv_head(&row, &cfg, head, pos,
+                                &mut keys[base..base + head_stride], &mut values[base..base + head_stride]);
+                        }
+                    }
+                    let qkv: Vec<f32> = (start..end).flat_map(|pos| cache_test_row(&cfg, pos)).collect();
+                    // Mix batched append, one-token append, then another
+                    // nonzero-position batch across a possible512 boundary.
+                    prefill_append_kv(&qkv[..3 * row_stride], &cfg, start, &mut keys, &mut values);
+                    for head in 0..n_kv {
+                        let base = head * head_stride;
+                        store_kv_head(&qkv[3 * row_stride..4 * row_stride], &cfg, head, start + 3,
+                            &mut keys[base..base + head_stride], &mut values[base..base + head_stride]);
+                    }
+                    prefill_append_kv(&qkv[4 * row_stride..], &cfg, start + 4, &mut keys, &mut values);
+                    for pos in 0..end {
+                        let row = cache_test_row(&cfg, pos);
+                        for head in 0..n_kv {
+                            for k in 0..dh {
+                                let offset = head * head_stride + pos * dh + k;
+                                assert_eq!(keys[offset].to_bits(), row[q_hidden + head * dh + k].to_bits());
+                                assert_eq!(values[offset].to_bits(), row[q_hidden + kv_hidden + head * dh + k].to_bits());
+                            }
+                        }
+                    }
+                    for head in 0..n_kv {
+                        assert!(keys[head * head_stride + end * dh..(head + 1) * head_stride].iter().all(|v| v.is_nan()));
+                        assert!(values[head * head_stride + end * dh..(head + 1) * head_stride].iter().all(|v| v.is_nan()));
+                    }
+                    let mut fallback = vec![f32::NAN; 7 * q_hidden];
+                    prefill_attention_rows(&qkv, &keys, &values, &cfg, start, &mut fallback);
+                    assert!(fallback.iter().all(|v| v.is_finite()));
+                    #[cfg(target_arch = "x86_64")]
+                    if prefill_wide_attention() {
+                        let mut tiled = vec![f32::NAN; 7 * q_hidden];
+                        prefill_attention_tiled(&qkv, &keys, &values, head_stride, &cfg, start, 7, &mut tiled);
+                        for (i, (&a, &b)) in fallback.iter().zip(&tiled).enumerate() {
+                            assert_eq!(a.to_bits(), b.to_bits(), "head cache heads={n_heads}/{n_kv}, dh={dh}, start={start}, output={i}");
+                        }
+                    }
+                }
+            }
+        });
+    }
+
+    #[test]
+    #[cfg(target_arch = "x86_64")]
+    fn prefill_attention_orchestration_preserves_decode_bits() {
+        if !prefill_wide_attention() { return; }
+        let pool = rayon::ThreadPoolBuilder::new().num_threads(4).build().unwrap();
+        pool.install(|| {
+            for (n_heads, n_kv) in [(4, 2), (6, 3), (8, 2)] {
+                for dh in [32, 128, 139] {
+                    let q_hidden = n_heads * dh;
+                    let kv_hidden = n_kv * dh;
+                    let q_stride = q_hidden + 2 * kv_hidden;
+                    let cfg = Cfg { n_layers: 0, n_heads, n_kv, head_dim: dh,
+                        hidden: q_hidden, q_hidden, kv_hidden, ffn: 0, vocab: 0,
+                        rope_theta: 10_000.0, eps: 1e-6, emb_off: 0, out_norm_g: 0 };
+                    for (start, n) in [(0, 1), (1, 3), (3, 4), (61, 5), (63, 7), (1020, 8), (2040, 8)] {
+                        let panel_stride = (start + n + 5) * dh;
+                        let qkv: Vec<f32> = (0..n * q_stride).map(|i| ((i * 23 % 127) as f32 - 63.0) / 128.0).collect();
+                        let mut keys = vec![f32::NAN; n_kv * panel_stride];
+                        let mut values = vec![f32::NAN; n_kv * panel_stride];
+                        for kh in 0..n_kv {
+                            for i in 0..(start + n) * dh {
+                                keys[kh * panel_stride + i] = (((i * 41 + kh * 59) % 127) as f32 - 63.0) / 128.0;
+                                values[kh * panel_stride + i] = (((i * 37 + kh * 61) % 127) as f32 - 63.0) / 128.0;
+                            }
+                        }
+                        let mut out = vec![f32::NAN; n * q_hidden];
+                        prefill_attention_tiled(&qkv, &keys, &values, panel_stride, &cfg, start, n, &mut out);
+                        let scale = 1.0 / (dh as f32).sqrt();
+                        for t in 0..n {
+                            let seq = start + t + 1;
+                            for hh in 0..n_heads {
+                                let kh = hh / (n_heads / n_kv);
+                                let qr = &qkv[t * q_stride + hh * dh..t * q_stride + (hh + 1) * dh];
+                                let mut scores = vec![0.0f32; seq];
+                                let mut m = f32::NEG_INFINITY;
+                                for j in 0..seq {
+                                    let offset = kh * panel_stride + j * dh;
+                                    scores[j] = unsafe { f32_dot_avx2(qr, &keys[offset..offset + dh], dh) } * scale;
+                                    m = m.max(scores[j]);
+                                }
+                                let inv = prefill_softmax(&mut scores, m);
+                                let mut expected = vec![0.0f32; dh];
+                                for j in 0..seq {
+                                    let offset = kh * panel_stride + j * dh;
+                                    unsafe { f32_axpy_avx2(&mut expected, &values[offset..offset + dh], scores[j] * inv, dh) };
+                                }
+                                for k in 0..dh {
+                                    assert_eq!(out[t * q_hidden + hh * dh + k].to_bits(), expected[k].to_bits(),
+                                        "heads={n_heads}/{n_kv}, dh={dh}, start={start}, n={n}, token={t}, head={hh}, k={k}");
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        });
+    }
+
+    #[test]
+    #[cfg(target_arch = "x86_64")]
     fn prefill_attention_tiles_preserve_decode_bits() {
         if !prefill_wide_attention() { return; }
-        for dh in [16, 24, 32, 128, 136, 139] {
+        for dh in [1, 7, 8, 16, 24, 32, 63, 64, 65, 128, 136, 139, 192, 255] {
             let stride = dh + 19;
             let q: Vec<f32> = (0..4 * stride).map(|i| ((i * 23 % 127) as f32 - 63.0) / 17.0).collect();
             let key: Vec<f32> = (0..dh).map(|i| ((i * 41 % 127) as f32 - 63.0) / 19.0).collect();
@@ -1948,6 +2432,119 @@ mod prefill_tests {
                     assert!(out[t * stride + dh..(t + 1) * stride].iter().all(|&v| v == 0.375));
                 }
             }
+        }
+    }
+
+    #[test]
+    #[cfg(target_arch = "x86_64")]
+    fn row_panel_layout_and_tails_are_exact_for_dyadic_inputs() {
+        if !prefill_vnni() { return; }
+        let pool = rayon::ThreadPoolBuilder::new().num_threads(4).build().unwrap();
+        pool.install(|| {
+            for blocks in [1, 2, 3, 32, 64, 96] {
+                for tokens in [1, 3, 4, 5, 7, 64] {
+                    let rows = 19;
+                    let stride = (blocks + 3) * Q8B;
+                    let out_stride = rows + 9;
+                    let column = 3;
+                    let mut raw = weights(rows, blocks);
+                    for (i, block) in raw.chunks_exact_mut(Q8BB).enumerate() {
+                        block[..2].copy_from_slice(&0x2800u16.to_le_bytes());
+                        for k in 0..Q8B { block[k + 2] = (((i + k * 3) % 9) as i8 - 4) as u8; }
+                    }
+                    let scales = vec![1.0f32 / 64.0; tokens * stride / Q8B];
+                    let quants: Vec<i8> = (0..tokens * stride).map(|i| (i % 15) as i8 - 7).collect();
+                    for add in [false, true] {
+                        let mut out = vec![0.375f32; tokens * out_stride];
+                        assert!(prefill_gemm_rows16(&raw, 0, rows, blocks * Q8B, &scales, &quants, stride, tokens,
+                            &mut out, out_stride, column, add));
+                        for t in 0..tokens {
+                            for r in 0..out_stride {
+                                let expected = if r >= column && r < column + rows {
+                                    let wr = r - column;
+                                    let dot = q8_row_dot(&scales[t * stride / Q8B..], &quants[t * stride..],
+                                        &raw[wr * blocks * Q8BB..(wr + 1) * blocks * Q8BB]);
+                                    if add { 0.375 + dot } else { dot }
+                                } else { 0.375 };
+                                assert_eq!(out[t * out_stride + r].to_bits(), expected.to_bits(),
+                                    "blocks={blocks}, tokens={tokens}, row={r}, token={t}, residual={add}");
+                            }
+                        }
+                    }
+                    raw[2] = 0x80;
+                    let mut out = vec![0.375f32; tokens * out_stride];
+                    assert!(!prefill_gemm_rows16(&raw, 0, rows, blocks * Q8B, &scales, &quants, stride, tokens,
+                        &mut out, out_stride, column, false));
+                    assert!(out.iter().all(|&v| v == 0.375));
+                }
+            }
+        });
+    }
+
+    #[test]
+    #[cfg(target_arch = "x86_64")]
+    fn row_panel_layout_and_tails_preserve_general_float_bits() {
+        if !prefill_vnni() { return; }
+        let pool = rayon::ThreadPoolBuilder::new().num_threads(4).build().unwrap();
+        pool.install(|| {
+            for blocks in [1, 2, 3, 32, 64, 96] {
+                for tokens in [1, 3, 4, 5, 7, 64] {
+                    let rows = 19;
+                    let stride = (blocks + 3) * Q8B;
+                    let out_stride = rows + 9;
+                    let column = 3;
+                    let mut raw = weights(rows, blocks);
+                    let (scales, quants) = activations(tokens, stride);
+                    for add in [false, true] {
+                        let mut out = vec![0.375f32; tokens * out_stride];
+                        assert!(prefill_gemm_rows16(&raw, 0, rows, blocks * Q8B, &scales, &quants, stride, tokens,
+                            &mut out, out_stride, column, add));
+                        for t in 0..tokens {
+                            for r in 0..out_stride {
+                                let expected = if r >= column && r < column + rows {
+                                    let wr = r - column;
+                                    let dot = q8_row_dot(&scales[t * stride / Q8B..], &quants[t * stride..],
+                                        &raw[wr * blocks * Q8BB..(wr + 1) * blocks * Q8BB]);
+                                    if add { 0.375 + dot } else { dot }
+                                } else { 0.375 };
+                                assert_eq!(out[t * out_stride + r].to_bits(), expected.to_bits(),
+                                    "blocks={blocks}, tokens={tokens}, row={r}, token={t}, residual={add}");
+                            }
+                        }
+                    }
+                    raw[2] = 0x80;
+                    let mut out = vec![0.375f32; tokens * out_stride];
+                    assert!(!prefill_gemm_rows16(&raw, 0, rows, blocks * Q8B, &scales, &quants, stride, tokens,
+                        &mut out, out_stride, column, false));
+                    assert!(out.iter().all(|&v| v == 0.375));
+                }
+            }
+        });
+    }
+
+    #[test]
+    #[cfg(target_arch = "x86_64")]
+    fn packed_projection_rejects_invalid_raw_before_output_writes() {
+        if !prefill_vnni() { return; }
+        let rows = 19;
+        let width = 64;
+        let tokens = 4;
+        let raw = weights(rows, width / Q8B);
+        let (scales, quants) = activations(tokens, width);
+        for (bytes, off, count, n_in) in [
+            (&raw[..raw.len() - 1], 0, rows, width),
+            (&raw[..], 1, rows, width),
+            (&raw[..], usize::MAX, rows, width),
+            (&raw[..], 0, usize::MAX, width),
+            (&raw[..], 0, rows, usize::MAX),
+        ] {
+            let mut out = vec![0.375f32; tokens * rows];
+            let rejected = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                prefill_gemm_rows16(bytes, off, count, n_in, &scales, &quants,
+                    width, tokens, &mut out, rows, 0, false)
+            }));
+            assert!(rejected.is_err());
+            assert!(out.iter().all(|&v| v == 0.375));
         }
     }
 
