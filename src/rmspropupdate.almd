@@ -29,7 +29,7 @@ test "rmsprop update preconditions the gradient by 1/sqrt(v)" {
   let g = matrix.from_lists([[3.0]])
   let v = matrix.from_lists([[4.0]])
   let y = rmsprop_update_rows(g, v)
-  assert(float.abs(matrix.get(y, 0, 0) - 1.5) < 0.0000001, "3/2=1.5")
+  assert(float.abs((matrix.get(y, 0, 0) ?? panic("matrix.get: out of range")) - 1.5) < 0.0000001, "3/2=1.5")
 }
 
 // equal gradients, unequal v: [2,2]/(sqrt([1,100])) = [2, 0.2] — the high-v dim is damped 10×.
@@ -37,6 +37,6 @@ test "rmsprop update damps high-second-moment coordinates" {
   let g = matrix.from_lists([[2.0, 2.0]])
   let v = matrix.from_lists([[1.0, 100.0]])
   let y = rmsprop_update_rows(g, v)
-  assert(float.abs(matrix.get(y, 0, 0) - 2.0) < 0.0000001, "2/1=2")
-  assert(float.abs(matrix.get(y, 0, 1) - 0.2) < 0.0000001, "2/10=0.2")
+  assert(float.abs((matrix.get(y, 0, 0) ?? panic("matrix.get: out of range")) - 2.0) < 0.0000001, "2/1=2")
+  assert(float.abs((matrix.get(y, 0, 1) ?? panic("matrix.get: out of range")) - 0.2) < 0.0000001, "2/10=0.2")
 }

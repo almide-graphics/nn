@@ -34,11 +34,11 @@ fn kurtosis_rows(x: Matrix) -> Matrix = {
 test "a two-point symmetric row has excess kurtosis −2 (the floor)" {
   let x = matrix.from_lists([[0.0 - 1.0, 0.0 - 1.0, 1.0, 1.0]])
   let y = kurtosis_rows(x)
-  assert(float.abs(matrix.get(y, 0, 0) - (0.0 - 2.0)) < 0.000000001, "−2")
+  assert(float.abs((matrix.get(y, 0, 0) ?? panic("matrix.get: out of range")) - (0.0 - 2.0)) < 0.000000001, "−2")
 }
 
 // constant row (σ=0): the +ε keeps it finite (0/ε − 3 = −3), never a division by zero.
 test "a constant row is ε-guarded to a finite value" {
   let y = kurtosis_rows(matrix.from_lists([[5.0, 5.0, 5.0]]))
-  assert(float.abs(matrix.get(y, 0, 0) - (0.0 - 3.0)) < 0.000000001, "0/ε − 3 = −3, finite")
+  assert(float.abs((matrix.get(y, 0, 0) ?? panic("matrix.get: out of range")) - (0.0 - 3.0)) < 0.000000001, "0/ε − 3 = −3, finite")
 }

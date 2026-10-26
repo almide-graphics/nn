@@ -44,13 +44,13 @@ fn logsumexp_time_rows(x: Matrix) -> Matrix = {
 test "log-softmax over time of equal values is -log T" {
   let x = matrix.from_lists([[0.0], [0.0]])
   let y = logsumexp_time_rows(x)
-  assert_eq(matrix.get(y, 0, 0), 0.0 - math.log(2.0))
-  assert_eq(matrix.get(y, 1, 0), 0.0 - math.log(2.0))
+  assert_eq(matrix.get(y, 0, 0) ?? panic("matrix.get: out of range"), 0.0 - math.log(2.0))
+  assert_eq(matrix.get(y, 1, 0) ?? panic("matrix.get: out of range"), 0.0 - math.log(2.0))
 }
 
 // a constant column is uniform over time whatever its level: both rows equal.
 test "log-softmax over time is uniform on a constant channel" {
   let x = matrix.from_lists([[0.0, 5.0], [0.0, 5.0]])
   let y = logsumexp_time_rows(x)
-  assert_eq(matrix.get(y, 0, 1), matrix.get(y, 1, 1))
+  assert_eq(matrix.get(y, 0, 1) ?? panic("matrix.get: out of range"), matrix.get(y, 1, 1) ?? panic("matrix.get: out of range"))
 }

@@ -40,12 +40,12 @@ fn ternary_quant_snr_rows(x: Matrix) -> Matrix = {
 test "an already-ternary row has near-zero noise and a huge finite SNR" {
   let x = matrix.from_lists([[2.0, 2.0, 0.0 - 2.0, 0.0 - 2.0]])
   let y = ternary_quant_snr_rows(x)
-  assert(matrix.get(y, 0, 0) > 1000000.0, "exact ternary → huge SNR")
+  assert((matrix.get(y, 0, 0) ?? panic("matrix.get: out of range")) > 1000000.0, "exact ternary → huge SNR")
 }
 
 // [3,−4,0.1,0.05]: kept{3,4}, α=3.5, q=[3.5,−3.5,0,0]; sig=25.0125, noise=0.5125 → 2001/41.
 test "ternary-quant-snr is row signal power over ternary quantization-noise power" {
   let x = matrix.from_lists([[3.0, 0.0 - 4.0, 0.1, 0.05]])
   let y = ternary_quant_snr_rows(x)
-  assert(float.abs(matrix.get(y, 0, 0) - 48.80487804878048) < 0.0000001, "2001/41")
+  assert(float.abs((matrix.get(y, 0, 0) ?? panic("matrix.get: out of range")) - 48.80487804878048) < 0.0000001, "2001/41")
 }

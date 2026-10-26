@@ -9,7 +9,7 @@ fn softclamp(m: Matrix, lo: Float, hi: Float) -> Matrix =
 // x<lo → lo ; lo≤x≤hi → x ; x>hi → hi.
 test "softclamp clamps to [lo,hi]" {
   let y = softclamp(matrix.from_lists([[-5.0, 0.5, 5.0]]), -1.0, 1.0)
-  assert_eq(matrix.get(y, 0, 0), -1.0)
-  assert_eq(matrix.get(y, 0, 1), 0.5)
-  assert_eq(matrix.get(y, 0, 2), 1.0)
+  assert_eq(matrix.get(y, 0, 0) ?? panic("matrix.get: out of range"), -1.0)
+  assert_eq(matrix.get(y, 0, 1) ?? panic("matrix.get: out of range"), 0.5)
+  assert_eq(matrix.get(y, 0, 2) ?? panic("matrix.get: out of range"), 1.0)
 }

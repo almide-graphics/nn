@@ -38,12 +38,12 @@ test "ternary-dot sums the ternary-code products" {
   let a = matrix.from_lists([[3.0, 0.0 - 4.0, 0.1]])
   let b = matrix.from_lists([[5.0, 5.0, 5.0]])
   let y = ternary_dot_rows(a, b)
-  assert_eq(matrix.get(y, 0, 0), 0.0)
+  assert_eq(matrix.get(y, 0, 0) ?? panic("matrix.get: out of range"), 0.0)
 }
 
 // a with itself → Σ code² = number of kept (nonzero) weights: [+1,−1,0] → 2.
 test "ternary-dot of a row with itself counts its kept support" {
   let a = matrix.from_lists([[3.0, 0.0 - 4.0, 0.1]])
   let y = ternary_dot_rows(a, a)
-  assert_eq(matrix.get(y, 0, 0), 2.0)
+  assert_eq(matrix.get(y, 0, 0) ?? panic("matrix.get: out of range"), 2.0)
 }

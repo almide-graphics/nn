@@ -30,7 +30,7 @@ test "hinge is zero when margin satisfied" {
   let t = matrix.from_lists([[1.0, -1.0]])
   let s = matrix.from_lists([[2.0, -2.0]])
   let y = hinge_rows(t, s)
-  assert_eq(matrix.get(y, 0, 0), 0.0)
+  assert_eq(matrix.get(y, 0, 0) ?? panic("matrix.get: out of range"), 0.0)
 }
 
 // margin violated: max(0,1-0)=1, max(0,1-0.5)=0.5 → mean 0.75.
@@ -38,5 +38,5 @@ test "hinge penalizes margin violation" {
   let t = matrix.from_lists([[1.0, 1.0]])
   let s = matrix.from_lists([[0.0, 0.5]])
   let y = hinge_rows(t, s)
-  assert(float.abs(matrix.get(y, 0, 0) - 0.75) < 0.000000001, "= 0.75")
+  assert(float.abs((matrix.get(y, 0, 0) ?? panic("matrix.get: out of range")) - 0.75) < 0.000000001, "= 0.75")
 }

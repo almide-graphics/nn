@@ -35,8 +35,8 @@ test "retnet zero-decay is memoryless gated product" {
   let k = matrix.from_lists([[1.0], [4.0]])
   let v = matrix.from_lists([[5.0], [0.5]])
   let y = retnet_retention(q, k, v, [0.0])
-  assert_eq(matrix.get(y, 0, 0), 10.0)
-  assert_eq(matrix.get(y, 1, 0), 6.0)
+  assert_eq(matrix.get(y, 0, 0) ?? panic("matrix.get: out of range"), 10.0)
+  assert_eq(matrix.get(y, 1, 0) ?? panic("matrix.get: out of range"), 6.0)
 }
 
 // γ=1 → undamped accumulation of k⊙v, read out by q.
@@ -45,6 +45,6 @@ test "retnet unit-decay accumulates" {
   let k = matrix.from_lists([[1.0], [1.0]])
   let v = matrix.from_lists([[2.0], [3.0]])
   let y = retnet_retention(q, k, v, [1.0])
-  assert_eq(matrix.get(y, 0, 0), 2.0)
-  assert_eq(matrix.get(y, 1, 0), 5.0)
+  assert_eq(matrix.get(y, 0, 0) ?? panic("matrix.get: out of range"), 2.0)
+  assert_eq(matrix.get(y, 1, 0) ?? panic("matrix.get: out of range"), 5.0)
 }

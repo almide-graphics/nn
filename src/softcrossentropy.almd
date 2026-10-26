@@ -32,7 +32,7 @@ test "soft cross-entropy with a uniform q is log D" {
   let p = matrix.from_lists([[0.5, 0.5, 0.0, 0.0]])
   let q = matrix.from_lists([[0.25, 0.25, 0.25, 0.25]])
   let y = soft_cross_entropy_rows(p, q)
-  assert(float.abs(matrix.get(y, 0, 0) - 1.3862943611198906) < 0.000001, "log 4")
+  assert(float.abs((matrix.get(y, 0, 0) ?? panic("matrix.get: out of range")) - 1.3862943611198906) < 0.000001, "log 4")
 }
 
 // cross-entropy of a distribution with itself is its (Shannon) entropy: H([½,½]) = log 2.
@@ -40,5 +40,5 @@ test "soft cross-entropy with itself is the entropy" {
   let p = matrix.from_lists([[0.5, 0.5]])
   let q = matrix.from_lists([[0.5, 0.5]])
   let y = soft_cross_entropy_rows(p, q)
-  assert(float.abs(matrix.get(y, 0, 0) - 0.6931471805599453) < 0.000001, "log 2")
+  assert(float.abs((matrix.get(y, 0, 0) ?? panic("matrix.get: out of range")) - 0.6931471805599453) < 0.000001, "log 2")
 }

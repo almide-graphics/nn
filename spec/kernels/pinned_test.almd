@@ -5,9 +5,9 @@ import self.kernels
 
 fn bits(m: Matrix) -> List[List[Int]] = matrix.to_lists(m) |> list.map((row) => row |> list.map((x) => float.to_bits(x)))
 
-fn nan() -> Float = float.parse("NaN") ?? 0.0
+fn nan() -> Float = float.nan()
 
-fn inf() -> Float = float.parse("inf") ?? 0.0
+fn inf() -> Float = float.infinity()
 
 test "q8_0: a -128 weight quant against a negative activation is exact" {
   let w = bytes.from_list([0, 60] + list.repeat(128, 32))

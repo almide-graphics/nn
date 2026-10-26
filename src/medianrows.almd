@@ -44,12 +44,12 @@ fn median_rows(x: Matrix) -> Matrix = {
 test "median of an even-length row averages the two middles" {
   let x = matrix.from_lists([[3.0, 1.0, 4.0, 2.0]])
   let y = median_rows(x)
-  assert(float.abs(matrix.get(y, 0, 0) - 2.5) < 0.000000001, "(2+3)/2=2.5")
+  assert(float.abs((matrix.get(y, 0, 0) ?? panic("matrix.get: out of range")) - 2.5) < 0.000000001, "(2+3)/2=2.5")
 }
 
 // odd length: median is the single middle value. [10,30,20] → 20.
 test "median of an odd-length row is the middle value" {
   let x = matrix.from_lists([[10.0, 30.0, 20.0]])
   let y = median_rows(x)
-  assert(float.abs(matrix.get(y, 0, 0) - 20.0) < 0.000000001, "20")
+  assert(float.abs((matrix.get(y, 0, 0) ?? panic("matrix.get: out of range")) - 20.0) < 0.000000001, "20")
 }

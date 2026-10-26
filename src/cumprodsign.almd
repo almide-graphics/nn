@@ -27,17 +27,17 @@ fn cumprod_sign_rows(x: Matrix) -> Matrix = {
 test "cumprod-sign tracks the running sign parity" {
   let x = matrix.from_lists([[2.0], [0.0 - 3.0], [0.0 - 1.0], [5.0]])
   let y = cumprod_sign_rows(x)
-  assert_eq(matrix.get(y, 0, 0), 1.0)
-  assert_eq(matrix.get(y, 1, 0), 0.0 - 1.0)
-  assert_eq(matrix.get(y, 2, 0), 1.0)
-  assert_eq(matrix.get(y, 3, 0), 1.0)
+  assert_eq(matrix.get(y, 0, 0) ?? panic("matrix.get: out of range"), 1.0)
+  assert_eq(matrix.get(y, 1, 0) ?? panic("matrix.get: out of range"), 0.0 - 1.0)
+  assert_eq(matrix.get(y, 2, 0) ?? panic("matrix.get: out of range"), 1.0)
+  assert_eq(matrix.get(y, 3, 0) ?? panic("matrix.get: out of range"), 1.0)
 }
 
 // an exact zero absorbs the product from that step on.
 test "cumprod-sign is absorbed by a zero" {
   let x = matrix.from_lists([[0.0 - 4.0], [0.0], [7.0]])
   let y = cumprod_sign_rows(x)
-  assert_eq(matrix.get(y, 0, 0), 0.0 - 1.0)
-  assert_eq(matrix.get(y, 1, 0), 0.0)
-  assert_eq(matrix.get(y, 2, 0), 0.0)
+  assert_eq(matrix.get(y, 0, 0) ?? panic("matrix.get: out of range"), 0.0 - 1.0)
+  assert_eq(matrix.get(y, 1, 0) ?? panic("matrix.get: out of range"), 0.0)
+  assert_eq(matrix.get(y, 2, 0) ?? panic("matrix.get: out of range"), 0.0)
 }

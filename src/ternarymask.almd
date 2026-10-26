@@ -29,18 +29,18 @@ fn ternary_mask_rows(x: Matrix) -> Matrix = {
 test "ternary-mask keeps entries whose magnitude beats the absmean threshold" {
   let x = matrix.from_lists([[3.0, 0.0 - 4.0, 0.1]])
   let y = ternary_mask_rows(x)
-  assert_eq(matrix.get(y, 0, 0), 1.0)
-  assert_eq(matrix.get(y, 0, 1), 1.0)
-  assert_eq(matrix.get(y, 0, 2), 0.0)
+  assert_eq(matrix.get(y, 0, 0) ?? panic("matrix.get: out of range"), 1.0)
+  assert_eq(matrix.get(y, 0, 1) ?? panic("matrix.get: out of range"), 1.0)
+  assert_eq(matrix.get(y, 0, 2) ?? panic("matrix.get: out of range"), 0.0)
 }
 
 // every output is exactly 0 or 1, so m·(m−1) = 0 at each entry.
 test "ternary-mask outputs are exactly boolean" {
   let x = matrix.from_lists([[5.0, 0.0 - 1.0, 0.2, 0.0]])
   let y = ternary_mask_rows(x)
-  let a = matrix.get(y, 0, 0)
-  let b = matrix.get(y, 0, 2)
-  let c = matrix.get(y, 0, 3)
+  let a = matrix.get(y, 0, 0) ?? panic("matrix.get: out of range")
+  let b = matrix.get(y, 0, 2) ?? panic("matrix.get: out of range")
+  let c = matrix.get(y, 0, 3) ?? panic("matrix.get: out of range")
   assert_eq(a * (a - 1.0), 0.0)
   assert_eq(b * (b - 1.0), 0.0)
   assert_eq(c * (c - 1.0), 0.0)

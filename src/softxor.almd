@@ -30,10 +30,10 @@ test "soft-xor reduces to the XOR truth table at boolean corners" {
   let a = matrix.from_lists([[0.0, 0.0, 1.0, 1.0]])
   let b = matrix.from_lists([[0.0, 1.0, 0.0, 1.0]])
   let y = soft_xor_rows(a, b)
-  assert_eq(matrix.get(y, 0, 0), 0.0)
-  assert_eq(matrix.get(y, 0, 1), 1.0)
-  assert_eq(matrix.get(y, 0, 2), 1.0)
-  assert_eq(matrix.get(y, 0, 3), 0.0)
+  assert_eq(matrix.get(y, 0, 0) ?? panic("matrix.get: out of range"), 0.0)
+  assert_eq(matrix.get(y, 0, 1) ?? panic("matrix.get: out of range"), 1.0)
+  assert_eq(matrix.get(y, 0, 2) ?? panic("matrix.get: out of range"), 1.0)
+  assert_eq(matrix.get(y, 0, 3) ?? panic("matrix.get: out of range"), 0.0)
 }
 
 // at a = b = ½ the gate is maximally uncertain: ½ + ½ − 2·¼ = ½.
@@ -41,5 +41,5 @@ test "soft-xor at p=0.5 is maximally uncertain" {
   let a = matrix.from_lists([[0.5]])
   let b = matrix.from_lists([[0.5]])
   let y = soft_xor_rows(a, b)
-  assert(float.abs(matrix.get(y, 0, 0) - 0.5) < 0.000000001, "0.5")
+  assert(float.abs((matrix.get(y, 0, 0) ?? panic("matrix.get: out of range")) - 0.5) < 0.000000001, "0.5")
 }

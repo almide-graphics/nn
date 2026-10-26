@@ -41,9 +41,9 @@ test "soft-majority-3 matches the majority truth table at corners" {
   let b = matrix.from_lists([[1.0, 1.0, 0.0]])
   let c = matrix.from_lists([[1.0, 0.0, 1.0]])
   let y = soft_majority3_rows(a, b, c)
-  assert_eq(matrix.get(y, 0, 0), 1.0)
-  assert_eq(matrix.get(y, 0, 1), 1.0)
-  assert_eq(matrix.get(y, 0, 2), 0.0)
+  assert_eq(matrix.get(y, 0, 0) ?? panic("matrix.get: out of range"), 1.0)
+  assert_eq(matrix.get(y, 0, 1) ?? panic("matrix.get: out of range"), 1.0)
+  assert_eq(matrix.get(y, 0, 2) ?? panic("matrix.get: out of range"), 0.0)
 }
 
 // at a = b = c = ½: 3·¼ − 2·⅛ = ¾ − ¼ = ½.
@@ -52,5 +52,5 @@ test "soft-majority-3 at p=0.5 is one half" {
   let b = matrix.from_lists([[0.5]])
   let c = matrix.from_lists([[0.5]])
   let y = soft_majority3_rows(a, b, c)
-  assert(float.abs(matrix.get(y, 0, 0) - 0.5) < 0.000000001, "0.5")
+  assert(float.abs((matrix.get(y, 0, 0) ?? panic("matrix.get: out of range")) - 0.5) < 0.000000001, "0.5")
 }

@@ -16,7 +16,7 @@
 // geometry.
 import self.kernels
 
-fn row_str(m: Matrix, r: Int, cols: Int) -> String = list.range(0, cols) |> list.map((c) => float.to_string(matrix.get(m, r, c))) |> list.join(",")
+fn row_str(m: Matrix, r: Int, cols: Int) -> String = list.range(0, cols) |> list.map((c) => float.to_string(matrix.get(m, r, c) ?? panic("matrix.get: out of range"))) |> list.join(",")
 
 fn dims(m: Matrix) -> String = int.to_string(matrix.rows(m)) + "x" + int.to_string(matrix.cols(m))
 

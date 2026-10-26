@@ -11,7 +11,7 @@ test "avg_pool1d_k2_rows numpy-parity (generated, seed 20261038)" {
   while r < 5 {
     var c = 0
     while c < 2 {
-      let got = matrix.get(y, r, c)
+      let got = matrix.get(y, r, c) ?? panic("matrix.get: out of range")
       let want = list.get(ref, r * 2 + c) ?? 0.0
       assert(float.abs(got - want) < 1.0e-09, "avg_pool1d_k2_rows cell vs numpy")
       c = c + 1

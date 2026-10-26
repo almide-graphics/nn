@@ -38,15 +38,15 @@ fn erosion1d_rows(x: Matrix) -> Matrix = {
 test "erosion eats away a thin spike" {
   let x = matrix.from_lists([[9.0, 0.0, 9.0]])
   let y = erosion1d_rows(x)
-  assert(float.abs(matrix.get(y, 0, 0)) < 0.000000001, "min(9,9,0)=0")
-  assert(float.abs(matrix.get(y, 0, 1)) < 0.000000001, "min(9,0,9)=0")
-  assert(float.abs(matrix.get(y, 0, 2)) < 0.000000001, "min(0,9,9)=0")
+  assert(float.abs(matrix.get(y, 0, 0) ?? panic("matrix.get: out of range")) < 0.000000001, "min(9,9,0)=0")
+  assert(float.abs(matrix.get(y, 0, 1) ?? panic("matrix.get: out of range")) < 0.000000001, "min(9,0,9)=0")
+  assert(float.abs(matrix.get(y, 0, 2) ?? panic("matrix.get: out of range")) < 0.000000001, "min(0,9,9)=0")
 }
 
 // a monotone row takes the backward neighbour; the first edge replicates itself.
 test "erosion of a monotone row takes the backward neighbour" {
   let x = matrix.from_lists([[1.0, 2.0, 3.0, 4.0]])
   let y = erosion1d_rows(x)
-  assert(float.abs(matrix.get(y, 0, 0) - 1.0) < 0.000000001, "min(1,1,2)=1")
-  assert(float.abs(matrix.get(y, 0, 3) - 3.0) < 0.000000001, "min(3,4,4)=3")
+  assert(float.abs((matrix.get(y, 0, 0) ?? panic("matrix.get: out of range")) - 1.0) < 0.000000001, "min(1,1,2)=1")
+  assert(float.abs((matrix.get(y, 0, 3) ?? panic("matrix.get: out of range")) - 3.0) < 0.000000001, "min(3,4,4)=3")
 }

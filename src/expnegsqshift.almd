@@ -9,12 +9,12 @@ fn exp_neg_sq_shift(m: Matrix) -> Matrix =
 
 test "exp_neg_sq_shift peaks at one when x=1" {
   let y = exp_neg_sq_shift(matrix.from_lists([[1.0]]))
-  assert_eq(matrix.get(y, 0, 0), 1.0)
+  assert_eq(matrix.get(y, 0, 0) ?? panic("matrix.get: out of range"), 1.0)
 }
 
 // symmetric about x=1: value at 0 and 2 are both exp(-1).
 test "exp_neg_sq_shift symmetric about one" {
   let y = exp_neg_sq_shift(matrix.from_lists([[0.0, 2.0]]))
-  assert(float.abs(matrix.get(y, 0, 0) - 0.36787944117144233) < 0.000000001, "e⁻¹")
-  assert(float.abs(matrix.get(y, 0, 1) - 0.36787944117144233) < 0.000000001, "sym")
+  assert(float.abs((matrix.get(y, 0, 0) ?? panic("matrix.get: out of range")) - 0.36787944117144233) < 0.000000001, "e⁻¹")
+  assert(float.abs((matrix.get(y, 0, 1) ?? panic("matrix.get: out of range")) - 0.36787944117144233) < 0.000000001, "sym")
 }

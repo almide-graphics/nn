@@ -43,7 +43,7 @@ test "a correctly ranked pair beyond the margin has zero loss" {
   let b = matrix.from_lists([[0.0]])
   let y = matrix.from_lists([[1.0]])
   let l = margin_ranking_loss_rows(a, b, y)
-  assert(float.abs(matrix.get(l, 0, 0)) < 0.000000001, "max(0,-4)=0")
+  assert(float.abs(matrix.get(l, 0, 0) ?? panic("matrix.get: out of range")) < 0.000000001, "max(0,-4)=0")
 }
 
 // misranked (a<b but y=+1): −1·(0−2)+1 = 3.
@@ -52,5 +52,5 @@ test "a misranked pair incurs margin loss" {
   let b = matrix.from_lists([[2.0]])
   let y = matrix.from_lists([[1.0]])
   let l = margin_ranking_loss_rows(a, b, y)
-  assert(float.abs(matrix.get(l, 0, 0) - 3.0) < 0.000000001, "-1·(-2)+1=3")
+  assert(float.abs((matrix.get(l, 0, 0) ?? panic("matrix.get: out of range")) - 3.0) < 0.000000001, "-1·(-2)+1=3")
 }

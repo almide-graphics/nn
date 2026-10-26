@@ -31,7 +31,7 @@ fn cosine_dist_rows(a: Matrix, b: Matrix) -> Matrix = {
 test "cosine distance of a row with itself is zero" {
   let a = matrix.from_lists([[3.0, 4.0]])
   let y = cosine_dist_rows(a, a)
-  assert(float.abs(matrix.get(y, 0, 0)) < 0.000000001, "self 0")
+  assert(float.abs(matrix.get(y, 0, 0) ?? panic("matrix.get: out of range")) < 0.000000001, "self 0")
 }
 
 // orthogonal rows → distance 1 (cos = 0).
@@ -39,5 +39,5 @@ test "cosine distance of orthogonal rows is one" {
   let a = matrix.from_lists([[1.0, 0.0]])
   let b = matrix.from_lists([[0.0, 1.0]])
   let y = cosine_dist_rows(a, b)
-  assert(float.abs(matrix.get(y, 0, 0) - 1.0) < 0.000000001, "orthogonal 1")
+  assert(float.abs((matrix.get(y, 0, 0) ?? panic("matrix.get: out of range")) - 1.0) < 0.000000001, "orthogonal 1")
 }

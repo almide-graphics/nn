@@ -27,7 +27,7 @@ fn taylor_softmax_rows(x: Matrix) -> Matrix = {
 test "taylor-softmax rows sum to one" {
   let x = matrix.from_lists([[0.0, 1.0, 0.0 - 1.0]])
   let y = taylor_softmax_rows(x)
-  let s = matrix.get(y, 0, 0) + matrix.get(y, 0, 1) + matrix.get(y, 0, 2)
+  let s = (matrix.get(y, 0, 0) ?? panic("matrix.get: out of range")) + (matrix.get(y, 0, 1) ?? panic("matrix.get: out of range")) + (matrix.get(y, 0, 2) ?? panic("matrix.get: out of range"))
   assert(float.abs(s - 1.0) < 0.000000001, "sum to 1")
 }
 
@@ -35,6 +35,6 @@ test "taylor-softmax rows sum to one" {
 test "taylor-softmax gives the largest input the largest weight" {
   let x = matrix.from_lists([[0.0, 1.0, 0.0 - 1.0]])
   let y = taylor_softmax_rows(x)
-  assert(float.abs(matrix.get(y, 0, 1) - 0.625) < 0.000000001, "p1 = 2.5/4")
-  assert(matrix.get(y, 0, 1) > matrix.get(y, 0, 0), "x=1 beats x=0")
+  assert(float.abs((matrix.get(y, 0, 1) ?? panic("matrix.get: out of range")) - 0.625) < 0.000000001, "p1 = 2.5/4")
+  assert((matrix.get(y, 0, 1) ?? panic("matrix.get: out of range")) > (matrix.get(y, 0, 0) ?? panic("matrix.get: out of range")), "x=1 beats x=0")
 }

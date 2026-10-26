@@ -33,14 +33,14 @@ fn rms_time_rows(x: Matrix) -> Matrix = {
 test "rms time of a constant-magnitude channel normalizes to one" {
   let x = matrix.from_lists([[2.0], [2.0]])
   let y = rms_time_rows(x)
-  assert_eq(matrix.get(y, 0, 0), 1.0)
-  assert_eq(matrix.get(y, 1, 0), 1.0)
+  assert_eq(matrix.get(y, 0, 0) ?? panic("matrix.get: out of range"), 1.0)
+  assert_eq(matrix.get(y, 1, 0) ?? panic("matrix.get: out of range"), 1.0)
 }
 
 // per channel: ch0 [0,4] rms=sqrt(16/2)=sqrt(8); ch1 [3,3] rms=3 → ch1 → [1,1].
 test "rms time normalizes each channel independently" {
   let x = matrix.from_lists([[0.0, 3.0], [4.0, 3.0]])
   let y = rms_time_rows(x)
-  assert_eq(matrix.get(y, 0, 1), 1.0)
-  assert_eq(matrix.get(y, 1, 1), 1.0)
+  assert_eq(matrix.get(y, 0, 1) ?? panic("matrix.get: out of range"), 1.0)
+  assert_eq(matrix.get(y, 1, 1) ?? panic("matrix.get: out of range"), 1.0)
 }

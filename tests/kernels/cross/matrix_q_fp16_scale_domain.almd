@@ -71,10 +71,10 @@ effect fn main() -> Unit = {
   // both targets. The ruling above governs dequantization products only.
   var h = bytes.zeros(4)
   h = bytes.set(h, 1, 128)
-  let hr = list.get(matrix.to_lists(matrix.from_bytes_f16_le(h, 0, 1, 2)), 0) ?? []
+  let hr = list.get(matrix.to_lists(matrix.from_bytes_f16_le(h, 0, 1, 2) ?? matrix.zeros(1, 2)), 0) ?? []
   println("f16_stored=${sgn(list.get(hr, 0) ?? 9.9)},${sgn(list.get(hr, 1) ?? 9.9)}")
   var f = bytes.zeros(8)
   bytes.put_f32_le(f, 0, 0.0 * (0.0 - 1.0))
-  let fr = list.get(matrix.to_lists(matrix.from_bytes_f32_le(f, 0, 1, 2)), 0) ?? []
+  let fr = list.get(matrix.to_lists(matrix.from_bytes_f32_le(f, 0, 1, 2) ?? matrix.zeros(1, 2)), 0) ?? []
   println("f32_stored=${sgn(list.get(fr, 0) ?? 9.9)},${sgn(list.get(fr, 1) ?? 9.9)}")
 }

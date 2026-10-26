@@ -28,16 +28,16 @@ fn leaky_integrate_rows(x: Matrix) -> Matrix = {
 test "leaky integrator decays an impulse geometrically" {
   let x = matrix.from_lists([[1.0], [0.0], [0.0]])
   let y = leaky_integrate_rows(x)
-  assert(float.abs(matrix.get(y, 0, 0) - 1.0) < 0.000000001, "1")
-  assert(float.abs(matrix.get(y, 1, 0) - 0.9) < 0.000000001, "0+0.9·1=0.9")
-  assert(float.abs(matrix.get(y, 2, 0) - 0.81) < 0.000000001, "0+0.9·0.9=0.81")
+  assert(float.abs((matrix.get(y, 0, 0) ?? panic("matrix.get: out of range")) - 1.0) < 0.000000001, "1")
+  assert(float.abs((matrix.get(y, 1, 0) ?? panic("matrix.get: out of range")) - 0.9) < 0.000000001, "0+0.9·1=0.9")
+  assert(float.abs((matrix.get(y, 2, 0) ?? panic("matrix.get: out of range")) - 0.81) < 0.000000001, "0+0.9·0.9=0.81")
 }
 
 // a constant input accumulates: [1,1,1] → [1, 1.9, 2.71].
 test "leaky integrator accumulates a constant input" {
   let x = matrix.from_lists([[1.0], [1.0], [1.0]])
   let y = leaky_integrate_rows(x)
-  assert(float.abs(matrix.get(y, 0, 0) - 1.0) < 0.000000001, "1")
-  assert(float.abs(matrix.get(y, 1, 0) - 1.9) < 0.000000001, "1+0.9·1=1.9")
-  assert(float.abs(matrix.get(y, 2, 0) - 2.71) < 0.000000001, "1+0.9·1.9=2.71")
+  assert(float.abs((matrix.get(y, 0, 0) ?? panic("matrix.get: out of range")) - 1.0) < 0.000000001, "1")
+  assert(float.abs((matrix.get(y, 1, 0) ?? panic("matrix.get: out of range")) - 1.9) < 0.000000001, "1+0.9·1=1.9")
+  assert(float.abs((matrix.get(y, 2, 0) ?? panic("matrix.get: out of range")) - 2.71) < 0.000000001, "1+0.9·1.9=2.71")
 }

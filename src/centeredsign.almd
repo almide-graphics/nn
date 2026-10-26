@@ -32,18 +32,18 @@ fn centered_sign_rows(x: Matrix) -> Matrix = {
 test "centered-sign marks entries above/below/at the row mean" {
   let x = matrix.from_lists([[1.0, 2.0, 3.0, 6.0]])
   let y = centered_sign_rows(x)
-  assert_eq(matrix.get(y, 0, 0), 0.0 - 1.0)
-  assert_eq(matrix.get(y, 0, 1), 0.0 - 1.0)
-  assert_eq(matrix.get(y, 0, 2), 0.0)
-  assert_eq(matrix.get(y, 0, 3), 1.0)
+  assert_eq(matrix.get(y, 0, 0) ?? panic("matrix.get: out of range"), 0.0 - 1.0)
+  assert_eq(matrix.get(y, 0, 1) ?? panic("matrix.get: out of range"), 0.0 - 1.0)
+  assert_eq(matrix.get(y, 0, 2) ?? panic("matrix.get: out of range"), 0.0)
+  assert_eq(matrix.get(y, 0, 3) ?? panic("matrix.get: out of range"), 1.0)
 }
 
 // a constant row centers to all zeros; rows are independent (row1 mean 4 → [−1,−1,+1]).
 test "a constant row gives all zeros, rows handled independently" {
   let x = matrix.from_lists([[5.0, 5.0, 5.0], [1.0, 2.0, 9.0]])
   let y = centered_sign_rows(x)
-  assert_eq(matrix.get(y, 0, 0), 0.0)
-  assert_eq(matrix.get(y, 0, 1), 0.0)
-  assert_eq(matrix.get(y, 0, 2), 0.0)
-  assert_eq(matrix.get(y, 1, 2), 1.0)
+  assert_eq(matrix.get(y, 0, 0) ?? panic("matrix.get: out of range"), 0.0)
+  assert_eq(matrix.get(y, 0, 1) ?? panic("matrix.get: out of range"), 0.0)
+  assert_eq(matrix.get(y, 0, 2) ?? panic("matrix.get: out of range"), 0.0)
+  assert_eq(matrix.get(y, 1, 2) ?? panic("matrix.get: out of range"), 1.0)
 }

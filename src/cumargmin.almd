@@ -41,16 +41,16 @@ fn cumargmin_rows(x: Matrix) -> Matrix = {
 test "cumulative argmin of a decreasing column tracks the current index" {
   let x = matrix.from_lists([[3.0], [2.0], [1.0]])
   let y = cumargmin_rows(x)
-  assert_eq(matrix.get(y, 0, 0), 0.0)
-  assert_eq(matrix.get(y, 1, 0), 1.0)
-  assert_eq(matrix.get(y, 2, 0), 2.0)
+  assert_eq(matrix.get(y, 0, 0) ?? panic("matrix.get: out of range"), 0.0)
+  assert_eq(matrix.get(y, 1, 0) ?? panic("matrix.get: out of range"), 1.0)
+  assert_eq(matrix.get(y, 2, 0) ?? panic("matrix.get: out of range"), 2.0)
 }
 
 // an early trough then larger values: the index stays at the trough → [0,0,0].
 test "cumulative argmin stays at the earlier trough" {
   let x = matrix.from_lists([[1.0], [5.0], [3.0]])
   let y = cumargmin_rows(x)
-  assert_eq(matrix.get(y, 0, 0), 0.0)
-  assert_eq(matrix.get(y, 1, 0), 0.0)
-  assert_eq(matrix.get(y, 2, 0), 0.0)
+  assert_eq(matrix.get(y, 0, 0) ?? panic("matrix.get: out of range"), 0.0)
+  assert_eq(matrix.get(y, 1, 0) ?? panic("matrix.get: out of range"), 0.0)
+  assert_eq(matrix.get(y, 2, 0) ?? panic("matrix.get: out of range"), 0.0)
 }

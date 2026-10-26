@@ -29,14 +29,14 @@ fn grad_clip_norm_rows(g: Matrix) -> Matrix = {
 test "a row within the norm budget is left unchanged" {
   let g = matrix.from_lists([[0.3, 0.4]])
   let y = grad_clip_norm_rows(g)
-  assert(float.abs(matrix.get(y, 0, 0) - 0.3) < 0.000000001, "unchanged")
-  assert(float.abs(matrix.get(y, 0, 1) - 0.4) < 0.000000001, "unchanged")
+  assert(float.abs((matrix.get(y, 0, 0) ?? panic("matrix.get: out of range")) - 0.3) < 0.000000001, "unchanged")
+  assert(float.abs((matrix.get(y, 0, 1) ?? panic("matrix.get: out of range")) - 0.4) < 0.000000001, "unchanged")
 }
 
 // over budget (‖[3,4]‖ = 5 > 1): scale = 1/5 → [0.6, 0.8] (unit norm, same direction).
 test "an over-budget row is rescaled to the unit norm budget" {
   let g = matrix.from_lists([[3.0, 4.0]])
   let y = grad_clip_norm_rows(g)
-  assert(float.abs(matrix.get(y, 0, 0) - 0.6) < 0.000000001, "3/5=0.6")
-  assert(float.abs(matrix.get(y, 0, 1) - 0.8) < 0.000000001, "4/5=0.8")
+  assert(float.abs((matrix.get(y, 0, 0) ?? panic("matrix.get: out of range")) - 0.6) < 0.000000001, "3/5=0.6")
+  assert(float.abs((matrix.get(y, 0, 1) ?? panic("matrix.get: out of range")) - 0.8) < 0.000000001, "4/5=0.8")
 }

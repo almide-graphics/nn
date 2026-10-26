@@ -64,8 +64,8 @@ test "wkv first token equals v_0" {
   let k = matrix.from_lists([[0.1, -0.2], [0.5, 0.3]])
   let v = matrix.from_lists([[1.0, 2.0], [9.0, 8.0]])
   let y = wkv(k, v, [0.3, 0.8], [0.2, -0.1])
-  assert_eq(matrix.get(y, 0, 0), 1.0)
-  assert_eq(matrix.get(y, 0, 1), 2.0)
+  assert_eq(matrix.get(y, 0, 0) ?? panic("matrix.get: out of range"), 1.0)
+  assert_eq(matrix.get(y, 0, 1) ?? panic("matrix.get: out of range"), 2.0)
 }
 
 // Invariant 2: WKV is a convex combination of the v's → constant v yields that
@@ -74,8 +74,8 @@ test "wkv of constant values is that constant" {
   let k = matrix.from_lists([[0.1, -0.7], [0.5, 0.3], [-0.2, 0.9]])
   let v = matrix.from_lists([[4.0, 4.0], [4.0, 4.0], [4.0, 4.0]])
   let y = wkv(k, v, [0.3, 0.8], [0.2, -0.1])
-  assert(float.abs(matrix.get(y, 2, 0) - 4.0) < 0.000000001, "row2 col0 != 4")
-  assert(float.abs(matrix.get(y, 1, 1) - 4.0) < 0.000000001, "row1 col1 != 4")
+  assert(float.abs((matrix.get(y, 2, 0) ?? panic("matrix.get: out of range")) - 4.0) < 0.000000001, "row2 col0 != 4")
+  assert(float.abs((matrix.get(y, 1, 1) ?? panic("matrix.get: out of range")) - 4.0) < 0.000000001, "row1 col1 != 4")
 }
 
 // Independent oracle: numpy float64 reference (tools/.venv numpy 1.26.4),
@@ -94,7 +94,7 @@ test "wkv matches numpy float64 reference" {
   while r < 4 {
     var c = 0
     while c < 3 {
-      let got = matrix.get(y, r, c)
+      let got = matrix.get(y, r, c) ?? panic("matrix.get: out of range")
       let want = list.get(ref, r * 3 + c) ?? 0.0
       assert(float.abs(got - want) < 0.000000001, "wkv cell vs numpy mismatch")
       c = c + 1

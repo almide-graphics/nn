@@ -28,7 +28,7 @@ fn l2_dist_rows(a: Matrix, b: Matrix) -> Matrix = {
 test "l2 distance of identical rows is zero" {
   let a = matrix.from_lists([[1.0, 2.0, 3.0, 4.0]])
   let y = l2_dist_rows(a, a)
-  assert_eq(matrix.get(y, 0, 0), 0.0)
+  assert_eq(matrix.get(y, 0, 0) ?? panic("matrix.get: out of range"), 0.0)
 }
 
 // 3-4-5: √(3²+4²) = 5.
@@ -36,5 +36,5 @@ test "l2 distance of zero to three-four is five" {
   let a = matrix.from_lists([[0.0, 0.0]])
   let b = matrix.from_lists([[3.0, 4.0]])
   let y = l2_dist_rows(a, b)
-  assert_eq(matrix.get(y, 0, 0), 5.0)
+  assert_eq(matrix.get(y, 0, 0) ?? panic("matrix.get: out of range"), 5.0)
 }

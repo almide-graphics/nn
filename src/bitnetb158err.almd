@@ -46,18 +46,18 @@ fn bitnet_b158_quant_error_rows(x: Matrix) -> Matrix = {
 test "b1.58 quant-error is x minus its dequantized ternary code" {
   let x = matrix.from_lists([[6.0, 0.0], [0.0, 2.0]])
   let y = bitnet_b158_quant_error_rows(x)
-  assert(float.abs(matrix.get(y, 0, 0) - 4.0) < 0.000000001, "6-2=4")
-  assert_eq(matrix.get(y, 0, 1), 0.0)
-  assert_eq(matrix.get(y, 1, 0), 0.0)
-  assert_eq(matrix.get(y, 1, 1), 0.0)
+  assert(float.abs((matrix.get(y, 0, 0) ?? panic("matrix.get: out of range")) - 4.0) < 0.000000001, "6-2=4")
+  assert_eq(matrix.get(y, 0, 1) ?? panic("matrix.get: out of range"), 0.0)
+  assert_eq(matrix.get(y, 1, 0) ?? panic("matrix.get: out of range"), 0.0)
+  assert_eq(matrix.get(y, 1, 1) ?? panic("matrix.get: out of range"), 0.0)
 }
 
 // γ=2; an entry with u=0.5 is in the dead-zone (code 0) → residual is the value itself.
 test "dead-zone entries pass through unchanged as their own value" {
   let x = matrix.from_lists([[6.0, 1.0], [1.0, 0.0]])
   let y = bitnet_b158_quant_error_rows(x)
-  assert(float.abs(matrix.get(y, 0, 0) - 4.0) < 0.000000001, "6-2=4")
-  assert_eq(matrix.get(y, 0, 1), 1.0)
-  assert_eq(matrix.get(y, 1, 0), 1.0)
-  assert_eq(matrix.get(y, 1, 1), 0.0)
+  assert(float.abs((matrix.get(y, 0, 0) ?? panic("matrix.get: out of range")) - 4.0) < 0.000000001, "6-2=4")
+  assert_eq(matrix.get(y, 0, 1) ?? panic("matrix.get: out of range"), 1.0)
+  assert_eq(matrix.get(y, 1, 0) ?? panic("matrix.get: out of range"), 1.0)
+  assert_eq(matrix.get(y, 1, 1) ?? panic("matrix.get: out of range"), 0.0)
 }

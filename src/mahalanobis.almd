@@ -41,7 +41,7 @@ test "mahalanobis distance of identical vectors is zero" {
   let b = matrix.from_lists([[1.0, 2.0]])
   let v = matrix.from_lists([[1.0, 1.0]])
   let y = mahalanobis_diag_rows(a, b, v)
-  assert(float.abs(matrix.get(y, 0, 0)) < 0.000000001, "0")
+  assert(float.abs(matrix.get(y, 0, 0) ?? panic("matrix.get: out of range")) < 0.000000001, "0")
 }
 
 // variance reweighting: gaps [2,2], variances [1,4] → sqrt(4/1 + 4/4) = sqrt(5).
@@ -50,5 +50,5 @@ test "mahalanobis down-weights high-variance coordinates" {
   let b = matrix.from_lists([[0.0, 0.0]])
   let v = matrix.from_lists([[1.0, 4.0]])
   let y = mahalanobis_diag_rows(a, b, v)
-  assert(float.abs(matrix.get(y, 0, 0) - math.sqrt(5.0)) < 0.000001, "sqrt(4+1)=sqrt5")
+  assert(float.abs((matrix.get(y, 0, 0) ?? panic("matrix.get: out of range")) - math.sqrt(5.0)) < 0.000001, "sqrt(4+1)=sqrt5")
 }

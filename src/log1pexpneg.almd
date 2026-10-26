@@ -10,12 +10,12 @@ fn log1p_exp_neg(m: Matrix) -> Matrix =
 // log(1+1) = log2 at x=0.
 test "log1p_exp_neg at zero is log2" {
   let y = log1p_exp_neg(matrix.from_lists([[0.0]]))
-  assert(float.abs(matrix.get(y, 0, 0) - 0.6931471805599453) < 0.000000001, "log2")
+  assert(float.abs((matrix.get(y, 0, 0) ?? panic("matrix.get: out of range")) - 0.6931471805599453) < 0.000000001, "log2")
 }
 
 // decays to 0 for large |x|; even.
 test "log1p_exp_neg decays and even" {
   let y = log1p_exp_neg(matrix.from_lists([[30.0, -30.0]]))
-  assert(float.abs(matrix.get(y, 0, 0)) < 0.000000001, "→ 0")
-  assert(float.abs(matrix.get(y, 0, 1)) < 0.000000001, "even")
+  assert(float.abs(matrix.get(y, 0, 0) ?? panic("matrix.get: out of range")) < 0.000000001, "→ 0")
+  assert(float.abs(matrix.get(y, 0, 1) ?? panic("matrix.get: out of range")) < 0.000000001, "even")
 }

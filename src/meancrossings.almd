@@ -36,12 +36,12 @@ fn mean_crossings_rows(x: Matrix) -> Matrix = {
 test "a monotone row crosses its mean once" {
   let x = matrix.from_lists([[1.0, 2.0, 3.0, 4.0]])
   let y = mean_crossings_rows(x)
-  assert_eq(matrix.get(y, 0, 0), 1.0)
+  assert_eq(matrix.get(y, 0, 0) ?? panic("matrix.get: out of range"), 1.0)
 }
 
 // alternating [1,−1,1,−1] about mean 0: every adjacent pair crosses → 3.
 test "an alternating row crosses its mean every step" {
   let x = matrix.from_lists([[1.0, 0.0 - 1.0, 1.0, 0.0 - 1.0]])
   let y = mean_crossings_rows(x)
-  assert_eq(matrix.get(y, 0, 0), 3.0)
+  assert_eq(matrix.get(y, 0, 0) ?? panic("matrix.get: out of range"), 3.0)
 }

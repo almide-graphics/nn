@@ -16,7 +16,7 @@
 // vendored-libm pow transcription — and the dim-4 cells here are the pin.
 import self.kernels
 
-fn row_str(m: Matrix, r: Int, cols: Int) -> String = list.range(0, cols) |> list.map((c) => float.to_string(matrix.get(m, r, c))) |> list.join(",")
+fn row_str(m: Matrix, r: Int, cols: Int) -> String = list.range(0, cols) |> list.map((c) => float.to_string(matrix.get(m, r, c) ?? panic("matrix.get: out of range"))) |> list.join(",")
 
 fn main() -> Unit = {
   let x = matrix.ones(2, 4)
@@ -41,5 +41,5 @@ fn main() -> Unit = {
   // copies the tail through (columns 4..5 keep the input).
   let y = matrix.ones(1, 6)
   let under = kernels.rope_rotate_at(y, 1, 4, 10000.0, 3)
-  println("under_tail=" + float.to_string(matrix.get(under, 0, 4)) + "," + float.to_string(matrix.get(under, 0, 5)))
+  println("under_tail=" + float.to_string(matrix.get(under, 0, 4) ?? panic("matrix.get: out of range")) + "," + float.to_string(matrix.get(under, 0, 5) ?? panic("matrix.get: out of range")))
 }

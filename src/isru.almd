@@ -9,11 +9,11 @@ fn isru(m: Matrix, alpha: Float) -> Matrix =
 
 test "isru at zero is zero" {
   let y = isru(matrix.from_lists([[0.0]]), 2.0)
-  assert_eq(matrix.get(y, 0, 0), 0.0)
+  assert_eq(matrix.get(y, 0, 0) ?? panic("matrix.get: out of range"), 0.0)
 }
 
 // α=4 at x=1 → 1/√5.
 test "isru saturation scaled by alpha" {
   let y = isru(matrix.from_lists([[1.0]]), 4.0)
-  assert(float.abs(matrix.get(y, 0, 0) - 0.4472135954999579) < 0.000000001, "1/√5")
+  assert(float.abs((matrix.get(y, 0, 0) ?? panic("matrix.get: out of range")) - 0.4472135954999579) < 0.000000001, "1/√5")
 }

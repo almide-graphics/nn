@@ -10,11 +10,11 @@ fn logit(m: Matrix) -> Matrix =
 // logit(0.5) = log(1) = 0.
 test "logit at half is zero" {
   let y = logit(matrix.from_lists([[0.5]]))
-  assert_eq(matrix.get(y, 0, 0), 0.0)
+  assert_eq(matrix.get(y, 0, 0) ?? panic("matrix.get: out of range"), 0.0)
 }
 
 // sigmoid(1)=0.7310585786300049, so logit of it is 1.
 test "logit inverts sigmoid at 1" {
   let y = logit(matrix.from_lists([[0.7310585786300049]]))
-  assert(float.abs(matrix.get(y, 0, 0) - 1.0) < 0.000000001, "= 1")
+  assert(float.abs((matrix.get(y, 0, 0) ?? panic("matrix.get: out of range")) - 1.0) < 0.000000001, "= 1")
 }

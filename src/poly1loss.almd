@@ -36,7 +36,7 @@ test "poly1 loss adds the (1−p_t) Taylor term to cross-entropy" {
   let logits = matrix.from_lists([[0.0, 0.0]])
   let target = matrix.from_lists([[1.0, 0.0]])
   let y = poly1_loss_rows(logits, target)
-  assert(float.abs(matrix.get(y, 0, 0) - 1.1931471805599452) < 0.000000001, "log2 + 0.5")
+  assert(float.abs((matrix.get(y, 0, 0) ?? panic("matrix.get: out of range")) - 1.1931471805599452) < 0.000000001, "log2 + 0.5")
 }
 
 // a confident correct prediction → CE≈0 and (1−p_t)≈0 → loss ≈ 0.
@@ -44,5 +44,5 @@ test "poly1 loss of a confident correct prediction is near zero" {
   let logits = matrix.from_lists([[100.0, 0.0]])
   let target = matrix.from_lists([[1.0, 0.0]])
   let y = poly1_loss_rows(logits, target)
-  assert(float.abs(matrix.get(y, 0, 0)) < 0.000001, "confident → ≈ 0")
+  assert(float.abs(matrix.get(y, 0, 0) ?? panic("matrix.get: out of range")) < 0.000001, "confident → ≈ 0")
 }

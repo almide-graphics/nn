@@ -32,13 +32,13 @@ fn skewness_rows(x: Matrix) -> Matrix = {
 test "a symmetric row has zero skewness" {
   let x = matrix.from_lists([[0.0 - 2.0, 0.0, 2.0]])
   let y = skewness_rows(x)
-  assert(float.abs(matrix.get(y, 0, 0)) < 0.000000001, "symmetric → 0")
+  assert(float.abs(matrix.get(y, 0, 0) ?? panic("matrix.get: out of range")) < 0.000000001, "symmetric → 0")
 }
 
 // [0,0,0,4]: μ=1, m2=3, m3=6 → skew = 6/(3√3) = 2/√3 ≈ 1.1547; constant row → 0 (ε guard).
 test "a right-skewed row is positively skewed; a constant row is zero" {
   let yr = skewness_rows(matrix.from_lists([[0.0, 0.0, 0.0, 4.0]]))
-  assert(float.abs(matrix.get(yr, 0, 0) - 1.1547005383792515) < 0.000000001, "2/√3")
+  assert(float.abs((matrix.get(yr, 0, 0) ?? panic("matrix.get: out of range")) - 1.1547005383792515) < 0.000000001, "2/√3")
   let yc = skewness_rows(matrix.from_lists([[5.0, 5.0, 5.0]]))
-  assert(float.abs(matrix.get(yc, 0, 0)) < 0.000000001, "constant → 0 (eps guard)")
+  assert(float.abs(matrix.get(yc, 0, 0) ?? panic("matrix.get: out of range")) < 0.000000001, "constant → 0 (eps guard)")
 }

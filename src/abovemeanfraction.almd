@@ -29,12 +29,12 @@ fn above_mean_fraction_rows(x: Matrix) -> Matrix = {
 test "above-mean fraction of a symmetric row is one half" {
   let x = matrix.from_lists([[1.0, 2.0, 3.0, 4.0]])
   let y = above_mean_fraction_rows(x)
-  assert(float.abs(matrix.get(y, 0, 0) - 0.5) < 0.000000001, "2/4=0.5")
+  assert(float.abs((matrix.get(y, 0, 0) ?? panic("matrix.get: out of range")) - 0.5) < 0.000000001, "2/4=0.5")
 }
 
 // right-skewed [0,0,0,4]: mean 1, only {4} above → 1/4 = 0.25.
 test "above-mean fraction is small for a right-skewed row" {
   let x = matrix.from_lists([[0.0, 0.0, 0.0, 4.0]])
   let y = above_mean_fraction_rows(x)
-  assert(float.abs(matrix.get(y, 0, 0) - 0.25) < 0.000000001, "1/4=0.25")
+  assert(float.abs((matrix.get(y, 0, 0) ?? panic("matrix.get: out of range")) - 0.25) < 0.000000001, "1/4=0.25")
 }

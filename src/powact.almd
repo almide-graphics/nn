@@ -9,12 +9,12 @@ fn power_act(m: Matrix) -> Matrix =
 
 test "power at zero is zero" {
   let y = power_act(matrix.from_lists([[0.0]]))
-  assert_eq(matrix.get(y, 0, 0), 0.0)
+  assert_eq(matrix.get(y, 0, 0) ?? panic("matrix.get: out of range"), 0.0)
 }
 
 // 1^1.5 = 1, 4^1.5 = 8.
 test "power at 1 and 4" {
   let y = power_act(matrix.from_lists([[1.0, 4.0]]))
-  assert(float.abs(matrix.get(y, 0, 0) - 1.0) < 0.000000001, "1^1.5=1")
-  assert(float.abs(matrix.get(y, 0, 1) - 8.0) < 0.000000001, "4^1.5=8")
+  assert(float.abs((matrix.get(y, 0, 0) ?? panic("matrix.get: out of range")) - 1.0) < 0.000000001, "1^1.5=1")
+  assert(float.abs((matrix.get(y, 0, 1) ?? panic("matrix.get: out of range")) - 8.0) < 0.000000001, "4^1.5=8")
 }

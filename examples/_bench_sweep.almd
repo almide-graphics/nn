@@ -3,7 +3,7 @@ import env
 effect fn bench_size(n: Int, iters: Int) -> () = {
   let a = matrix.ones(n, n) |> (m) => matrix.scale(m, 0.001)
   let b = matrix.ones(n, n) |> (m) => matrix.scale(m, 0.001)
-  let _w = matrix.get(a * b, 0, 0)
+  let _w = matrix.get(a * b, 0, 0) ?? panic("matrix.get: out of range")
   let t0 = datetime.now_ms()
   var i = 0
   var acc = 0.0
@@ -11,7 +11,7 @@ effect fn bench_size(n: Int, iters: Int) -> () = {
     let eps = 1.0 + float.from(i) * 0.000000001
     let ai = matrix.scale(a, eps)
     let r = ai * b
-    acc = acc + matrix.get(r, 0, 0)
+    acc = acc + (matrix.get(r, 0, 0) ?? panic("matrix.get: out of range"))
     i = i + 1
   }
   let el = datetime.now_ms() - t0

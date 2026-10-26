@@ -26,7 +26,7 @@ fn squared_l2_dist_rows(a: Matrix, b: Matrix) -> Matrix = {
 test "squared l2 of identical rows is zero" {
   let a = matrix.from_lists([[1.0, 2.0, 3.0, 4.0]])
   let y = squared_l2_dist_rows(a, a)
-  assert_eq(matrix.get(y, 0, 0), 0.0)
+  assert_eq(matrix.get(y, 0, 0) ?? panic("matrix.get: out of range"), 0.0)
 }
 
 // 3²+4² = 25.
@@ -34,5 +34,5 @@ test "squared l2 of zero to three-four is twenty-five" {
   let a = matrix.from_lists([[0.0, 0.0]])
   let b = matrix.from_lists([[3.0, 4.0]])
   let y = squared_l2_dist_rows(a, b)
-  assert_eq(matrix.get(y, 0, 0), 25.0)
+  assert_eq(matrix.get(y, 0, 0) ?? panic("matrix.get: out of range"), 25.0)
 }

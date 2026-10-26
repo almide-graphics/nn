@@ -35,7 +35,7 @@ test "pinball loss is zero for perfect predictions" {
   let y = matrix.from_lists([[5.0, 1.0]])
   let yhat = matrix.from_lists([[5.0, 1.0]])
   let l = pinball_loss_rows(y, yhat)
-  assert(float.abs(matrix.get(l, 0, 0)) < 0.000000001, "0")
+  assert(float.abs(matrix.get(l, 0, 0) ?? panic("matrix.get: out of range")) < 0.000000001, "0")
 }
 
 // asymmetry at τ=0.7: under-prediction e=+1 costs 0.7, over-prediction e=−1 costs 0.3.
@@ -43,9 +43,9 @@ test "pinball loss penalizes under- and over-prediction asymmetrically" {
   let yu = matrix.from_lists([[1.0]])
   let hu = matrix.from_lists([[0.0]])
   let lu = pinball_loss_rows(yu, hu)
-  assert(float.abs(matrix.get(lu, 0, 0) - 0.7) < 0.000000001, "τ·1 = 0.7")
+  assert(float.abs((matrix.get(lu, 0, 0) ?? panic("matrix.get: out of range")) - 0.7) < 0.000000001, "τ·1 = 0.7")
   let yo = matrix.from_lists([[0.0]])
   let ho = matrix.from_lists([[1.0]])
   let lo = pinball_loss_rows(yo, ho)
-  assert(float.abs(matrix.get(lo, 0, 0) - 0.3) < 0.000000001, "(1−τ)·1 = 0.3")
+  assert(float.abs((matrix.get(lo, 0, 0) ?? panic("matrix.get: out of range")) - 0.3) < 0.000000001, "(1−τ)·1 = 0.3")
 }

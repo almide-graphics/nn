@@ -39,7 +39,7 @@ fn ternary_cosine_rows(a: Matrix, b: Matrix) -> Matrix = {
 test "ternary-cosine of a matrix with itself is one" {
   let a = matrix.from_lists([[3.0, 0.0 - 4.0, 0.1, 2.0]])
   let y = ternary_cosine_rows(a, a)
-  assert(float.abs(matrix.get(y, 0, 0) - 1.0) < 0.000000001, "self → 1")
+  assert(float.abs((matrix.get(y, 0, 0) ?? panic("matrix.get: out of range")) - 1.0) < 0.000000001, "self → 1")
 }
 
 // a→[+1,−1] (Δ=2.45), b→[−1,+1]: dot −2, supports 2 and 2 → cos −2/2 = −1 (fully opposed).
@@ -47,5 +47,5 @@ test "fully-opposed ternary codes give cosine −1" {
   let a = matrix.from_lists([[3.0, 0.0 - 4.0]])
   let b = matrix.from_lists([[0.0 - 3.0, 4.0]])
   let y = ternary_cosine_rows(a, b)
-  assert(float.abs(matrix.get(y, 0, 0) - (0.0 - 1.0)) < 0.000000001, "opposed → −1")
+  assert(float.abs((matrix.get(y, 0, 0) ?? panic("matrix.get: out of range")) - (0.0 - 1.0)) < 0.000000001, "opposed → −1")
 }

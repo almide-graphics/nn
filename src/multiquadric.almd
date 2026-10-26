@@ -8,12 +8,12 @@ fn multiquadric(m: Matrix) -> Matrix =
 
 test "multiquadric at zero is one" {
   let y = multiquadric(matrix.from_lists([[0.0]]))
-  assert_eq(matrix.get(y, 0, 0), 1.0)
+  assert_eq(matrix.get(y, 0, 0) ?? panic("matrix.get: out of range"), 1.0)
 }
 
 // √(1+3)=2 at x=√3; even.
 test "multiquadric at sqrt3 is 2 and even" {
   let y = multiquadric(matrix.from_lists([[1.7320508075688772, -1.7320508075688772]]))
-  assert(float.abs(matrix.get(y, 0, 0) - 2.0) < 0.000000001, "= 2")
-  assert(float.abs(matrix.get(y, 0, 1) - 2.0) < 0.000000001, "even")
+  assert(float.abs((matrix.get(y, 0, 0) ?? panic("matrix.get: out of range")) - 2.0) < 0.000000001, "= 2")
+  assert(float.abs((matrix.get(y, 0, 1) ?? panic("matrix.get: out of range")) - 2.0) < 0.000000001, "even")
 }

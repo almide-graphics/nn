@@ -8,12 +8,12 @@ fn sinh_act(m: Matrix) -> Matrix =
 
 test "sinh at zero is zero" {
   let y = sinh_act(matrix.from_lists([[0.0]]))
-  assert_eq(matrix.get(y, 0, 0), 0.0)
+  assert_eq(matrix.get(y, 0, 0) ?? panic("matrix.get: out of range"), 0.0)
 }
 
 // sinh(1) = (e - 1/e)/2; odd so sinh(-1) = -sinh(1).
 test "sinh at 1 is correct and odd" {
   let y = sinh_act(matrix.from_lists([[1.0, -1.0]]))
-  assert(float.abs(matrix.get(y, 0, 0) - 1.1752011936438014) < 0.000000001, "sinh(1)")
-  assert(float.abs(matrix.get(y, 0, 1) + 1.1752011936438014) < 0.000000001, "odd")
+  assert(float.abs((matrix.get(y, 0, 0) ?? panic("matrix.get: out of range")) - 1.1752011936438014) < 0.000000001, "sinh(1)")
+  assert(float.abs((matrix.get(y, 0, 1) ?? panic("matrix.get: out of range")) + 1.1752011936438014) < 0.000000001, "odd")
 }

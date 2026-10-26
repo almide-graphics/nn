@@ -13,11 +13,11 @@ fn softplus_squared(m: Matrix) -> Matrix =
 // softplus(0)=log2 → squared = log2².
 test "softplus_squared at zero is log2 squared" {
   let y = softplus_squared(matrix.from_lists([[0.0]]))
-  assert(float.abs(matrix.get(y, 0, 0) - 0.48045301391820133) < 0.000000001, "log2²")
+  assert(float.abs((matrix.get(y, 0, 0) ?? panic("matrix.get: out of range")) - 0.48045301391820133) < 0.000000001, "log2²")
 }
 
 // ≈ x² on the right (softplus(30)≈30 → 900).
 test "softplus_squared approaches x squared on the right" {
   let y = softplus_squared(matrix.from_lists([[30.0]]))
-  assert(float.abs(matrix.get(y, 0, 0) - 900.0) < 0.000000001, "≈ 900")
+  assert(float.abs((matrix.get(y, 0, 0) ?? panic("matrix.get: out of range")) - 900.0) < 0.000000001, "≈ 900")
 }

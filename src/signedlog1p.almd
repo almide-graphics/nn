@@ -30,15 +30,15 @@ fn signed_log1p_rows(x: Matrix) -> Matrix = {
 test "signed-log1p is zero at the origin" {
   let x = matrix.from_lists([[0.0, 1.0]])
   let y = signed_log1p_rows(x)
-  assert_eq(matrix.get(y, 0, 0), 0.0)
-  assert(matrix.get(y, 0, 1) > 0.0, "positive side is positive")
+  assert_eq(matrix.get(y, 0, 0) ?? panic("matrix.get: out of range"), 0.0)
+  assert((matrix.get(y, 0, 1) ?? panic("matrix.get: out of range")) > 0.0, "positive side is positive")
 }
 
 // odd symmetry: f(v) + f(−v) = 0 exactly.
 test "signed-log1p is an odd function" {
   let x = matrix.from_lists([[3.0]])
   let xn = matrix.from_lists([[0.0 - 3.0]])
-  let a = matrix.get(signed_log1p_rows(x), 0, 0)
-  let b = matrix.get(signed_log1p_rows(xn), 0, 0)
+  let a = matrix.get(signed_log1p_rows(x), 0, 0) ?? panic("matrix.get: out of range")
+  let b = matrix.get(signed_log1p_rows(xn), 0, 0) ?? panic("matrix.get: out of range")
   assert_eq(a + b, 0.0)
 }

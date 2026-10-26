@@ -26,15 +26,15 @@ fn cummean_abs_rows(x: Matrix) -> Matrix = {
 test "cummean abs is the running mean magnitude" {
   let x = matrix.from_lists([[2.0], [0.0 - 4.0], [3.0]])
   let y = cummean_abs_rows(x)
-  assert_eq(matrix.get(y, 0, 0), 2.0)
-  assert_eq(matrix.get(y, 1, 0), 3.0)
-  assert_eq(matrix.get(y, 2, 0), 3.0)
+  assert_eq(matrix.get(y, 0, 0) ?? panic("matrix.get: out of range"), 2.0)
+  assert_eq(matrix.get(y, 1, 0) ?? panic("matrix.get: out of range"), 3.0)
+  assert_eq(matrix.get(y, 2, 0) ?? panic("matrix.get: out of range"), 3.0)
 }
 
 // per channel: [[-2,6],[4,2]] → row1 = [(2+4)/2, (6+2)/2] = [3,4].
 test "cummean abs works per channel" {
   let x = matrix.from_lists([[0.0 - 2.0, 6.0], [4.0, 2.0]])
   let y = cummean_abs_rows(x)
-  assert_eq(matrix.get(y, 1, 0), 3.0)
-  assert_eq(matrix.get(y, 1, 1), 4.0)
+  assert_eq(matrix.get(y, 1, 0) ?? panic("matrix.get: out of range"), 3.0)
+  assert_eq(matrix.get(y, 1, 1) ?? panic("matrix.get: out of range"), 4.0)
 }

@@ -28,7 +28,7 @@ fn kl_div_rows(p: Matrix, q: Matrix) -> Matrix = {
 test "kl_div of identical distributions is zero" {
   let p = matrix.from_lists([[0.2, 0.3, 0.5]])
   let y = kl_div_rows(p, p)
-  assert(float.abs(matrix.get(y, 0, 0)) < 0.000000001, "self-KL 0")
+  assert(float.abs(matrix.get(y, 0, 0) ?? panic("matrix.get: out of range")) < 0.000000001, "self-KL 0")
 }
 
 // KL > 0 for distinct distributions (Gibbs' inequality).
@@ -36,5 +36,5 @@ test "kl_div is positive for distinct distributions" {
   let p = matrix.from_lists([[0.7, 0.3]])
   let q = matrix.from_lists([[0.4, 0.6]])
   let y = kl_div_rows(p, q)
-  assert(matrix.get(y, 0, 0) > 0.0, "positive")
+  assert((matrix.get(y, 0, 0) ?? panic("matrix.get: out of range")) > 0.0, "positive")
 }

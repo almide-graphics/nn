@@ -39,10 +39,10 @@ fn bitnet_quant_scaled_rows(x: Matrix) -> Matrix = {
 test "bitnet-quant-scaled is beta times the binary sign" {
   let x = matrix.from_lists([[3.0, 1.0], [0.0 - 2.0, 0.0]])
   let y = bitnet_quant_scaled_rows(x)
-  assert_eq(matrix.get(y, 0, 0), 1.5)
-  assert_eq(matrix.get(y, 0, 1), 1.5)
-  assert_eq(matrix.get(y, 1, 0), 0.0 - 1.5)
-  assert_eq(matrix.get(y, 1, 1), 1.5)
+  assert_eq(matrix.get(y, 0, 0) ?? panic("matrix.get: out of range"), 1.5)
+  assert_eq(matrix.get(y, 0, 1) ?? panic("matrix.get: out of range"), 1.5)
+  assert_eq(matrix.get(y, 1, 0) ?? panic("matrix.get: out of range"), 0.0 - 1.5)
+  assert_eq(matrix.get(y, 1, 1) ?? panic("matrix.get: out of range"), 1.5)
 }
 
 // every output has magnitude exactly β, so (out² − β²) = 0 at each entry.
@@ -50,8 +50,8 @@ test "bitnet-quant-scaled has uniform magnitude beta" {
   let x = matrix.from_lists([[4.0, 0.0 - 2.0]])
   let y = bitnet_quant_scaled_rows(x)
   let b = (4.0 + 2.0) / 2.0
-  let a0 = matrix.get(y, 0, 0)
-  let a1 = matrix.get(y, 0, 1)
+  let a0 = matrix.get(y, 0, 0) ?? panic("matrix.get: out of range")
+  let a1 = matrix.get(y, 0, 1) ?? panic("matrix.get: out of range")
   assert_eq((a0 * a0) - (b * b), 0.0)
   assert_eq((a1 * a1) - (b * b), 0.0)
 }

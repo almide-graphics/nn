@@ -7,6 +7,7 @@
 
 import fs
 import math
+import self.kernels
 
 // ── Types ──
 
@@ -341,4 +342,65 @@ test "parse minimal gguf header" {
     }
     err(e) => { println("error: " + e); assert(false) }
   }
+}
+
+// ── Q1_0 (1-bit) tensors, for Bonsai-class models ──
+// Carried over from the fix/gguf-iterative-parse branch (35b3d46), which bonsai-almide was built against.
+
+fn q1_0_block_size() -> Int = 18
+
+fn q1_0_values_per_block() -> Int = 128
+
+// Decode one Q1_0 block starting at `block_start`. Returns (scale, 128 weights).
+// Pure read on `data` — safe to call once per block.
+fn decode_q1_0_block(data: Bytes, block_start: Int) -> (Float, List[Float]) = {
+  let scale_raw = r_u8(data, block_start) + r_u8(data, block_start + 1) * 256
+  let scale = f16_to_f32(scale_raw)
+  let neg_scale = 0.0 - scale
+  let bits_start = block_start + 2
+  var weights: List[Float] = []
+  for i in 0..<128 {
+    let byte_idx = bits_start + i / 8
+    let bit_offset = i - (i / 8) * 8
+    let byte_val = r_u8(data, byte_idx)
+    let bit = int.band(int.bshr(byte_val, bit_offset), 1)
+    list.push(weights, if bit == 1 then scale else neg_scale)
+  }
+  (scale, weights)
+}
+
+fn extract_q1_0_tensor(file: GGUFFile, info: TensorInfo) -> List[Float] = {
+  let start = file.data_offset + info.offset
+  let total = tensor_num_elements(info)
+  let num_blocks = total / 128
+  // Pre-size the output Vec to exact final length so the 2M inner pushes
+  // skip ~21 Vec-doubling reallocations per tensor. Major Q1_0 decode win.
+  var out: List[Float] = list.with_capacity(total)
+  for b in 0..<num_blocks {
+    let block_start = start + b * 18
+    let scale_raw = r_u8(file.raw, block_start) + r_u8(file.raw, block_start + 1) * 256
+    let scale = f16_to_f32(scale_raw)
+    let neg_scale = 0.0 - scale
+    let bits_start = block_start + 2
+    for i in 0..<128 {
+      let byte_idx = bits_start + i / 8
+      let bit_offset = i - (i / 8) * 8
+      let byte_val = r_u8(file.raw, byte_idx)
+      let bit = int.band(int.bshr(byte_val, bit_offset), 1)
+      list.push(out, if bit == 1 then scale else neg_scale)
+    }
+  }
+  out
+}
+
+fn extract_q1_0_matrix(file: GGUFFile, info: TensorInfo) -> Matrix = {
+  // GGUF dims are [in, out] for weights; linear_row_no_bias wants
+  // weight[out_rows, in_cols], so unpack cols=dims[0], rows=dims[1].
+  // For 1-D tensors (no dims[1]) we fall back to row=1 with full length.
+  let cols = list.get(info.dims, 0) |> option.unwrap_or(1)
+  let rows = list.get(info.dims, 1) |> option.unwrap_or(1)
+  let offset = file.data_offset + info.offset
+  // Direct bulk decode via the matrix primitive — ~100x faster than
+  // pushing one value at a time through the Almide runtime.
+  kernels.from_q1_0_bytes(file.raw, offset, rows, cols)
 }

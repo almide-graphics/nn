@@ -18,7 +18,7 @@ effect fn main() -> Unit = {
   while r < reps {
     let f = float.from(r) * 0.0000001
     let ar = matrix.from_lists(list.map(rowsA, (row) => list.map(row, (v) => v + f)))
-    let cell = matrix.get(ar, 0, 0)
+    let cell = matrix.get(ar, 0, 0) ?? panic("matrix.get: out of range")
     acc = acc + cell
     r = r + 1
   }

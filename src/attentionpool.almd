@@ -34,7 +34,7 @@ test "attention pool with equal scores is the plain mean of values" {
   let x = matrix.from_lists([[3.0, 5.0]])
   let w = matrix.from_lists([[0.0, 0.0]])
   let y = attention_pool_rows(x, w)
-  assert(float.abs(matrix.get(y, 0, 0) - 4.0) < 0.000000001, "mean(3,5)=4")
+  assert(float.abs((matrix.get(y, 0, 0) ?? panic("matrix.get: out of range")) - 4.0) < 0.000000001, "mean(3,5)=4")
 }
 
 // a sharply peaked score selects the corresponding value (≈ hard argmax read-out).
@@ -42,5 +42,5 @@ test "a sharply peaked score selects the corresponding value" {
   let x = matrix.from_lists([[10.0, 20.0, 30.0]])
   let w = matrix.from_lists([[100.0, 0.0, 0.0]])
   let y = attention_pool_rows(x, w)
-  assert(float.abs(matrix.get(y, 0, 0) - 10.0) < 0.000000001, "selects x0 = 10")
+  assert(float.abs((matrix.get(y, 0, 0) ?? panic("matrix.get: out of range")) - 10.0) < 0.000000001, "selects x0 = 10")
 }

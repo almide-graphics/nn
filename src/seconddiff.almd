@@ -30,16 +30,16 @@ fn second_diff_rows(x: Matrix) -> Matrix = {
 test "second-diff is the discrete acceleration x_t − 2x_{t-1} + x_{t-2}" {
   let x = matrix.from_lists([[1.0], [2.0], [4.0], [7.0]])
   let y = second_diff_rows(x)
-  assert_eq(matrix.get(y, 0, 0), 0.0)
-  assert_eq(matrix.get(y, 1, 0), 0.0)
-  assert_eq(matrix.get(y, 2, 0), 1.0)
-  assert_eq(matrix.get(y, 3, 0), 1.0)
+  assert_eq(matrix.get(y, 0, 0) ?? panic("matrix.get: out of range"), 0.0)
+  assert_eq(matrix.get(y, 1, 0) ?? panic("matrix.get: out of range"), 0.0)
+  assert_eq(matrix.get(y, 2, 0) ?? panic("matrix.get: out of range"), 1.0)
+  assert_eq(matrix.get(y, 3, 0) ?? panic("matrix.get: out of range"), 1.0)
 }
 
 // a linear ramp [0,3,6,9] has constant slope → zero second difference.
 test "a linear ramp has zero second difference" {
   let x = matrix.from_lists([[0.0], [3.0], [6.0], [9.0]])
   let y = second_diff_rows(x)
-  assert_eq(matrix.get(y, 2, 0), 0.0)
-  assert_eq(matrix.get(y, 3, 0), 0.0)
+  assert_eq(matrix.get(y, 2, 0) ?? panic("matrix.get: out of range"), 0.0)
+  assert_eq(matrix.get(y, 3, 0) ?? panic("matrix.get: out of range"), 0.0)
 }

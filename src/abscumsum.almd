@@ -25,15 +25,15 @@ fn abs_cumsum_rows(x: Matrix) -> Matrix = {
 test "abs cumsum accumulates magnitudes down rows" {
   let x = matrix.from_lists([[1.0], [0.0 - 2.0], [3.0]])
   let y = abs_cumsum_rows(x)
-  assert_eq(matrix.get(y, 0, 0), 1.0)
-  assert_eq(matrix.get(y, 1, 0), 3.0)
-  assert_eq(matrix.get(y, 2, 0), 6.0)
+  assert_eq(matrix.get(y, 0, 0) ?? panic("matrix.get: out of range"), 1.0)
+  assert_eq(matrix.get(y, 1, 0) ?? panic("matrix.get: out of range"), 3.0)
+  assert_eq(matrix.get(y, 2, 0) ?? panic("matrix.get: out of range"), 6.0)
 }
 
 // per channel: [[-1,2],[-3,-4]] → row1 = [1+3, 2+4] = [4,6].
 test "abs cumsum works per channel" {
   let x = matrix.from_lists([[0.0 - 1.0, 2.0], [0.0 - 3.0, 0.0 - 4.0]])
   let y = abs_cumsum_rows(x)
-  assert_eq(matrix.get(y, 1, 0), 4.0)
-  assert_eq(matrix.get(y, 1, 1), 6.0)
+  assert_eq(matrix.get(y, 1, 0) ?? panic("matrix.get: out of range"), 4.0)
+  assert_eq(matrix.get(y, 1, 1) ?? panic("matrix.get: out of range"), 6.0)
 }

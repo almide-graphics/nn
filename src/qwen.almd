@@ -395,10 +395,10 @@ test "per_head_norm normalizes each head independently" {
   // gamma [1, 2] scales the second column of each head.
   let m = matrix.from_lists([[3.0, 4.0, 6.0, 8.0]])
   let out = per_head_norm(m, [1.0, 2.0], 2, 0.000001)
-  assert(approx(matrix.get(out, 0, 0), 0.84853), "head 1 col 0")
-  assert(approx(matrix.get(out, 0, 1), 2.26274), "head 1 col 1 (gamma 2)")
-  assert(approx(matrix.get(out, 0, 2), 0.84853), "head 2 col 0")
-  assert(approx(matrix.get(out, 0, 3), 2.26274), "head 2 col 1 (gamma 2)")
+  assert(approx(matrix.get(out, 0, 0) ?? panic("matrix.get: out of range"), 0.84853), "head 1 col 0")
+  assert(approx(matrix.get(out, 0, 1) ?? panic("matrix.get: out of range"), 2.26274), "head 1 col 1 (gamma 2)")
+  assert(approx(matrix.get(out, 0, 2) ?? panic("matrix.get: out of range"), 0.84853), "head 2 col 0")
+  assert(approx(matrix.get(out, 0, 3) ?? panic("matrix.get: out of range"), 2.26274), "head 2 col 1 (gamma 2)")
 }
 
 test "per_head_norm differs from full-row rms_norm" {
@@ -407,8 +407,8 @@ test "per_head_norm differs from full-row rms_norm" {
   let m = matrix.from_lists([[1.0, 0.0, 100.0, 0.0]])
   let out = per_head_norm(m, [1.0, 1.0], 2, 0.000001)
   // Each head [x, 0] has rms = |x|/sqrt(2) → normalized first col = sqrt(2)
-  assert(approx(matrix.get(out, 0, 0), 1.41421), "head 1 normalized")
-  assert(approx(matrix.get(out, 0, 2), 1.41421), "head 2 normalized")
+  assert(approx(matrix.get(out, 0, 0) ?? panic("matrix.get: out of range"), 1.41421), "head 1 normalized")
+  assert(approx(matrix.get(out, 0, 2) ?? panic("matrix.get: out of range"), 1.41421), "head 2 normalized")
 }
 
 test "expand_kv repeats each kv head group times" {
@@ -416,17 +416,17 @@ test "expand_kv repeats each kv head group times" {
   let m = matrix.from_lists([[1.0, 2.0, 3.0, 4.0]])
   let out = expand_kv(m, 2, 4)
   assert_eq(matrix.cols(out), 8)
-  assert(approx(matrix.get(out, 0, 0), 1.0), "kv0 copy 1")
-  assert(approx(matrix.get(out, 0, 2), 1.0), "kv0 copy 2")
-  assert(approx(matrix.get(out, 0, 4), 3.0), "kv1 copy 1")
-  assert(approx(matrix.get(out, 0, 6), 3.0), "kv1 copy 2")
+  assert(approx(matrix.get(out, 0, 0) ?? panic("matrix.get: out of range"), 1.0), "kv0 copy 1")
+  assert(approx(matrix.get(out, 0, 2) ?? panic("matrix.get: out of range"), 1.0), "kv0 copy 2")
+  assert(approx(matrix.get(out, 0, 4) ?? panic("matrix.get: out of range"), 3.0), "kv1 copy 1")
+  assert(approx(matrix.get(out, 0, 6) ?? panic("matrix.get: out of range"), 3.0), "kv1 copy 2")
 }
 
 test "expand_kv is identity when n_kv == n_q" {
   let m = matrix.from_lists([[1.0, 2.0]])
   let out = expand_kv(m, 1, 1)
   assert_eq(matrix.cols(out), 2)
-  assert(approx(matrix.get(out, 0, 1), 2.0))
+  assert(approx(matrix.get(out, 0, 1) ?? panic("matrix.get: out of range"), 2.0))
 }
 
 test "qwen_block identity with zero weights" {
@@ -442,8 +442,8 @@ test "qwen_block identity with zero weights" {
   let out = qwen_block(x, layer, cfg, 0)
   assert_eq(matrix.rows(out), 2)
   assert_eq(matrix.cols(out), hidden)
-  assert(approx(matrix.get(out, 0, 0), 1.0), "row 0 passes through")
-  assert(approx(matrix.get(out, 1, 7), 7.5), "row 1 passes through")
+  assert(approx(matrix.get(out, 0, 0) ?? panic("matrix.get: out of range"), 1.0), "row 0 passes through")
+  assert(approx(matrix.get(out, 1, 7) ?? panic("matrix.get: out of range"), 7.5), "row 1 passes through")
 }
 
 test "qwen_block GQA shape" {
@@ -488,8 +488,8 @@ test "qwen_forward shape and final norm" {
   let out = qwen_forward([0, 2, 1], model)
   assert_eq(matrix.rows(out), 3)
   assert_eq(matrix.cols(out), hidden)
-  assert(approx(matrix.get(out, 0, 0), 1.0), "constant 0.5 row → rms-normalized to 1")
-  assert(approx(matrix.get(out, 1, 0), -1.0), "constant -1 row → rms-normalized to -1")
+  assert(approx(matrix.get(out, 0, 0) ?? panic("matrix.get: out of range"), 1.0), "constant 0.5 row → rms-normalized to 1")
+  assert(approx(matrix.get(out, 1, 0) ?? panic("matrix.get: out of range"), -1.0), "constant -1 row → rms-normalized to -1")
 }
 
 // Deterministic pseudo-random weights — non-trivial values so the cached
@@ -564,9 +564,9 @@ test "logits computes hidden @ embedding^T" {
   let emb = matrix.from_lists([[1.0, 0.0], [0.0, 1.0], [1.0, 1.0]])
   let lg = logits(hidden, emb)
   assert_eq(matrix.cols(lg), 3)
-  assert(approx(matrix.get(lg, 0, 0), 1.0))
-  assert(approx(matrix.get(lg, 0, 1), 2.0))
-  assert(approx(matrix.get(lg, 0, 2), 3.0))
+  assert(approx(matrix.get(lg, 0, 0) ?? panic("matrix.get: out of range"), 1.0))
+  assert(approx(matrix.get(lg, 0, 1) ?? panic("matrix.get: out of range"), 2.0))
+  assert(approx(matrix.get(lg, 0, 2) ?? panic("matrix.get: out of range"), 3.0))
 }
 
 test "logits_last takes the final position" {

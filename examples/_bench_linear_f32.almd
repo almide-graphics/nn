@@ -9,7 +9,7 @@ effect fn bench(label: String, seq: Int, d: Int, iters: Int) -> () = {
   let w2 = matrix.ones(d, d) |> (m) => matrix.scale(m, 0.01)
   let b1 = [0.1, 0.1, 0.1] |> list.map((_) => 0.1)  // Not actually used below
   // Warm up
-  let _w = matrix.get(x * w1, 0, 0)
+  let _w = matrix.get(x * w1, 0, 0) ?? panic("matrix.get: out of range")
 
   let t0 = datetime.now_ms()
   var i = 0
@@ -18,7 +18,7 @@ effect fn bench(label: String, seq: Int, d: Int, iters: Int) -> () = {
     let eps = 1.0 + float.from(i) * 0.000000001
     let y = matrix.scale(x * w1, eps)
     let z = y * w2
-    acc = acc + matrix.get(z, 0, 0)
+    acc = acc + (matrix.get(z, 0, 0) ?? panic("matrix.get: out of range"))
     i = i + 1
   }
   let el = datetime.now_ms() - t0

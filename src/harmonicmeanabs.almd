@@ -27,13 +27,13 @@ fn harmonic_mean_abs_rows(x: Matrix) -> Matrix = {
 test "harmonic mean of equal magnitudes equals that magnitude" {
   let x = matrix.from_lists([[2.0, 2.0, 2.0, 2.0]])
   let y = harmonic_mean_abs_rows(x)
-  assert(float.abs(matrix.get(y, 0, 0) - 2.0) < 0.000000001, "HM=2")
+  assert(float.abs((matrix.get(y, 0, 0) ?? panic("matrix.get: out of range")) - 2.0) < 0.000000001, "HM=2")
 }
 
 // HM[1,2] = 2/(1 + 1/2) = 4/3 (< arithmetic mean 1.5); sign-blind.
 test "harmonic mean of [1,2] is 4/3 and is sign-blind" {
   let yp = harmonic_mean_abs_rows(matrix.from_lists([[1.0, 2.0]]))
-  assert(float.abs(matrix.get(yp, 0, 0) - 1.3333333333333333) < 0.0000001, "4/3")
+  assert(float.abs((matrix.get(yp, 0, 0) ?? panic("matrix.get: out of range")) - 1.3333333333333333) < 0.0000001, "4/3")
   let yn = harmonic_mean_abs_rows(matrix.from_lists([[0.0 - 1.0, 0.0 - 2.0]]))
-  assert(float.abs(matrix.get(yn, 0, 0) - 1.3333333333333333) < 0.0000001, "sign-blind")
+  assert(float.abs((matrix.get(yn, 0, 0) ?? panic("matrix.get: out of range")) - 1.3333333333333333) < 0.0000001, "sign-blind")
 }

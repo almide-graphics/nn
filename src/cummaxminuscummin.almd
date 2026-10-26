@@ -29,16 +29,16 @@ fn cummax_minus_cummin_rows(x: Matrix) -> Matrix = {
 test "cummax-minus-cummin is the running peak-to-trough span" {
   let x = matrix.from_lists([[3.0], [1.0], [4.0], [2.0]])
   let y = cummax_minus_cummin_rows(x)
-  assert_eq(matrix.get(y, 0, 0), 0.0)
-  assert_eq(matrix.get(y, 1, 0), 2.0)
-  assert_eq(matrix.get(y, 2, 0), 3.0)
-  assert_eq(matrix.get(y, 3, 0), 3.0)
+  assert_eq(matrix.get(y, 0, 0) ?? panic("matrix.get: out of range"), 0.0)
+  assert_eq(matrix.get(y, 1, 0) ?? panic("matrix.get: out of range"), 2.0)
+  assert_eq(matrix.get(y, 2, 0) ?? panic("matrix.get: out of range"), 3.0)
+  assert_eq(matrix.get(y, 3, 0) ?? panic("matrix.get: out of range"), 3.0)
 }
 
 // the first row sets both extremes, so its span is zero everywhere.
 test "cummax-minus-cummin starts at zero on the first row" {
   let x = matrix.from_lists([[0.0 - 2.0, 5.0], [7.0, 0.0 - 1.0]])
   let y = cummax_minus_cummin_rows(x)
-  assert_eq(matrix.get(y, 0, 0), 0.0)
-  assert_eq(matrix.get(y, 0, 1), 0.0)
+  assert_eq(matrix.get(y, 0, 0) ?? panic("matrix.get: out of range"), 0.0)
+  assert_eq(matrix.get(y, 0, 1) ?? panic("matrix.get: out of range"), 0.0)
 }

@@ -38,7 +38,7 @@ test "focal loss applies the (1−p)² focusing factor to cross-entropy" {
   let logits = matrix.from_lists([[0.0, 0.0]])
   let target = matrix.from_lists([[1.0, 0.0]])
   let y = focal_loss_rows(logits, target)
-  assert(float.abs(matrix.get(y, 0, 0) - 0.17328679513998632) < 0.000000001, "0.25·log2")
+  assert(float.abs((matrix.get(y, 0, 0) ?? panic("matrix.get: out of range")) - 0.17328679513998632) < 0.000000001, "0.25·log2")
 }
 
 // a confident correct prediction is focused away → loss ≈ 0.
@@ -46,5 +46,5 @@ test "focal loss of a confident correct prediction is near zero" {
   let logits = matrix.from_lists([[100.0, 0.0]])
   let target = matrix.from_lists([[1.0, 0.0]])
   let y = focal_loss_rows(logits, target)
-  assert(float.abs(matrix.get(y, 0, 0)) < 0.000001, "confident → ≈ 0")
+  assert(float.abs(matrix.get(y, 0, 0) ?? panic("matrix.get: out of range")) < 0.000001, "confident → ≈ 0")
 }

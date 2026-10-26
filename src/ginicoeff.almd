@@ -32,12 +32,12 @@ fn gini_coeff_abs_rows(x: Matrix) -> Matrix = {
 test "an all-equal-magnitude row has zero Gini" {
   let x = matrix.from_lists([[3.0, 3.0, 3.0, 3.0]])
   let y = gini_coeff_abs_rows(x)
-  assert(float.abs(matrix.get(y, 0, 0)) < 0.000000001, "equality → 0")
+  assert(float.abs(matrix.get(y, 0, 0) ?? panic("matrix.get: out of range")) < 0.000000001, "equality → 0")
 }
 
 // one nonzero of D=4 is maximally concentrated → Gini = (D−1)/D = 0.75.
 test "a one-hot magnitude row has Gini (D−1)/D = 0.75" {
   let x = matrix.from_lists([[0.0, 0.0, 0.0, 4.0]])
   let y = gini_coeff_abs_rows(x)
-  assert(float.abs(matrix.get(y, 0, 0) - 0.75) < 0.000000001, "(4−1)/4")
+  assert(float.abs((matrix.get(y, 0, 0) ?? panic("matrix.get: out of range")) - 0.75) < 0.000000001, "(4−1)/4")
 }

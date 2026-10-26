@@ -41,7 +41,7 @@ test "kendall tau is +1 for perfectly concordant rows" {
   let a = matrix.from_lists([[1.0, 2.0, 3.0, 4.0]])
   let b = matrix.from_lists([[1.0, 2.0, 3.0, 4.0]])
   let y = kendall_tau_rows(a, b)
-  assert(float.abs(matrix.get(y, 0, 0) - 1.0) < 0.000000001, "+1")
+  assert(float.abs((matrix.get(y, 0, 0) ?? panic("matrix.get: out of range")) - 1.0) < 0.000000001, "+1")
 }
 
 // reversed ordering → every pair discordant → τ = −1.
@@ -49,5 +49,5 @@ test "kendall tau is -1 for perfectly discordant rows" {
   let a = matrix.from_lists([[1.0, 2.0, 3.0, 4.0]])
   let b = matrix.from_lists([[4.0, 3.0, 2.0, 1.0]])
   let y = kendall_tau_rows(a, b)
-  assert(float.abs(matrix.get(y, 0, 0) + 1.0) < 0.000000001, "-1")
+  assert(float.abs((matrix.get(y, 0, 0) ?? panic("matrix.get: out of range")) + 1.0) < 0.000000001, "-1")
 }

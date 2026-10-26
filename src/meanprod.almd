@@ -28,7 +28,7 @@ test "mean prod averages the products" {
   let a = matrix.from_lists([[2.0, 4.0]])
   let b = matrix.from_lists([[1.0, 1.0]])
   let y = mean_prod_rows(a, b)
-  assert_eq(matrix.get(y, 0, 0), 3.0)
+  assert_eq(matrix.get(y, 0, 0) ?? panic("matrix.get: out of range"), 3.0)
 }
 
 // orthogonal rows → 0.
@@ -36,5 +36,5 @@ test "mean prod of orthogonal rows is zero" {
   let a = matrix.from_lists([[1.0, 0.0]])
   let b = matrix.from_lists([[0.0, 1.0]])
   let y = mean_prod_rows(a, b)
-  assert_eq(matrix.get(y, 0, 0), 0.0)
+  assert_eq(matrix.get(y, 0, 0) ?? panic("matrix.get: out of range"), 0.0)
 }

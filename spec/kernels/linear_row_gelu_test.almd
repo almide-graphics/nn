@@ -25,9 +25,9 @@ test "linear_row_gelu nested form matches unfused chain" {
   // Fused chain — pass rewrites to linear_row_gelu.
   let actual = kernels.gelu(kernels.linear_row(x, weight, bias))
   // Check all elements match.
-  assert(approx_eq(matrix.get(expected, 0, 0), matrix.get(actual, 0, 0), 0.00001))
-  assert(approx_eq(matrix.get(expected, 0, 3), matrix.get(actual, 0, 3), 0.00001))
-  assert(approx_eq(matrix.get(expected, 1, 0), matrix.get(actual, 1, 0), 0.00001))
+  assert(approx_eq(matrix.get(expected, 0, 0) ?? panic("matrix.get: out of range"), matrix.get(actual, 0, 0) ?? panic("matrix.get: out of range"), 0.00001))
+  assert(approx_eq(matrix.get(expected, 0, 3) ?? panic("matrix.get: out of range"), matrix.get(actual, 0, 3) ?? panic("matrix.get: out of range"), 0.00001))
+  assert(approx_eq(matrix.get(expected, 1, 0) ?? panic("matrix.get: out of range"), matrix.get(actual, 1, 0) ?? panic("matrix.get: out of range"), 0.00001))
 }
 
 test "linear_row_gelu let-split form also fuses" {
@@ -44,8 +44,8 @@ test "linear_row_gelu let-split form also fuses" {
   // linear_row output for x[0]: [0.5*1 + 0.5*2 + 0.5*3, 1*1 + 0*2 + 0*3]
   //                           = [3.0, 1.0]
   // gelu([3.0, 1.0]) ≈ [2.9964, 0.8412]
-  assert(approx_eq(matrix.get(y, 0, 0), 2.9964, 0.001))
-  assert(approx_eq(matrix.get(y, 0, 1), 0.8412, 0.001))
+  assert(approx_eq(matrix.get(y, 0, 0) ?? panic("matrix.get: out of range"), 2.9964, 0.001))
+  assert(approx_eq(matrix.get(y, 0, 1) ?? panic("matrix.get: out of range"), 0.8412, 0.001))
 }
 
 test "linear_row_gelu let-split skipped when l used elsewhere" {
@@ -60,8 +60,8 @@ test "linear_row_gelu let-split skipped when l used elsewhere" {
   let l = kernels.linear_row(x, weight, bias)
   let y = kernels.gelu(l)
   // Extra ref to `l` must block fusion.
-  let raw = matrix.get(l, 0, 0)
-  let out = matrix.get(y, 0, 1)
+  let raw = matrix.get(l, 0, 0) ?? panic("matrix.get: out of range")
+  let out = matrix.get(y, 0, 1) ?? panic("matrix.get: out of range")
   assert_eq(raw, 2.0)
   // 1*1 + 1*1
   // gelu(4.0) ≈ 3.9999

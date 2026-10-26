@@ -24,5 +24,5 @@ fn log_softmax(x: Matrix) -> Matrix = {
 // Uniform logits → each output is -log(n). n=2 → -ln2.
 test "log_softmax uniform is -log n" {
   let y = log_softmax(matrix.from_lists([[0.0, 0.0]]))
-  assert(float.abs(matrix.get(y, 0, 0) + 0.6931471805599453) < 0.000000001, "-ln2")
+  assert(float.abs((matrix.get(y, 0, 0) ?? panic("matrix.get: out of range")) + 0.6931471805599453) < 0.000000001, "-ln2")
 }

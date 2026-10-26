@@ -3,14 +3,14 @@ import env
 effect fn bf32(n: Int, iters: Int) -> () = {
   let a = matrix.ones(n, n) |> (m) => matrix.scale(m, 0.001)
   let b = matrix.ones(n, n) |> (m) => matrix.scale(m, 0.001)
-  let _w = matrix.get(matrix.scale(a * b, 1.0), 0, 0)
+  let _w = matrix.get(matrix.scale(a * b, 1.0), 0, 0) ?? panic("matrix.get: out of range")
   let t0 = datetime.now_ms()
   var i = 0
   var acc = 0.0
   while i < iters {
     let eps = 1.0 + float.from(i) * 0.000000001
     let r = matrix.scale(a * b, eps)
-    acc = acc + matrix.get(r, 0, 0)
+    acc = acc + (matrix.get(r, 0, 0) ?? panic("matrix.get: out of range"))
     i = i + 1
   }
   let el = datetime.now_ms() - t0
@@ -21,14 +21,14 @@ effect fn bf32(n: Int, iters: Int) -> () = {
 effect fn bf64(n: Int, iters: Int) -> () = {
   let a = matrix.ones(n, n) |> (m) => matrix.scale(m, 0.001)
   let b = matrix.ones(n, n) |> (m) => matrix.scale(m, 0.001)
-  let _w = matrix.get(matrix.scale(a * b, 1.0), 0, 0)
+  let _w = matrix.get(matrix.scale(a * b, 1.0), 0, 0) ?? panic("matrix.get: out of range")
   let t0 = datetime.now_ms()
   var i = 0
   var acc = 0.0
   while i < iters {
     let eps = 1.0 + float.from(i) * 0.000000001
     let r = matrix.scale(a * b, eps)
-    acc = acc + matrix.get(r, 0, 0)
+    acc = acc + (matrix.get(r, 0, 0) ?? panic("matrix.get: out of range"))
     i = i + 1
   }
   let el = datetime.now_ms() - t0

@@ -38,6 +38,6 @@ test "gla_diag zero-decay is memoryless gated product" {
   let v = matrix.from_lists([[5.0], [0.5]])
   let a = matrix.from_lists([[0.0], [0.0]])
   let y = gla_diag(q, k, v, a)
-  assert_eq(matrix.get(y, 0, 0), 10.0)
-  assert_eq(matrix.get(y, 1, 0), 6.0)
+  assert_eq(matrix.get(y, 0, 0) ?? panic("matrix.get: out of range"), 10.0)
+  assert_eq(matrix.get(y, 1, 0) ?? panic("matrix.get: out of range"), 6.0)
 }

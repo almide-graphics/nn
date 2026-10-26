@@ -26,14 +26,14 @@ fn ema(x: Matrix, alpha: List[Float]) -> Matrix = {
 test "ema alpha zero passes input through" {
   let x = matrix.from_lists([[3.0], [7.0]])
   let y = ema(x, [0.0])
-  assert_eq(matrix.get(y, 0, 0), 3.0)
-  assert_eq(matrix.get(y, 1, 0), 7.0)
+  assert_eq(matrix.get(y, 0, 0) ?? panic("matrix.get: out of range"), 3.0)
+  assert_eq(matrix.get(y, 1, 0) ?? panic("matrix.get: out of range"), 7.0)
 }
 
 // α=1 → input never enters: state stays at its initial zero.
 test "ema alpha one holds initial state" {
   let x = matrix.from_lists([[3.0], [7.0]])
   let y = ema(x, [1.0])
-  assert_eq(matrix.get(y, 0, 0), 0.0)
-  assert_eq(matrix.get(y, 1, 0), 0.0)
+  assert_eq(matrix.get(y, 0, 0) ?? panic("matrix.get: out of range"), 0.0)
+  assert_eq(matrix.get(y, 1, 0) ?? panic("matrix.get: out of range"), 0.0)
 }

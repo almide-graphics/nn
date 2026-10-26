@@ -100,8 +100,8 @@ test "scaled_dot_product output shape" {
   assert_eq(t.rows(out), 2)
   assert_eq(t.cols(out), 2)
   // Output is weighted combination of V rows — values should be in V's range
-  assert(matrix.get(out, 0, 0) >= 10.0)
-  assert(matrix.get(out, 0, 0) <= 30.0)
+  assert((matrix.get(out, 0, 0) ?? panic("matrix.get: out of range")) >= 10.0)
+  assert((matrix.get(out, 0, 0) ?? panic("matrix.get: out of range")) <= 30.0)
 }
 
 test "softmax attention weights sum to 1" {
@@ -110,20 +110,20 @@ test "softmax attention weights sum to 1" {
   let v = matrix.from_lists([[1.0, 0.0], [0.0, 1.0], [0.5, 0.5]])
   let out = scaled_dot_product(q, k, v)
   // Output is a weighted sum of V rows — each element should be in [0, 1]
-  assert(matrix.get(out, 0, 0) >= 0.0)
-  assert(matrix.get(out, 0, 0) <= 1.0)
+  assert((matrix.get(out, 0, 0) ?? panic("matrix.get: out of range")) >= 0.0)
+  assert((matrix.get(out, 0, 0) ?? panic("matrix.get: out of range")) <= 1.0)
 }
 
 test "causal_mask_add applies upper-triangular bias" {
   let z = matrix.zeros(3, 3)
   let m = kernels.causal_mask_add(z, -1000000.0)
   // Diagonal and below = 0
-  assert_eq(matrix.get(m, 0, 0), 0.0)
-  assert_eq(matrix.get(m, 1, 0), 0.0)
-  assert_eq(matrix.get(m, 1, 1), 0.0)
+  assert_eq(matrix.get(m, 0, 0) ?? panic("matrix.get: out of range"), 0.0)
+  assert_eq(matrix.get(m, 1, 0) ?? panic("matrix.get: out of range"), 0.0)
+  assert_eq(matrix.get(m, 1, 1) ?? panic("matrix.get: out of range"), 0.0)
   // Above diagonal = large negative
-  assert(matrix.get(m, 0, 1) < -999999.0)
-  assert(matrix.get(m, 0, 2) < -999999.0)
+  assert((matrix.get(m, 0, 1) ?? panic("matrix.get: out of range")) < -999999.0)
+  assert((matrix.get(m, 0, 2) ?? panic("matrix.get: out of range")) < -999999.0)
 }
 
 test "masked attention can't look ahead" {
@@ -132,8 +132,8 @@ test "masked attention can't look ahead" {
   let v = matrix.from_lists([[10.0, 0.0], [0.0, 10.0]])
   let out = masked_scaled_dot_product(q, k, v)
   // Position 0 can only see position 0 → output[0] ≈ v[0] = [10, 0]
-  assert(approx(matrix.get(out, 0, 0), 10.0))
-  assert(approx(matrix.get(out, 0, 1), 0.0))
+  assert(approx(matrix.get(out, 0, 0) ?? panic("matrix.get: out of range"), 10.0))
+  assert(approx(matrix.get(out, 0, 1) ?? panic("matrix.get: out of range"), 0.0))
 }
 
 test "split_heads and concat_heads round-trip" {
@@ -143,7 +143,7 @@ test "split_heads and concat_heads round-trip" {
   let reconstructed = concat_heads(heads)
   assert_eq(t.rows(reconstructed), 2)
   assert_eq(t.cols(reconstructed), 4)
-  assert_eq(matrix.get(reconstructed, 0, 0), 1.0)
-  assert_eq(matrix.get(reconstructed, 0, 3), 4.0)
-  assert_eq(matrix.get(reconstructed, 1, 2), 7.0)
+  assert_eq(matrix.get(reconstructed, 0, 0) ?? panic("matrix.get: out of range"), 1.0)
+  assert_eq(matrix.get(reconstructed, 0, 3) ?? panic("matrix.get: out of range"), 4.0)
+  assert_eq(matrix.get(reconstructed, 1, 2) ?? panic("matrix.get: out of range"), 7.0)
 }

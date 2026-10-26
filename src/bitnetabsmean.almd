@@ -44,19 +44,19 @@ fn bitnet_absmean_rows(x: Matrix) -> Matrix = {
 test "bitnet-absmean snaps to ternary against the tensor absmean scale" {
   let x = matrix.from_lists([[2.0, 0.0 - 2.0], [0.4, 0.0]])
   let y = bitnet_absmean_rows(x)
-  assert_eq(matrix.get(y, 0, 0), 1.0)
-  assert_eq(matrix.get(y, 0, 1), 0.0 - 1.0)
-  assert_eq(matrix.get(y, 1, 0), 0.0)
-  assert_eq(matrix.get(y, 1, 1), 0.0)
+  assert_eq(matrix.get(y, 0, 0) ?? panic("matrix.get: out of range"), 1.0)
+  assert_eq(matrix.get(y, 0, 1) ?? panic("matrix.get: out of range"), 0.0 - 1.0)
+  assert_eq(matrix.get(y, 1, 0) ?? panic("matrix.get: out of range"), 0.0)
+  assert_eq(matrix.get(y, 1, 1) ?? panic("matrix.get: out of range"), 0.0)
 }
 
 // every output sits in {−1,0,1}, so q·q ∈ {0,1} and (q·q)·(q·q − 1) = 0 always.
 test "bitnet-absmean outputs are exactly ternary" {
   let x = matrix.from_lists([[3.0, 0.0 - 1.0, 0.05]])
   let y = bitnet_absmean_rows(x)
-  let a = matrix.get(y, 0, 0)
-  let b = matrix.get(y, 0, 1)
-  let c = matrix.get(y, 0, 2)
+  let a = matrix.get(y, 0, 0) ?? panic("matrix.get: out of range")
+  let b = matrix.get(y, 0, 1) ?? panic("matrix.get: out of range")
+  let c = matrix.get(y, 0, 2) ?? panic("matrix.get: out of range")
   assert_eq((a * a) * ((a * a) - 1.0), 0.0)
   assert_eq((b * b) * ((b * b) - 1.0), 0.0)
   assert_eq((c * c) * ((c * c) - 1.0), 0.0)

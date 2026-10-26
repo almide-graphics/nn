@@ -41,16 +41,16 @@ fn median3_filter_rows(x: Matrix) -> Matrix = {
 test "median-3 filter removes a single spike" {
   let x = matrix.from_lists([[0.0], [10.0], [0.0]])
   let y = median3_filter_rows(x)
-  assert(float.abs(matrix.get(y, 0, 0)) < 0.000000001, "0")
-  assert(float.abs(matrix.get(y, 1, 0)) < 0.000000001, "spike → 0")
-  assert(float.abs(matrix.get(y, 2, 0)) < 0.000000001, "0")
+  assert(float.abs(matrix.get(y, 0, 0) ?? panic("matrix.get: out of range")) < 0.000000001, "0")
+  assert(float.abs(matrix.get(y, 1, 0) ?? panic("matrix.get: out of range")) < 0.000000001, "spike → 0")
+  assert(float.abs(matrix.get(y, 2, 0) ?? panic("matrix.get: out of range")) < 0.000000001, "0")
 }
 
 // a monotone ramp is preserved: [1,2,3] → [1,2,3] (edges replicate).
 test "median-3 filter preserves a monotonic ramp" {
   let x = matrix.from_lists([[1.0], [2.0], [3.0]])
   let y = median3_filter_rows(x)
-  assert(float.abs(matrix.get(y, 0, 0) - 1.0) < 0.000000001, "1")
-  assert(float.abs(matrix.get(y, 1, 0) - 2.0) < 0.000000001, "2")
-  assert(float.abs(matrix.get(y, 2, 0) - 3.0) < 0.000000001, "3")
+  assert(float.abs((matrix.get(y, 0, 0) ?? panic("matrix.get: out of range")) - 1.0) < 0.000000001, "1")
+  assert(float.abs((matrix.get(y, 1, 0) ?? panic("matrix.get: out of range")) - 2.0) < 0.000000001, "2")
+  assert(float.abs((matrix.get(y, 2, 0) ?? panic("matrix.get: out of range")) - 3.0) < 0.000000001, "3")
 }

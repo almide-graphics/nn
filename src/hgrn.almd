@@ -36,8 +36,8 @@ test "hgrn open gate copies input" {
   let g = matrix.from_lists([[-50.0], [-50.0]])
   let i = matrix.from_lists([[3.0], [7.0]])
   let y = hgrn(g, i, [0.0])
-  assert(float.abs(matrix.get(y, 0, 0) - 3.0) < 0.000000001, "h0=i0")
-  assert(float.abs(matrix.get(y, 1, 0) - 7.0) < 0.000000001, "h1=i1")
+  assert(float.abs((matrix.get(y, 0, 0) ?? panic("matrix.get: out of range")) - 3.0) < 0.000000001, "h0=i0")
+  assert(float.abs((matrix.get(y, 1, 0) ?? panic("matrix.get: out of range")) - 7.0) < 0.000000001, "h1=i1")
 }
 
 // lb=0.5 floors the forget gate: with g→-∞, f=0.5 exactly.
@@ -46,6 +46,6 @@ test "hgrn lower bound floors the gate" {
   let g = matrix.from_lists([[-50.0], [-50.0]])
   let i = matrix.from_lists([[2.0], [2.0]])
   let y = hgrn(g, i, [0.5])
-  assert(float.abs(matrix.get(y, 0, 0) - 1.0) < 0.000000001, "h0=1")
-  assert(float.abs(matrix.get(y, 1, 0) - 1.5) < 0.000000001, "h1=1.5")
+  assert(float.abs((matrix.get(y, 0, 0) ?? panic("matrix.get: out of range")) - 1.0) < 0.000000001, "h0=1")
+  assert(float.abs((matrix.get(y, 1, 0) ?? panic("matrix.get: out of range")) - 1.5) < 0.000000001, "h1=1.5")
 }

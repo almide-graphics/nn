@@ -31,8 +31,8 @@ test "fma computes a*b + c elementwise" {
   let b = matrix.from_lists([[4.0, 5.0]])
   let c = matrix.from_lists([[1.0, 1.0]])
   let y = fma_rows(a, b, c)
-  assert_eq(matrix.get(y, 0, 0), 9.0)
-  assert_eq(matrix.get(y, 0, 1), 16.0)
+  assert_eq(matrix.get(y, 0, 0) ?? panic("matrix.get: out of range"), 9.0)
+  assert_eq(matrix.get(y, 0, 1) ?? panic("matrix.get: out of range"), 16.0)
 }
 
 // with c = 0 it reduces to the Hadamard product a·b.
@@ -41,6 +41,6 @@ test "fma with zero addend is the elementwise product" {
   let b = matrix.from_lists([[5.0, 0.0 - 4.0]])
   let c = matrix.from_lists([[0.0, 0.0]])
   let y = fma_rows(a, b, c)
-  assert_eq(matrix.get(y, 0, 0), 0.0 - 10.0)
-  assert_eq(matrix.get(y, 0, 1), 0.0 - 12.0)
+  assert_eq(matrix.get(y, 0, 0) ?? panic("matrix.get: out of range"), 0.0 - 10.0)
+  assert_eq(matrix.get(y, 0, 1) ?? panic("matrix.get: out of range"), 0.0 - 12.0)
 }

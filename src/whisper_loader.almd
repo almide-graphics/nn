@@ -23,8 +23,8 @@ import self.whisper as w
 fn tensor_matrix(m: gw.Model, name: String, rows: Int, cols: Int) -> Matrix =
   match gw.find_tensor(m.tensors, name) {
     some(t) => match t.ftype {
-      0 => matrix.from_bytes_f32_le(m.data, t.data_offset, rows, cols),
-      1 => matrix.from_bytes_f16_le(m.data, t.data_offset, rows, cols),
+      0 => matrix.from_bytes_f32_le(m.data, t.data_offset, rows, cols) ?? matrix.zeros(rows, cols),
+      1 => matrix.from_bytes_f16_le(m.data, t.data_offset, rows, cols) ?? matrix.zeros(rows, cols),
       _ => matrix.zeros(rows, cols),
     },
     none => matrix.zeros(rows, cols),
@@ -111,8 +111,8 @@ fn load_weights(m: gw.Model, config: w.WhisperConfig, n_enc: Int, n_dec: Int, vo
       let elem = match t.ftype { 1 => 2, _ => 4 }
       let mid_offset = t.data_offset + config.n_mels * d * elem
       let raw = match t.ftype {
-        0 => matrix.from_bytes_f32_le(m.data, mid_offset, config.n_mels, d),
-        1 => matrix.from_bytes_f16_le(m.data, mid_offset, config.n_mels, d),
+        0 => matrix.from_bytes_f32_le(m.data, mid_offset, config.n_mels, d) ?? matrix.zeros(config.n_mels, d),
+        1 => matrix.from_bytes_f16_le(m.data, mid_offset, config.n_mels, d) ?? matrix.zeros(config.n_mels, d),
         _ => matrix.zeros(config.n_mels, d),
       }
       matrix.transpose(raw)  // (n_mels, d) → (d, n_mels)

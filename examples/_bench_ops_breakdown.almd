@@ -21,11 +21,11 @@ effect fn main() -> () = {
   let b = matrix.ones(3, 3) |> (m) => matrix.scale(m, 0.001)
 
   println("=== 3x3 op breakdown ===")
-  bench_op("scale only    ", 100000, () => matrix.get(matrix.scale(a, 1.001), 0, 0))
-  bench_op("mul only      ", 100000, () => matrix.get(a * b, 0, 0))
-  bench_op("get only      ", 100000, () => matrix.get(a, 0, 0))
+  bench_op("scale only    ", 100000, () => matrix.get(matrix.scale(a, 1.001), 0, 0) ?? panic("matrix.get: out of range"))
+  bench_op("mul only      ", 100000, () => matrix.get(a * b, 0, 0) ?? panic("matrix.get: out of range"))
+  bench_op("get only      ", 100000, () => matrix.get(a, 0, 0) ?? panic("matrix.get: out of range"))
   bench_op("scale+mul+get ", 100000, () => {
     let a_i = matrix.scale(a, 1.001)
-    matrix.get(a_i * b, 0, 0)
+    matrix.get(a_i * b, 0, 0) ?? panic("matrix.get: out of range")
   })
 }

@@ -19,10 +19,10 @@ fn min_rows(x: Matrix) -> Matrix = {
 
 test "min_rows picks the minimum" {
   let y = min_rows(matrix.from_lists([[1.0, 5.0, 3.0, 2.0]]))
-  assert_eq(matrix.get(y, 0, 0), 1.0)
+  assert_eq(matrix.get(y, 0, 0) ?? panic("matrix.get: out of range"), 1.0)
 }
 
 test "min_rows of all-negative row" {
   let y = min_rows(matrix.from_lists([[-2.0, -7.0, -3.0]]))
-  assert_eq(matrix.get(y, 0, 0), -7.0)
+  assert_eq(matrix.get(y, 0, 0) ?? panic("matrix.get: out of range"), -7.0)
 }

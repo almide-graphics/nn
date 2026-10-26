@@ -32,13 +32,13 @@ fn ternary_balance_rows(x: Matrix) -> Matrix = {
 test "a one-up one-down row has zero net polarity" {
   let x = matrix.from_lists([[3.0, 0.0 - 4.0, 0.1]])
   let y = ternary_balance_rows(x)
-  assert_eq(matrix.get(y, 0, 0), 0.0)
+  assert_eq(matrix.get(y, 0, 0) ?? panic("matrix.get: out of range"), 0.0)
 }
 
 // all kept-positive → +1; all kept-negative → −1 (Δ=1.4 on a flat-magnitude-2 row).
 test "all-positive kept row is +1, all-negative is −1" {
   let yp = ternary_balance_rows(matrix.from_lists([[2.0, 2.0]]))
-  assert_eq(matrix.get(yp, 0, 0), 1.0)
+  assert_eq(matrix.get(yp, 0, 0) ?? panic("matrix.get: out of range"), 1.0)
   let yn = ternary_balance_rows(matrix.from_lists([[0.0 - 2.0, 0.0 - 2.0]]))
-  assert_eq(matrix.get(yn, 0, 0), 0.0 - 1.0)
+  assert_eq(matrix.get(yn, 0, 0) ?? panic("matrix.get: out of range"), 0.0 - 1.0)
 }

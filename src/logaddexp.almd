@@ -34,8 +34,8 @@ test "logaddexp of equal values adds log 2" {
   let a = matrix.from_lists([[0.0, 5.0]])
   let b = matrix.from_lists([[0.0, 5.0]])
   let y = logaddexp_rows(a, b)
-  assert(float.abs(matrix.get(y, 0, 0) - 0.6931471805599453) < 0.000000001, "log 2")
-  assert(float.abs(matrix.get(y, 0, 1) - (5.0 + 0.6931471805599453)) < 0.000000001, "5 + log 2")
+  assert(float.abs((matrix.get(y, 0, 0) ?? panic("matrix.get: out of range")) - 0.6931471805599453) < 0.000000001, "log 2")
+  assert(float.abs((matrix.get(y, 0, 1) ?? panic("matrix.get: out of range")) - (5.0 + 0.6931471805599453)) < 0.000000001, "5 + log 2")
 }
 
 // when one term dominates, logaddexp ≈ max (here 100).
@@ -43,5 +43,5 @@ test "logaddexp approaches the max when one term dominates" {
   let a = matrix.from_lists([[100.0]])
   let b = matrix.from_lists([[0.0]])
   let y = logaddexp_rows(a, b)
-  assert(float.abs(matrix.get(y, 0, 0) - 100.0) < 0.0001, "≈ 100")
+  assert(float.abs((matrix.get(y, 0, 0) ?? panic("matrix.get: out of range")) - 100.0) < 0.0001, "≈ 100")
 }

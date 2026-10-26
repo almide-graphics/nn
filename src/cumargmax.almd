@@ -40,16 +40,16 @@ fn cumargmax_rows(x: Matrix) -> Matrix = {
 test "cumulative argmax of an increasing column tracks the current index" {
   let x = matrix.from_lists([[1.0], [2.0], [3.0]])
   let y = cumargmax_rows(x)
-  assert_eq(matrix.get(y, 0, 0), 0.0)
-  assert_eq(matrix.get(y, 1, 0), 1.0)
-  assert_eq(matrix.get(y, 2, 0), 2.0)
+  assert_eq(matrix.get(y, 0, 0) ?? panic("matrix.get: out of range"), 0.0)
+  assert_eq(matrix.get(y, 1, 0) ?? panic("matrix.get: out of range"), 1.0)
+  assert_eq(matrix.get(y, 2, 0) ?? panic("matrix.get: out of range"), 2.0)
 }
 
 // an early peak then smaller values: the index stays at the peak → [0,0,0].
 test "cumulative argmax stays at the earlier peak" {
   let x = matrix.from_lists([[5.0], [1.0], [3.0]])
   let y = cumargmax_rows(x)
-  assert_eq(matrix.get(y, 0, 0), 0.0)
-  assert_eq(matrix.get(y, 1, 0), 0.0)
-  assert_eq(matrix.get(y, 2, 0), 0.0)
+  assert_eq(matrix.get(y, 0, 0) ?? panic("matrix.get: out of range"), 0.0)
+  assert_eq(matrix.get(y, 1, 0) ?? panic("matrix.get: out of range"), 0.0)
+  assert_eq(matrix.get(y, 2, 0) ?? panic("matrix.get: out of range"), 0.0)
 }

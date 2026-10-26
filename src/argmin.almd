@@ -32,13 +32,13 @@ fn argmin_rows(x: Matrix) -> Matrix = {
 test "argmin returns the index of the row minimum" {
   let x = matrix.from_lists([[5.0, 1.0, 3.0, 2.0]])
   let y = argmin_rows(x)
-  assert_eq(matrix.get(y, 0, 0), 1.0)
+  assert_eq(matrix.get(y, 0, 0) ?? panic("matrix.get: out of range"), 1.0)
 }
 
 // minima at the ends: row0 min at last (3), row1 min at first (0).
 test "argmin handles minima at the ends" {
   let x = matrix.from_lists([[4.0, 3.0, 2.0, 1.0], [1.0, 9.0, 9.0, 9.0]])
   let y = argmin_rows(x)
-  assert_eq(matrix.get(y, 0, 0), 3.0)
-  assert_eq(matrix.get(y, 1, 0), 0.0)
+  assert_eq(matrix.get(y, 0, 0) ?? panic("matrix.get: out of range"), 3.0)
+  assert_eq(matrix.get(y, 1, 0) ?? panic("matrix.get: out of range"), 0.0)
 }

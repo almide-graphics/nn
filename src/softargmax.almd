@@ -37,12 +37,12 @@ fn soft_argmax_rows(x: Matrix) -> Matrix = {
 test "soft-argmax of a flat row is the mean index" {
   let x = matrix.from_lists([[0.0, 0.0, 0.0, 0.0]])
   let y = soft_argmax_rows(x)
-  assert(float.abs(matrix.get(y, 0, 0) - 1.5) < 0.000000001, "(0+1+2+3)/4 = 1.5")
+  assert(float.abs((matrix.get(y, 0, 0) ?? panic("matrix.get: out of range")) - 1.5) < 0.000000001, "(0+1+2+3)/4 = 1.5")
 }
 
 // a sharply peaked row concentrates on its argmax index → ≈ 2.
 test "soft-argmax of a peaked row approaches the argmax index" {
   let x = matrix.from_lists([[0.0, 0.0, 100.0, 0.0]])
   let y = soft_argmax_rows(x)
-  assert(float.abs(matrix.get(y, 0, 0) - 2.0) < 0.0001, "≈ 2")
+  assert(float.abs((matrix.get(y, 0, 0) ?? panic("matrix.get: out of range")) - 2.0) < 0.0001, "≈ 2")
 }

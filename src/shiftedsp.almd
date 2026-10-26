@@ -10,11 +10,11 @@ fn shifted_softplus(m: Matrix) -> Matrix =
 // softplus(0)=log2 → shifted_softplus(0)=0.
 test "shifted_softplus at zero is zero" {
   let y = shifted_softplus(matrix.from_lists([[0.0]]))
-  assert(float.abs(matrix.get(y, 0, 0)) < 0.000000001, "= 0")
+  assert(float.abs(matrix.get(y, 0, 0) ?? panic("matrix.get: out of range")) < 0.000000001, "= 0")
 }
 
 // Large negative → softplus→0 → shifted → -log2.
 test "shifted_softplus saturates left to minus log2" {
   let y = shifted_softplus(matrix.from_lists([[-30.0]]))
-  assert(float.abs(matrix.get(y, 0, 0) + 0.6931471805599453) < 0.000000001, "= -log2")
+  assert(float.abs((matrix.get(y, 0, 0) ?? panic("matrix.get: out of range")) + 0.6931471805599453) < 0.000000001, "= -log2")
 }

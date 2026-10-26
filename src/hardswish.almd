@@ -11,12 +11,12 @@ fn hardswish(m: Matrix) -> Matrix =
 // x ≤ -3 → hardσ = 0 → hardswish = 0.
 test "hardswish saturates left to zero" {
   let y = hardswish(matrix.from_lists([[-3.0, -5.0]]))
-  assert_eq(matrix.get(y, 0, 0), 0.0)
-  assert_eq(matrix.get(y, 0, 1), 0.0)
+  assert_eq(matrix.get(y, 0, 0) ?? panic("matrix.get: out of range"), 0.0)
+  assert_eq(matrix.get(y, 0, 1) ?? panic("matrix.get: out of range"), 0.0)
 }
 
 // x ≥ 3 → hardσ = 1 → hardswish = x.
 test "hardswish passes large positive through" {
   let y = hardswish(matrix.from_lists([[6.0]]))
-  assert_eq(matrix.get(y, 0, 0), 6.0)
+  assert_eq(matrix.get(y, 0, 0) ?? panic("matrix.get: out of range"), 6.0)
 }

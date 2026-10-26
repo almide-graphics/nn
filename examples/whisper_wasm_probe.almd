@@ -46,24 +46,24 @@ effect fn probe_load_weights(model_bytes: Bytes) -> Int = {
 }
 
 effect fn probe_mel_first(mel_bytes: Bytes, mel_frames: Int) -> Float = {
-  let m = matrix.from_bytes_f64_le(mel_bytes, 0, mel_frames, 80)
-  matrix.get(m, 0, 0)
+  let m = matrix.from_bytes_f64_le(mel_bytes, 0, mel_frames, 80) ?? matrix.zeros(mel_frames, 80)
+  matrix.get(m, 0, 0) ?? panic("matrix.get: out of range")
 }
 
 effect fn probe_conv1_first(model_bytes: Bytes, mel_bytes: Bytes, mel_frames: Int) -> Float = {
   let model = gw.parse(model_bytes)!
-  let mel = matrix.from_bytes_f64_le(mel_bytes, 0, mel_frames, 80)
+  let mel = matrix.from_bytes_f64_le(mel_bytes, 0, mel_frames, 80) ?? matrix.zeros(mel_frames, 80)
   let cw = wl.load_conv1_weight(model, 384, 80)
   let cb = wl.load_conv1_bias(model, 384)
   let after = kernels.gelu(kernels.conv1d(mel, cw, cb, 3, 1, 1))
-  matrix.get(after, 0, 0)
+  matrix.get(after, 0, 0) ?? panic("matrix.get: out of range")
 }
 
 effect fn probe_encoder1(model_bytes: Bytes, mel_bytes: Bytes, mel_frames: Int) -> Float = {
   let model = gw.parse(model_bytes)!
   let config = whisper_tiny_en_config()
   let weights = wl.load_weights(model, config, 4, 4, 51864)
-  let mel = matrix.from_bytes_f64_le(mel_bytes, 0, mel_frames, 80)
+  let mel = matrix.from_bytes_f64_le(mel_bytes, 0, mel_frames, 80) ?? matrix.zeros(mel_frames, 80)
 
   let cw1 = wl.load_conv1_weight(model, config.d_model, config.n_mels)
   let cb1 = wl.load_conv1_bias(model, config.d_model)
@@ -80,7 +80,7 @@ effect fn probe_encoder1(model_bytes: Bytes, mel_bytes: Bytes, mel_frames: Int) 
   // Run JUST first encoder block
   let layer0 = list.get(weights.encoder_layers, 0) |> option.unwrap_or(weights.encoder_layers |> list.first |> option.unwrap_or(layer0_dummy()))
   let after = tf.encoder_block_r(with_pos, layer0, config.n_heads)
-  matrix.get(after, 0, 0)
+  matrix.get(after, 0, 0) ?? panic("matrix.get: out of range")
 }
 
 fn layer0_dummy() -> tf.EncoderLayer = tf.make_zero_encoder_layer(384)
@@ -89,7 +89,7 @@ effect fn probe_encoder_full(model_bytes: Bytes, mel_bytes: Bytes, mel_frames: I
   let model = gw.parse(model_bytes)!
   let config = whisper_tiny_en_config()
   let weights = wl.load_weights(model, config, 4, 4, 51864)
-  let mel = matrix.from_bytes_f64_le(mel_bytes, 0, mel_frames, 80)
+  let mel = matrix.from_bytes_f64_le(mel_bytes, 0, mel_frames, 80) ?? matrix.zeros(mel_frames, 80)
   let cw1 = wl.load_conv1_weight(model, config.d_model, config.n_mels)
   let cb1 = wl.load_conv1_bias(model, config.d_model)
   let h1 = kernels.gelu(kernels.conv1d(mel, cw1, cb1, 3, 1, 1))
@@ -101,14 +101,14 @@ effect fn probe_encoder_full(model_bytes: Bytes, mel_bytes: Bytes, mel_frames: I
   let xenc = h2 + ps
   let encoded = tf.encode(xenc, weights.encoder_layers, config.n_heads)
   let encoder_out = act.layer_norm(encoded, weights.encoder_ln_gamma, weights.encoder_ln_beta)
-  matrix.get(encoder_out, 0, 0)
+  matrix.get(encoder_out, 0, 0) ?? panic("matrix.get: out of range")
 }
 
 effect fn probe_decode1(model_bytes: Bytes, mel_bytes: Bytes, mel_frames: Int) -> Int = {
   let model = gw.parse(model_bytes)!
   let config = whisper_tiny_en_config()
   let weights = wl.load_weights(model, config, 4, 4, 51864)
-  let mel = matrix.from_bytes_f64_le(mel_bytes, 0, mel_frames, 80)
+  let mel = matrix.from_bytes_f64_le(mel_bytes, 0, mel_frames, 80) ?? matrix.zeros(mel_frames, 80)
   let cw1 = wl.load_conv1_weight(model, config.d_model, config.n_mels)
   let cb1 = wl.load_conv1_bias(model, config.d_model)
   let h1 = kernels.gelu(kernels.conv1d(mel, cw1, cb1, 3, 1, 1))
@@ -134,7 +134,7 @@ effect fn probe_encoder_n(model_bytes: Bytes, mel_bytes: Bytes, mel_frames: Int,
   let model = gw.parse(model_bytes)!
   let config = whisper_tiny_en_config()
   let weights = wl.load_weights(model, config, 4, 4, 51864)
-  let mel = matrix.from_bytes_f64_le(mel_bytes, 0, mel_frames, 80)
+  let mel = matrix.from_bytes_f64_le(mel_bytes, 0, mel_frames, 80) ?? matrix.zeros(mel_frames, 80)
 
   let cw1 = wl.load_conv1_weight(model, config.d_model, config.n_mels)
   let cb1 = wl.load_conv1_bias(model, config.d_model)
@@ -150,7 +150,7 @@ effect fn probe_encoder_n(model_bytes: Bytes, mel_bytes: Bytes, mel_frames: Int,
 
   let layers = list.slice(weights.encoder_layers, 0, n_blocks)
   let after = tf.encode(x, layers, config.n_heads)
-  matrix.get(after, 0, 0)
+  matrix.get(after, 0, 0) ?? panic("matrix.get: out of range")
 }
 
 effect fn probe_load_filter(model_bytes: Bytes) -> Int = {

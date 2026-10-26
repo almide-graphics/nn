@@ -218,7 +218,7 @@ test "encoder_block identity-ish with zero weights" {
   assert_eq(matrix.rows(out), seq_len)
   assert_eq(matrix.cols(out), d_model)
   // First element of input row 0 was 1.0 → output should still be ≈ 1.0
-  let out00 = matrix.get(out, 0, 0)
+  let out00 = matrix.get(out, 0, 0) ?? panic("matrix.get: out of range")
   assert(approx(out00, 1.0), "expected ≈ 1.0, got different value")
 }
 
@@ -303,8 +303,8 @@ test "encode identity with zero-weight stack" {
   let layers = list.map(list.range(0, 3), (_) => make_zero_encoder_layer(d_model))
   let out = encode(x, layers, n_heads)
   // Zero weights → every block is identity → output = input
-  assert(approx(matrix.get(out, 0, 0), 1.0), "row 0 col 0 should stay ≈ 1.0")
-  assert(approx(matrix.get(out, 1, 3), 3.5), "row 1 col 3 should stay ≈ 3.5")
+  assert(approx(matrix.get(out, 0, 0) ?? panic("matrix.get: out of range"), 1.0), "row 0 col 0 should stay ≈ 1.0")
+  assert(approx(matrix.get(out, 1, 3) ?? panic("matrix.get: out of range"), 3.5), "row 1 col 3 should stay ≈ 3.5")
 }
 
 test "decode preserves shape with zero-weight stack" {
@@ -329,16 +329,16 @@ test "embed gathers rows from embedding matrix" {
   let out = embed(tokens, embedding)
   assert_eq(matrix.rows(out), 3)
   assert_eq(matrix.cols(out), d_model)
-  assert(approx(matrix.get(out, 0, 0), 70.0), "first row should be token 2 = [70, 80, 90]")
-  assert(approx(matrix.get(out, 1, 1), 20.0), "second row should be token 0 = [10, 20, 30]")
-  assert(approx(matrix.get(out, 2, 2), 60.0), "third row should be token 1 = [40, 50, 60]")
+  assert(approx(matrix.get(out, 0, 0) ?? panic("matrix.get: out of range"), 70.0), "first row should be token 2 = [70, 80, 90]")
+  assert(approx(matrix.get(out, 1, 1) ?? panic("matrix.get: out of range"), 20.0), "second row should be token 0 = [10, 20, 30]")
+  assert(approx(matrix.get(out, 2, 2) ?? panic("matrix.get: out of range"), 60.0), "third row should be token 1 = [40, 50, 60]")
 }
 
 test "embed out-of-range tokens map to zero" {
   let embedding = matrix.from_lists([[1.0, 2.0]])
   let tokens = [0, 99]
   let out = embed(tokens, embedding)
-  assert(approx(matrix.get(out, 1, 0), 0.0), "out-of-range token → zero vector")
+  assert(approx(matrix.get(out, 1, 0) ?? panic("matrix.get: out of range"), 0.0), "out-of-range token → zero vector")
 }
 
 test "decoder_block shape" {

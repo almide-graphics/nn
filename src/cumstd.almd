@@ -32,15 +32,15 @@ fn cumstd_rows(x: Matrix) -> Matrix = {
 test "cumstd is the running population standard deviation" {
   let x = matrix.from_lists([[3.0], [7.0]])
   let y = cumstd_rows(x)
-  assert_eq(matrix.get(y, 0, 0), 0.0)
-  assert_eq(matrix.get(y, 1, 0), 2.0)
+  assert_eq(matrix.get(y, 0, 0) ?? panic("matrix.get: out of range"), 0.0)
+  assert_eq(matrix.get(y, 1, 0) ?? panic("matrix.get: out of range"), 2.0)
 }
 
 // a constant column has zero spread at every step (fmax keeps sqrt off negatives).
 test "cumstd is zero on a constant channel" {
   let x = matrix.from_lists([[4.0], [4.0], [4.0]])
   let y = cumstd_rows(x)
-  assert_eq(matrix.get(y, 0, 0), 0.0)
-  assert_eq(matrix.get(y, 1, 0), 0.0)
-  assert_eq(matrix.get(y, 2, 0), 0.0)
+  assert_eq(matrix.get(y, 0, 0) ?? panic("matrix.get: out of range"), 0.0)
+  assert_eq(matrix.get(y, 1, 0) ?? panic("matrix.get: out of range"), 0.0)
+  assert_eq(matrix.get(y, 2, 0) ?? panic("matrix.get: out of range"), 0.0)
 }

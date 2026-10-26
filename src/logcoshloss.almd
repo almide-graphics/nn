@@ -34,7 +34,7 @@ fn logcosh_loss_rows(a: Matrix, b: Matrix) -> Matrix = {
 test "logcosh of identical rows is zero" {
   let a = matrix.from_lists([[1.0, 2.0, 3.0, 4.0]])
   let y = logcosh_loss_rows(a, a)
-  assert_eq(matrix.get(y, 0, 0), 0.0)
+  assert_eq(matrix.get(y, 0, 0) ?? panic("matrix.get: out of range"), 0.0)
 }
 
 // e=1: log(cosh 1) = 0.4337808304830271.
@@ -42,5 +42,5 @@ test "logcosh at unit difference" {
   let a = matrix.from_lists([[0.0]])
   let b = matrix.from_lists([[1.0]])
   let y = logcosh_loss_rows(a, b)
-  assert(float.abs(matrix.get(y, 0, 0) - 0.4337808304830271) < 0.000000001, "log cosh 1")
+  assert(float.abs((matrix.get(y, 0, 0) ?? panic("matrix.get: out of range")) - 0.4337808304830271) < 0.000000001, "log cosh 1")
 }

@@ -25,15 +25,15 @@ fn x_minus_cummean_rows(x: Matrix) -> Matrix = {
 test "x-minus-cummean is the deviation from the running average" {
   let x = matrix.from_lists([[2.0], [4.0], [9.0]])
   let y = x_minus_cummean_rows(x)
-  assert_eq(matrix.get(y, 0, 0), 0.0)
-  assert_eq(matrix.get(y, 1, 0), 1.0)
-  assert_eq(matrix.get(y, 2, 0), 4.0)
+  assert_eq(matrix.get(y, 0, 0) ?? panic("matrix.get: out of range"), 0.0)
+  assert_eq(matrix.get(y, 1, 0) ?? panic("matrix.get: out of range"), 1.0)
+  assert_eq(matrix.get(y, 2, 0) ?? panic("matrix.get: out of range"), 4.0)
 }
 
 // the first row equals its own mean, so its deviation is zero everywhere.
 test "x-minus-cummean starts at zero on the first row" {
   let x = matrix.from_lists([[0.0 - 3.0, 5.0], [1.0, 1.0]])
   let y = x_minus_cummean_rows(x)
-  assert_eq(matrix.get(y, 0, 0), 0.0)
-  assert_eq(matrix.get(y, 0, 1), 0.0)
+  assert_eq(matrix.get(y, 0, 0) ?? panic("matrix.get: out of range"), 0.0)
+  assert_eq(matrix.get(y, 0, 1) ?? panic("matrix.get: out of range"), 0.0)
 }

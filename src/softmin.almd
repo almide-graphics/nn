@@ -25,14 +25,14 @@ fn softmin_rows(x: Matrix) -> Matrix = {
 // Each row is a distribution → sums to 1.
 test "softmin row sums to one" {
   let y = softmin_rows(matrix.from_lists([[1.0, 2.0, 3.0]]))
-  let s = matrix.get(y, 0, 0) + matrix.get(y, 0, 1) + matrix.get(y, 0, 2)
+  let s = (matrix.get(y, 0, 0) ?? panic("matrix.get: out of range")) + (matrix.get(y, 0, 1) ?? panic("matrix.get: out of range")) + (matrix.get(y, 0, 2) ?? panic("matrix.get: out of range"))
   assert(float.abs(s - 1.0) < 0.000000001, "sum 1")
 }
 
 // Equal logits → uniform; smaller value gets the larger weight.
 test "softmin uniform and min-favoring" {
   let u = softmin_rows(matrix.from_lists([[0.0, 0.0]]))
-  assert(float.abs(matrix.get(u, 0, 0) - 0.5) < 0.000000001, "uniform")
+  assert(float.abs((matrix.get(u, 0, 0) ?? panic("matrix.get: out of range")) - 0.5) < 0.000000001, "uniform")
   let v = softmin_rows(matrix.from_lists([[0.0, 10.0]]))
-  assert(matrix.get(v, 0, 0) > 0.9, "min favored")
+  assert((matrix.get(v, 0, 0) ?? panic("matrix.get: out of range")) > 0.9, "min favored")
 }

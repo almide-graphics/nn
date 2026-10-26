@@ -30,7 +30,7 @@ fn cosine_sim_rows(a: Matrix, b: Matrix) -> Matrix = {
 test "cosine of a row with itself is one" {
   let a = matrix.from_lists([[3.0, 4.0]])
   let y = cosine_sim_rows(a, a)
-  assert(float.abs(matrix.get(y, 0, 0) - 1.0) < 0.000000001, "self-similarity 1")
+  assert(float.abs((matrix.get(y, 0, 0) ?? panic("matrix.get: out of range")) - 1.0) < 0.000000001, "self-similarity 1")
 }
 
 // orthogonal rows → 0.
@@ -38,5 +38,5 @@ test "cosine of orthogonal rows is zero" {
   let a = matrix.from_lists([[1.0, 0.0]])
   let b = matrix.from_lists([[0.0, 1.0]])
   let y = cosine_sim_rows(a, b)
-  assert(float.abs(matrix.get(y, 0, 0)) < 0.000000001, "orthogonal 0")
+  assert(float.abs(matrix.get(y, 0, 0) ?? panic("matrix.get: out of range")) < 0.000000001, "orthogonal 0")
 }

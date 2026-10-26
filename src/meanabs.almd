@@ -25,11 +25,11 @@ fn mean_abs_rows(x: Matrix) -> Matrix = {
 // (|3|+|-4|)/2 = 3.5.
 test "mean abs averages the magnitudes" {
   let y = mean_abs_rows(matrix.from_lists([[3.0, 0.0 - 4.0]]))
-  assert_eq(matrix.get(y, 0, 0), 3.5)
+  assert_eq(matrix.get(y, 0, 0) ?? panic("matrix.get: out of range"), 3.5)
 }
 
 // all zeros → 0.
 test "mean abs of zeros is zero" {
   let y = mean_abs_rows(matrix.from_lists([[0.0, 0.0, 0.0]]))
-  assert_eq(matrix.get(y, 0, 0), 0.0)
+  assert_eq(matrix.get(y, 0, 0) ?? panic("matrix.get: out of range"), 0.0)
 }

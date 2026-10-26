@@ -28,13 +28,13 @@ fn cumulative_logsumexp_rows(x: Matrix) -> Matrix = {
 test "first row of cumulative-logsumexp equals the input" {
   let x = matrix.from_lists([[2.0], [3.0]])
   let y = cumulative_logsumexp_rows(x)
-  assert(float.abs(matrix.get(y, 0, 0) - 2.0) < 0.000000001, "log(exp 2)=2")
+  assert(float.abs((matrix.get(y, 0, 0) ?? panic("matrix.get: out of range")) - 2.0) < 0.000000001, "log(exp 2)=2")
 }
 
 // [0,0]: out = [log 1, log 2] = [0, 0.6931…].
 test "cumulative-logsumexp accumulates terms in the log domain" {
   let x = matrix.from_lists([[0.0], [0.0]])
   let y = cumulative_logsumexp_rows(x)
-  assert(float.abs(matrix.get(y, 0, 0)) < 0.000000001, "log 1 = 0")
-  assert(float.abs(matrix.get(y, 1, 0) - 0.6931471805599453) < 0.000000001, "log 2")
+  assert(float.abs(matrix.get(y, 0, 0) ?? panic("matrix.get: out of range")) < 0.000000001, "log 1 = 0")
+  assert(float.abs((matrix.get(y, 1, 0) ?? panic("matrix.get: out of range")) - 0.6931471805599453) < 0.000000001, "log 2")
 }

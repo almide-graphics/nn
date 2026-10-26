@@ -30,7 +30,7 @@ fn bray_curtis_dist_rows(a: Matrix, b: Matrix) -> Matrix = {
 test "bray-curtis distance of identical rows is zero" {
   let a = matrix.from_lists([[1.0, 0.0 - 2.0, 3.0, 4.0]])
   let y = bray_curtis_dist_rows(a, a)
-  assert(float.abs(matrix.get(y, 0, 0)) < 0.000000001, "self → 0")
+  assert(float.abs(matrix.get(y, 0, 0) ?? panic("matrix.get: out of range")) < 0.000000001, "self → 0")
 }
 
 // [1,2] vs [3,0]: num=|1−3|+|2−0|=4; den=(1+3)+(2+0)=6 → 4/6 = 2/3.
@@ -38,5 +38,5 @@ test "bray-curtis is total abs diff over total magnitude" {
   let a = matrix.from_lists([[1.0, 2.0]])
   let b = matrix.from_lists([[3.0, 0.0]])
   let y = bray_curtis_dist_rows(a, b)
-  assert(float.abs(matrix.get(y, 0, 0) - 0.6666666666666666) < 0.0000001, "2/3")
+  assert(float.abs((matrix.get(y, 0, 0) ?? panic("matrix.get: out of range")) - 0.6666666666666666) < 0.0000001, "2/3")
 }

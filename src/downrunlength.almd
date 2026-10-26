@@ -37,18 +37,18 @@ fn down_run_length_rows(x: Matrix) -> Matrix = {
 test "down-run-length grows on a monotonic decrease" {
   let x = matrix.from_lists([[4.0], [3.0], [2.0], [1.0]])
   let y = down_run_length_rows(x)
-  assert_eq(matrix.get(y, 0, 0), 0.0)
-  assert_eq(matrix.get(y, 1, 0), 1.0)
-  assert_eq(matrix.get(y, 2, 0), 2.0)
-  assert_eq(matrix.get(y, 3, 0), 3.0)
+  assert_eq(matrix.get(y, 0, 0) ?? panic("matrix.get: out of range"), 0.0)
+  assert_eq(matrix.get(y, 1, 0) ?? panic("matrix.get: out of range"), 1.0)
+  assert_eq(matrix.get(y, 2, 0) ?? panic("matrix.get: out of range"), 2.0)
+  assert_eq(matrix.get(y, 3, 0) ?? panic("matrix.get: out of range"), 3.0)
 }
 
 // a rise resets the streak: [2,1,2,1] → [0,1,0,1].
 test "down-run-length resets to zero on an increase" {
   let x = matrix.from_lists([[2.0], [1.0], [2.0], [1.0]])
   let y = down_run_length_rows(x)
-  assert_eq(matrix.get(y, 0, 0), 0.0)
-  assert_eq(matrix.get(y, 1, 0), 1.0)
-  assert_eq(matrix.get(y, 2, 0), 0.0)
-  assert_eq(matrix.get(y, 3, 0), 1.0)
+  assert_eq(matrix.get(y, 0, 0) ?? panic("matrix.get: out of range"), 0.0)
+  assert_eq(matrix.get(y, 1, 0) ?? panic("matrix.get: out of range"), 1.0)
+  assert_eq(matrix.get(y, 2, 0) ?? panic("matrix.get: out of range"), 0.0)
+  assert_eq(matrix.get(y, 3, 0) ?? panic("matrix.get: out of range"), 1.0)
 }

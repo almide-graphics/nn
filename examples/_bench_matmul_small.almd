@@ -7,7 +7,7 @@ effect fn bench_small(label: String, n: Int, iters: Int) -> () = {
   let a = matrix.ones(n, n) |> (m) => matrix.scale(m, 0.001)
   let b = matrix.ones(n, n) |> (m) => matrix.scale(m, 0.001)
   let warm = a * b
-  let _ = matrix.get(warm, 0, 0)
+  let _ = matrix.get(warm, 0, 0) ?? panic("matrix.get: out of range")
 
   let t0 = datetime.now_ms()
   var i = 0
@@ -16,7 +16,7 @@ effect fn bench_small(label: String, n: Int, iters: Int) -> () = {
     let eps = 1.0 + float.from(i) * 0.000000001
     let a_i = matrix.scale(a, eps)
     let r = a_i * b
-    acc = acc + matrix.get(r, 0, 0)
+    acc = acc + (matrix.get(r, 0, 0) ?? panic("matrix.get: out of range"))
     i = i + 1
   }
   let elapsed_ms = datetime.now_ms() - t0

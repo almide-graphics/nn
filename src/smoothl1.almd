@@ -35,7 +35,7 @@ fn smooth_l1_rows(a: Matrix, b: Matrix) -> Matrix = {
 test "smooth_l1 of identical rows is zero" {
   let a = matrix.from_lists([[1.0, 2.0, 3.0, 4.0]])
   let y = smooth_l1_rows(a, a)
-  assert_eq(matrix.get(y, 0, 0), 0.0)
+  assert_eq(matrix.get(y, 0, 0) ?? panic("matrix.get: out of range"), 0.0)
 }
 
 // e=0.5 -> 0.5·0.25=0.125 (quadratic); e=2 -> 2-0.5=1.5 (linear); mean=0.8125.
@@ -43,5 +43,5 @@ test "smooth_l1 mixes quadratic and linear regions" {
   let a = matrix.from_lists([[0.0, 0.0]])
   let b = matrix.from_lists([[0.5, 2.0]])
   let y = smooth_l1_rows(a, b)
-  assert(float.abs(matrix.get(y, 0, 0) - 0.8125) < 0.000000001, "= 0.8125")
+  assert(float.abs((matrix.get(y, 0, 0) ?? panic("matrix.get: out of range")) - 0.8125) < 0.000000001, "= 0.8125")
 }

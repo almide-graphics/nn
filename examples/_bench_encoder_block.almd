@@ -13,8 +13,8 @@ import env
 fn build_matrix(m: gw.Model, name: String, rows: Int, cols: Int) -> Matrix =
   match gw.find_tensor(m.tensors, name) {
     some(t) => match t.ftype {
-      0 => matrix.from_bytes_f32_le(m.data, t.data_offset, rows, cols),
-      1 => matrix.from_bytes_f16_le(m.data, t.data_offset, rows, cols),
+      0 => matrix.from_bytes_f32_le(m.data, t.data_offset, rows, cols) ?? matrix.zeros(rows, cols),
+      1 => matrix.from_bytes_f16_le(m.data, t.data_offset, rows, cols) ?? matrix.zeros(rows, cols),
       _ => matrix.zeros(rows, cols),
     },
     none => matrix.zeros(rows, cols),
@@ -85,7 +85,7 @@ effect fn main() -> () = {
   // Warm-up pass
   let warm = tf.encoder_block_r(x, layer, n_heads)
   let (wr, wc) = matrix.shape(warm)
-  println("warm-up: output shape=(" + int.to_string(wr) + "," + int.to_string(wc) + "), first=" + float.to_string(matrix.get(warm, 0, 0)))
+  println("warm-up: output shape=(" + int.to_string(wr) + "," + int.to_string(wc) + "), first=" + float.to_string(matrix.get(warm, 0, 0) ?? panic("matrix.get: out of range")))
 
   // Timed runs
   let iters = 5
@@ -94,7 +94,7 @@ effect fn main() -> () = {
   var i = 0
   while i < iters {
     let out = tf.encoder_block_r(x, layer, n_heads)
-    acc = acc + matrix.get(out, 0, 0)
+    acc = acc + (matrix.get(out, 0, 0) ?? panic("matrix.get: out of range"))
     i = i + 1
   }
   let t_fwd1 = datetime.now_ms()

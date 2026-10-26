@@ -10,12 +10,12 @@ fn recip_1px2_cube(m: Matrix) -> Matrix =
 
 test "recip_1px2_cube peaks at one when x=0" {
   let y = recip_1px2_cube(matrix.from_lists([[0.0]]))
-  assert_eq(matrix.get(y, 0, 0), 1.0)
+  assert_eq(matrix.get(y, 0, 0) ?? panic("matrix.get: out of range"), 1.0)
 }
 
 // (1/2)³=0.125 at x=±1; even.
 test "recip_1px2_cube eighth at plus minus one" {
   let y = recip_1px2_cube(matrix.from_lists([[1.0, -1.0]]))
-  assert_eq(matrix.get(y, 0, 0), 0.125)
-  assert_eq(matrix.get(y, 0, 1), 0.125)
+  assert_eq(matrix.get(y, 0, 0) ?? panic("matrix.get: out of range"), 0.125)
+  assert_eq(matrix.get(y, 0, 1) ?? panic("matrix.get: out of range"), 0.125)
 }

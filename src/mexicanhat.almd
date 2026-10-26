@@ -9,12 +9,12 @@ fn mexican_hat(m: Matrix) -> Matrix =
 
 test "mexican_hat peaks at one when x=0" {
   let y = mexican_hat(matrix.from_lists([[0.0]]))
-  assert_eq(matrix.get(y, 0, 0), 1.0)
+  assert_eq(matrix.get(y, 0, 0) ?? panic("matrix.get: out of range"), 1.0)
 }
 
 // zero crossings at ±1; even.
 test "mexican_hat zero at 1 and even" {
   let y = mexican_hat(matrix.from_lists([[1.0, -1.0]]))
-  assert_eq(matrix.get(y, 0, 0), 0.0)
-  assert_eq(matrix.get(y, 0, 1), 0.0)
+  assert_eq(matrix.get(y, 0, 0) ?? panic("matrix.get: out of range"), 0.0)
+  assert_eq(matrix.get(y, 0, 1) ?? panic("matrix.get: out of range"), 0.0)
 }

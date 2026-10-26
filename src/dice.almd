@@ -30,13 +30,13 @@ fn dice_coeff_rows(a: Matrix, b: Matrix) -> Matrix = {
 test "dice coefficient of a row with itself is 1" {
   let a = matrix.from_lists([[1.0, 2.0, 3.0]])
   let y = dice_coeff_rows(a, a)
-  assert(float.abs(matrix.get(y, 0, 0) - 1.0) < 0.000000001, "self → 1")
+  assert(float.abs((matrix.get(y, 0, 0) ?? panic("matrix.get: out of range")) - 1.0) < 0.000000001, "self → 1")
 }
 
 // orthogonal rows → 0; [2,0] vs [1,0] → 2·2/(4+1) = 0.8 (magnitude-sensitive, unlike cosine).
 test "dice is 0 for orthogonal rows and magnitude-sensitive otherwise" {
   let yo = dice_coeff_rows(matrix.from_lists([[3.0, 0.0]]), matrix.from_lists([[0.0, 4.0]]))
-  assert(float.abs(matrix.get(yo, 0, 0)) < 0.000000001, "orthogonal → 0")
+  assert(float.abs(matrix.get(yo, 0, 0) ?? panic("matrix.get: out of range")) < 0.000000001, "orthogonal → 0")
   let yv = dice_coeff_rows(matrix.from_lists([[2.0, 0.0]]), matrix.from_lists([[1.0, 0.0]]))
-  assert(float.abs(matrix.get(yv, 0, 0) - 0.8) < 0.000000001, "2·2/(4+1)=0.8")
+  assert(float.abs((matrix.get(yv, 0, 0) ?? panic("matrix.get: out of range")) - 0.8) < 0.000000001, "2·2/(4+1)=0.8")
 }

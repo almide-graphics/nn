@@ -37,7 +37,7 @@ test "weighted variance with equal scores is the plain variance" {
   let x = matrix.from_lists([[1.0, 3.0]])
   let w = matrix.from_lists([[0.0, 0.0]])
   let y = softmax_weighted_var_rows(x, w)
-  assert(float.abs(matrix.get(y, 0, 0) - 1.0) < 0.000000001, "var(1,3)=1")
+  assert(float.abs((matrix.get(y, 0, 0) ?? panic("matrix.get: out of range")) - 1.0) < 0.000000001, "var(1,3)=1")
 }
 
 // a sharply peaked score puts all weight on one value → near-zero spread.
@@ -45,5 +45,5 @@ test "a sharply peaked score gives near-zero weighted variance" {
   let x = matrix.from_lists([[10.0, 20.0, 30.0]])
   let w = matrix.from_lists([[100.0, 0.0, 0.0]])
   let y = softmax_weighted_var_rows(x, w)
-  assert(float.abs(matrix.get(y, 0, 0)) < 0.000001, "peaked → ≈ 0")
+  assert(float.abs(matrix.get(y, 0, 0) ?? panic("matrix.get: out of range")) < 0.000001, "peaked → ≈ 0")
 }

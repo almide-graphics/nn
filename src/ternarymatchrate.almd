@@ -37,7 +37,7 @@ fn ternary_match_rate_rows(a: Matrix, b: Matrix) -> Matrix = {
 test "ternary-match-rate of a matrix with itself is one" {
   let a = matrix.from_lists([[3.0, 0.0 - 4.0, 0.1, 2.0]])
   let y = ternary_match_rate_rows(a, a)
-  assert(float.abs(matrix.get(y, 0, 0) - 1.0) < 0.000000001, "self → 1")
+  assert(float.abs((matrix.get(y, 0, 0) ?? panic("matrix.get: out of range")) - 1.0) < 0.000000001, "self → 1")
 }
 
 // a → codes [+1,−1,0] (Δa≈1.657); b all-large-positive → [+1,+1,+1]; agree only at pos 0 → 1/3.
@@ -45,5 +45,5 @@ test "ternary-match-rate counts agreeing codes, dead-zone aware" {
   let a = matrix.from_lists([[3.0, 0.0 - 4.0, 0.1]])
   let b = matrix.from_lists([[5.0, 5.0, 5.0]])
   let y = ternary_match_rate_rows(a, b)
-  assert(float.abs(matrix.get(y, 0, 0) - 0.3333333333333333) < 0.000000001, "1/3")
+  assert(float.abs((matrix.get(y, 0, 0) ?? panic("matrix.get: out of range")) - 0.3333333333333333) < 0.000000001, "1/3")
 }

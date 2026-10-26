@@ -46,12 +46,12 @@ fn magnitude_spread_rows(x: Matrix) -> Matrix = {
 test "magnitude spread is zero when energy is at one index" {
   let x = matrix.from_lists([[0.0, 0.0, 5.0, 0.0]])
   let y = magnitude_spread_rows(x)
-  assert(float.abs(matrix.get(y, 0, 0)) < 0.0000001, "0")
+  assert(float.abs(matrix.get(y, 0, 0) ?? panic("matrix.get: out of range")) < 0.0000001, "0")
 }
 
 // equal mass at indices 0 and 3: centroid 1.5, spread sqrt((2.25+2.25)/2) = 1.5.
 test "magnitude spread measures the bandwidth around the centroid" {
   let x = matrix.from_lists([[1.0, 0.0, 0.0, 1.0]])
   let y = magnitude_spread_rows(x)
-  assert(float.abs(matrix.get(y, 0, 0) - 1.5) < 0.0000001, "sqrt(2.25)=1.5")
+  assert(float.abs((matrix.get(y, 0, 0) ?? panic("matrix.get: out of range")) - 1.5) < 0.0000001, "sqrt(2.25)=1.5")
 }

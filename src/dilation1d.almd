@@ -37,15 +37,15 @@ fn dilation1d_rows(x: Matrix) -> Matrix = {
 test "dilation spreads a spike to its neighbours" {
   let x = matrix.from_lists([[0.0, 5.0, 0.0]])
   let y = dilation1d_rows(x)
-  assert(float.abs(matrix.get(y, 0, 0) - 5.0) < 0.000000001, "max(0,0,5)=5")
-  assert(float.abs(matrix.get(y, 0, 1) - 5.0) < 0.000000001, "max(0,5,0)=5")
-  assert(float.abs(matrix.get(y, 0, 2) - 5.0) < 0.000000001, "max(5,0,0)=5")
+  assert(float.abs((matrix.get(y, 0, 0) ?? panic("matrix.get: out of range")) - 5.0) < 0.000000001, "max(0,0,5)=5")
+  assert(float.abs((matrix.get(y, 0, 1) ?? panic("matrix.get: out of range")) - 5.0) < 0.000000001, "max(0,5,0)=5")
+  assert(float.abs((matrix.get(y, 0, 2) ?? panic("matrix.get: out of range")) - 5.0) < 0.000000001, "max(5,0,0)=5")
 }
 
 // a monotone row takes the forward neighbour; the last edge replicates itself.
 test "dilation of a monotone row takes the forward neighbour" {
   let x = matrix.from_lists([[1.0, 2.0, 3.0, 4.0]])
   let y = dilation1d_rows(x)
-  assert(float.abs(matrix.get(y, 0, 0) - 2.0) < 0.000000001, "max(1,1,2)=2")
-  assert(float.abs(matrix.get(y, 0, 3) - 4.0) < 0.000000001, "max(3,4,4)=4")
+  assert(float.abs((matrix.get(y, 0, 0) ?? panic("matrix.get: out of range")) - 2.0) < 0.000000001, "max(1,1,2)=2")
+  assert(float.abs((matrix.get(y, 0, 3) ?? panic("matrix.get: out of range")) - 4.0) < 0.000000001, "max(3,4,4)=4")
 }

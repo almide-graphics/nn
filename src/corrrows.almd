@@ -35,7 +35,7 @@ fn corr_rows(a: Matrix, b: Matrix) -> Matrix = {
 test "corr of a row with itself is one" {
   let a = matrix.from_lists([[1.0, 2.0, 3.0, 4.0]])
   let y = corr_rows(a, a)
-  assert(float.abs(matrix.get(y, 0, 0) - 1.0) < 0.000000001, "= 1")
+  assert(float.abs((matrix.get(y, 0, 0) ?? panic("matrix.get: out of range")) - 1.0) < 0.000000001, "= 1")
 }
 
 // corr(a, -a) = -1.
@@ -43,5 +43,5 @@ test "corr of a with negated a is minus one" {
   let a = matrix.from_lists([[1.0, 2.0, 3.0, 4.0]])
   let b = matrix.from_lists([[0.0 - 1.0, 0.0 - 2.0, 0.0 - 3.0, 0.0 - 4.0]])
   let y = corr_rows(a, b)
-  assert(float.abs(matrix.get(y, 0, 0) + 1.0) < 0.000000001, "= -1")
+  assert(float.abs((matrix.get(y, 0, 0) ?? panic("matrix.get: out of range")) + 1.0) < 0.000000001, "= -1")
 }

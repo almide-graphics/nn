@@ -40,10 +40,10 @@ fn quant_error_rows(x: Matrix) -> Matrix = {
 test "quant-error is x minus its dequantized 1-bit code" {
   let x = matrix.from_lists([[3.0, 1.0], [0.0 - 2.0, 0.0]])
   let y = quant_error_rows(x)
-  assert_eq(matrix.get(y, 0, 0), 1.5)
-  assert_eq(matrix.get(y, 0, 1), 0.0 - 0.5)
-  assert_eq(matrix.get(y, 1, 0), 0.0 - 0.5)
-  assert_eq(matrix.get(y, 1, 1), 0.0 - 1.5)
+  assert_eq(matrix.get(y, 0, 0) ?? panic("matrix.get: out of range"), 1.5)
+  assert_eq(matrix.get(y, 0, 1) ?? panic("matrix.get: out of range"), 0.0 - 0.5)
+  assert_eq(matrix.get(y, 1, 0) ?? panic("matrix.get: out of range"), 0.0 - 0.5)
+  assert_eq(matrix.get(y, 1, 1) ?? panic("matrix.get: out of range"), 0.0 - 1.5)
 }
 
 // adding the code back to the error recovers x exactly: err + β·sign⁺ = x.
@@ -51,6 +51,6 @@ test "quant-error is x minus its dequantized 1-bit code" {
 test "quant-error plus the code reconstructs the input" {
   let x = matrix.from_lists([[4.0, 0.0 - 2.0]])
   let y = quant_error_rows(x)
-  assert_eq(matrix.get(y, 0, 0), 1.0)
-  assert_eq(matrix.get(y, 0, 1), 1.0)
+  assert_eq(matrix.get(y, 0, 0) ?? panic("matrix.get: out of range"), 1.0)
+  assert_eq(matrix.get(y, 0, 1) ?? panic("matrix.get: out of range"), 1.0)
 }

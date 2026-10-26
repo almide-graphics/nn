@@ -26,15 +26,15 @@ fn squared_diff_rows(x: Matrix) -> Matrix = {
 test "squared-diff is the squared step-to-step change" {
   let x = matrix.from_lists([[3.0], [7.0], [2.0]])
   let y = squared_diff_rows(x)
-  assert_eq(matrix.get(y, 0, 0), 0.0)
-  assert_eq(matrix.get(y, 1, 0), 16.0)
-  assert_eq(matrix.get(y, 2, 0), 25.0)
+  assert_eq(matrix.get(y, 0, 0) ?? panic("matrix.get: out of range"), 0.0)
+  assert_eq(matrix.get(y, 1, 0) ?? panic("matrix.get: out of range"), 16.0)
+  assert_eq(matrix.get(y, 2, 0) ?? panic("matrix.get: out of range"), 25.0)
 }
 
 // a constant column has zero change energy.
 test "squared-diff is zero on a constant column" {
   let x = matrix.from_lists([[4.0], [4.0], [4.0]])
   let y = squared_diff_rows(x)
-  assert_eq(matrix.get(y, 1, 0), 0.0)
-  assert_eq(matrix.get(y, 2, 0), 0.0)
+  assert_eq(matrix.get(y, 1, 0) ?? panic("matrix.get: out of range"), 0.0)
+  assert_eq(matrix.get(y, 2, 0) ?? panic("matrix.get: out of range"), 0.0)
 }

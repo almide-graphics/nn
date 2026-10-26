@@ -32,7 +32,7 @@ test "cross_entropy uniform equals log n" {
   let logits = matrix.from_lists([[0.0, 0.0]])
   let target = matrix.from_lists([[1.0, 0.0]])
   let y = cross_entropy_rows(logits, target)
-  assert(float.abs(matrix.get(y, 0, 0) - 0.6931471805599453) < 0.000000001, "log 2")
+  assert(float.abs((matrix.get(y, 0, 0) ?? panic("matrix.get: out of range")) - 0.6931471805599453) < 0.000000001, "log 2")
 }
 
 // Confident correct prediction → loss ≈ 0.
@@ -40,5 +40,5 @@ test "cross_entropy confident correct is zero" {
   let logits = matrix.from_lists([[100.0, 0.0]])
   let target = matrix.from_lists([[1.0, 0.0]])
   let y = cross_entropy_rows(logits, target)
-  assert(float.abs(matrix.get(y, 0, 0)) < 0.000000001, "≈ 0 loss")
+  assert(float.abs(matrix.get(y, 0, 0) ?? panic("matrix.get: out of range")) < 0.000000001, "≈ 0 loss")
 }

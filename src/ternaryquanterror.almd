@@ -39,10 +39,10 @@ fn ternary_quant_error_rows(x: Matrix) -> Matrix = {
 test "ternary-quant-error is x minus its dequantized ternary code" {
   let x = matrix.from_lists([[3.0, 0.0 - 4.0, 0.1, 0.05]])
   let y = ternary_quant_error_rows(x)
-  assert(float.abs(matrix.get(y, 0, 0) - (0.0 - 0.5)) < 0.000000001, "x0 residual")
-  assert(float.abs(matrix.get(y, 0, 1) - (0.0 - 0.5)) < 0.000000001, "x1 residual")
-  assert(float.abs(matrix.get(y, 0, 2) - 0.1) < 0.000000001, "x2 kept as-is")
-  assert(float.abs(matrix.get(y, 0, 3) - 0.05) < 0.000000001, "x3 kept as-is")
+  assert(float.abs((matrix.get(y, 0, 0) ?? panic("matrix.get: out of range")) - (0.0 - 0.5)) < 0.000000001, "x0 residual")
+  assert(float.abs((matrix.get(y, 0, 1) ?? panic("matrix.get: out of range")) - (0.0 - 0.5)) < 0.000000001, "x1 residual")
+  assert(float.abs((matrix.get(y, 0, 2) ?? panic("matrix.get: out of range")) - 0.1) < 0.000000001, "x2 kept as-is")
+  assert(float.abs((matrix.get(y, 0, 3) ?? panic("matrix.get: out of range")) - 0.05) < 0.000000001, "x3 kept as-is")
 }
 
 // on a flat-magnitude row every entry is kept and α equals that magnitude,
@@ -50,6 +50,6 @@ test "ternary-quant-error is x minus its dequantized ternary code" {
 test "ternary-quant-error is zero on a flat-magnitude row" {
   let x = matrix.from_lists([[2.0, 0.0 - 2.0]])
   let y = ternary_quant_error_rows(x)
-  assert(float.abs(matrix.get(y, 0, 0)) < 0.000000001, "x0 residual 0")
-  assert(float.abs(matrix.get(y, 0, 1)) < 0.000000001, "x1 residual 0")
+  assert(float.abs(matrix.get(y, 0, 0) ?? panic("matrix.get: out of range")) < 0.000000001, "x0 residual 0")
+  assert(float.abs(matrix.get(y, 0, 1) ?? panic("matrix.get: out of range")) < 0.000000001, "x1 residual 0")
 }

@@ -116,16 +116,16 @@ test "slice_rows" {
   let m = matrix.from_lists([[1.0, 2.0], [3.0, 4.0], [5.0, 6.0]])
   let s = slice_rows(m, 0, 2)
   assert_eq(rows(s), 2)
-  assert_eq(matrix.get(s, 0, 0), 1.0)
-  assert_eq(matrix.get(s, 1, 0), 3.0)
+  assert_eq(matrix.get(s, 0, 0) ?? panic("matrix.get: out of range"), 1.0)
+  assert_eq(matrix.get(s, 1, 0) ?? panic("matrix.get: out of range"), 3.0)
 }
 
 test "slice_cols" {
   let m = matrix.from_lists([[1.0, 2.0, 3.0], [4.0, 5.0, 6.0]])
   let s = slice_cols(m, 1, 3)
   assert_eq(cols(s), 2)
-  assert_eq(matrix.get(s, 0, 0), 2.0)
-  assert_eq(matrix.get(s, 0, 1), 3.0)
+  assert_eq(matrix.get(s, 0, 0) ?? panic("matrix.get: out of range"), 2.0)
+  assert_eq(matrix.get(s, 0, 1) ?? panic("matrix.get: out of range"), 3.0)
 }
 
 test "concat_rows" {
@@ -133,7 +133,7 @@ test "concat_rows" {
   let b = matrix.from_lists([[3.0, 4.0]])
   let c = concat_rows(a, b)
   assert_eq(rows(c), 2)
-  assert_eq(matrix.get(c, 1, 0), 3.0)
+  assert_eq(matrix.get(c, 1, 0) ?? panic("matrix.get: out of range"), 3.0)
 }
 
 test "concat_cols" {
@@ -141,25 +141,25 @@ test "concat_cols" {
   let b = matrix.from_lists([[3.0], [4.0]])
   let c = concat_cols(a, b)
   assert_eq(cols(c), 2)
-  assert_eq(matrix.get(c, 0, 1), 3.0)
+  assert_eq(matrix.get(c, 0, 1) ?? panic("matrix.get: out of range"), 3.0)
 }
 
 test "broadcast_add" {
   let m = matrix.from_lists([[1.0, 2.0], [3.0, 4.0]])
   let bias = [10.0, 20.0]
   let r = broadcast_add(m, bias)
-  assert_eq(matrix.get(r, 0, 0), 11.0)
-  assert_eq(matrix.get(r, 0, 1), 22.0)
-  assert_eq(matrix.get(r, 1, 0), 13.0)
-  assert_eq(matrix.get(r, 1, 1), 24.0)
+  assert_eq(matrix.get(r, 0, 0) ?? panic("matrix.get: out of range"), 11.0)
+  assert_eq(matrix.get(r, 0, 1) ?? panic("matrix.get: out of range"), 22.0)
+  assert_eq(matrix.get(r, 1, 0) ?? panic("matrix.get: out of range"), 13.0)
+  assert_eq(matrix.get(r, 1, 1) ?? panic("matrix.get: out of range"), 24.0)
 }
 
 test "broadcast_mul" {
   let m = matrix.from_lists([[2.0, 3.0], [4.0, 5.0]])
   let s = [10.0, 100.0]
   let r = broadcast_mul(m, s)
-  assert_eq(matrix.get(r, 0, 0), 20.0)
-  assert_eq(matrix.get(r, 0, 1), 300.0)
+  assert_eq(matrix.get(r, 0, 0) ?? panic("matrix.get: out of range"), 20.0)
+  assert_eq(matrix.get(r, 0, 1) ?? panic("matrix.get: out of range"), 300.0)
 }
 
 test "sum_rows" {
@@ -193,8 +193,8 @@ test "element_mul" {
   let a = matrix.from_lists([[2.0, 3.0]])
   let b = matrix.from_lists([[4.0, 5.0]])
   let r = element_mul(a, b)
-  assert_eq(matrix.get(r, 0, 0), 8.0)
-  assert_eq(matrix.get(r, 0, 1), 15.0)
+  assert_eq(matrix.get(r, 0, 0) ?? panic("matrix.get: out of range"), 8.0)
+  assert_eq(matrix.get(r, 0, 1) ?? panic("matrix.get: out of range"), 15.0)
 }
 
 test "from_row and from_col" {
@@ -209,5 +209,5 @@ test "from_row and from_col" {
 test "repeat_row" {
   let m = repeat_row([1.0, 2.0], 3)
   assert_eq(rows(m), 3)
-  assert_eq(matrix.get(m, 2, 1), 2.0)
+  assert_eq(matrix.get(m, 2, 1) ?? panic("matrix.get: out of range"), 2.0)
 }

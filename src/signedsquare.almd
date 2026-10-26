@@ -26,17 +26,17 @@ fn signed_square_rows(x: Matrix) -> Matrix = {
 test "signed-square keeps sign and squares magnitude" {
   let x = matrix.from_lists([[3.0, 0.0 - 4.0], [0.0, 0.5]])
   let y = signed_square_rows(x)
-  assert_eq(matrix.get(y, 0, 0), 9.0)
-  assert_eq(matrix.get(y, 0, 1), 0.0 - 16.0)
-  assert_eq(matrix.get(y, 1, 0), 0.0)
-  assert_eq(matrix.get(y, 1, 1), 0.25)
+  assert_eq(matrix.get(y, 0, 0) ?? panic("matrix.get: out of range"), 9.0)
+  assert_eq(matrix.get(y, 0, 1) ?? panic("matrix.get: out of range"), 0.0 - 16.0)
+  assert_eq(matrix.get(y, 1, 0) ?? panic("matrix.get: out of range"), 0.0)
+  assert_eq(matrix.get(y, 1, 1) ?? panic("matrix.get: out of range"), 0.25)
 }
 
 // it is the exact inverse of signed_sqrt on magnitudes: f(−v) = −f(v).
 test "signed-square is an odd function" {
   let x = matrix.from_lists([[6.0]])
   let xn = matrix.from_lists([[0.0 - 6.0]])
-  let a = matrix.get(signed_square_rows(x), 0, 0)
-  let b = matrix.get(signed_square_rows(xn), 0, 0)
+  let a = matrix.get(signed_square_rows(x), 0, 0) ?? panic("matrix.get: out of range")
+  let b = matrix.get(signed_square_rows(xn), 0, 0) ?? panic("matrix.get: out of range")
   assert_eq(a + b, 0.0)
 }

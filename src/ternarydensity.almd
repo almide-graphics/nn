@@ -30,12 +30,12 @@ fn ternary_density_rows(x: Matrix) -> Matrix = {
 test "ternary-density is the fraction of kept weights" {
   let x = matrix.from_lists([[3.0, 0.0 - 4.0, 0.1, 0.05]])
   let y = ternary_density_rows(x)
-  assert_eq(matrix.get(y, 0, 0), 0.5)
+  assert_eq(matrix.get(y, 0, 0) ?? panic("matrix.get: out of range"), 0.5)
 }
 
 // a flat-magnitude row keeps every weight → density 1.
 test "ternary-density is one on a flat-magnitude row" {
   let x = matrix.from_lists([[2.0, 0.0 - 2.0]])
   let y = ternary_density_rows(x)
-  assert_eq(matrix.get(y, 0, 0), 1.0)
+  assert_eq(matrix.get(y, 0, 0) ?? panic("matrix.get: out of range"), 1.0)
 }

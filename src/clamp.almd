@@ -42,7 +42,7 @@ test "clamp leaves in-range values unchanged" {
   let lo = matrix.from_lists([[0.0]])
   let hi = matrix.from_lists([[1.0]])
   let y = clamp_rows(x, lo, hi)
-  assert(float.abs(matrix.get(y, 0, 0) - 0.5) < 0.000000001, "0.5")
+  assert(float.abs((matrix.get(y, 0, 0) ?? panic("matrix.get: out of range")) - 0.5) < 0.000000001, "0.5")
 }
 
 // out-of-range values clamp to the bounds: 5→hi=1, −5→lo=0.
@@ -51,6 +51,6 @@ test "clamp bounds values to the per-element interval" {
   let lo = matrix.from_lists([[0.0, 0.0]])
   let hi = matrix.from_lists([[1.0, 1.0]])
   let y = clamp_rows(x, lo, hi)
-  assert(float.abs(matrix.get(y, 0, 0) - 1.0) < 0.000000001, "clamp hi=1")
-  assert(float.abs(matrix.get(y, 0, 1)) < 0.000000001, "clamp lo=0")
+  assert(float.abs((matrix.get(y, 0, 0) ?? panic("matrix.get: out of range")) - 1.0) < 0.000000001, "clamp hi=1")
+  assert(float.abs(matrix.get(y, 0, 1) ?? panic("matrix.get: out of range")) < 0.000000001, "clamp lo=0")
 }

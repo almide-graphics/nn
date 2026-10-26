@@ -6,12 +6,12 @@ fn cauchy_act(m: Matrix) -> Matrix =
 
 test "cauchy_act peaks at one when x=0" {
   let y = cauchy_act(matrix.from_lists([[0.0]]))
-  assert_eq(matrix.get(y, 0, 0), 1.0)
+  assert_eq(matrix.get(y, 0, 0) ?? panic("matrix.get: out of range"), 1.0)
 }
 
 // 1/(1+1)=0.5 and even.
 test "cauchy_act at 1 and even" {
   let y = cauchy_act(matrix.from_lists([[1.0, -1.0]]))
-  assert_eq(matrix.get(y, 0, 0), 0.5)
-  assert_eq(matrix.get(y, 0, 1), 0.5)
+  assert_eq(matrix.get(y, 0, 0) ?? panic("matrix.get: out of range"), 0.5)
+  assert_eq(matrix.get(y, 0, 1) ?? panic("matrix.get: out of range"), 0.5)
 }

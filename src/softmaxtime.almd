@@ -39,14 +39,14 @@ fn softmax_time_rows(x: Matrix) -> Matrix = {
 test "softmax over time of equal values is uniform" {
   let x = matrix.from_lists([[0.0], [0.0]])
   let y = softmax_time_rows(x)
-  assert_eq(matrix.get(y, 0, 0), 0.5)
-  assert_eq(matrix.get(y, 1, 0), 0.5)
+  assert_eq(matrix.get(y, 0, 0) ?? panic("matrix.get: out of range"), 0.5)
+  assert_eq(matrix.get(y, 1, 0) ?? panic("matrix.get: out of range"), 0.5)
 }
 
 // per channel, equal entries → uniform regardless of value.
 test "softmax over time is uniform per equal-entry channel" {
   let x = matrix.from_lists([[0.0, 1.0], [0.0, 1.0]])
   let y = softmax_time_rows(x)
-  assert_eq(matrix.get(y, 0, 1), 0.5)
-  assert_eq(matrix.get(y, 1, 1), 0.5)
+  assert_eq(matrix.get(y, 0, 1) ?? panic("matrix.get: out of range"), 0.5)
+  assert_eq(matrix.get(y, 1, 1) ?? panic("matrix.get: out of range"), 0.5)
 }

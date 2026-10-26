@@ -28,10 +28,10 @@ test "soft-and-not reduces to the A∧¬B truth table at boolean corners" {
   let a = matrix.from_lists([[0.0, 0.0, 1.0, 1.0]])
   let b = matrix.from_lists([[0.0, 1.0, 0.0, 1.0]])
   let y = soft_and_not_rows(a, b)
-  assert_eq(matrix.get(y, 0, 0), 0.0)
-  assert_eq(matrix.get(y, 0, 1), 0.0)
-  assert_eq(matrix.get(y, 0, 2), 1.0)
-  assert_eq(matrix.get(y, 0, 3), 0.0)
+  assert_eq(matrix.get(y, 0, 0) ?? panic("matrix.get: out of range"), 0.0)
+  assert_eq(matrix.get(y, 0, 1) ?? panic("matrix.get: out of range"), 0.0)
+  assert_eq(matrix.get(y, 0, 2) ?? panic("matrix.get: out of range"), 1.0)
+  assert_eq(matrix.get(y, 0, 3) ?? panic("matrix.get: out of range"), 0.0)
 }
 
 // at a = b = ½: ½·(1 − ½) = ¼.
@@ -39,5 +39,5 @@ test "soft-and-not at p=0.5 is one quarter" {
   let a = matrix.from_lists([[0.5]])
   let b = matrix.from_lists([[0.5]])
   let y = soft_and_not_rows(a, b)
-  assert(float.abs(matrix.get(y, 0, 0) - 0.25) < 0.000000001, "0.25")
+  assert(float.abs((matrix.get(y, 0, 0) ?? panic("matrix.get: out of range")) - 0.25) < 0.000000001, "0.25")
 }

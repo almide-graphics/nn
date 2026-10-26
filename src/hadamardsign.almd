@@ -31,16 +31,16 @@ test "hadamard-sign is +1 on agreement, -1 on opposition" {
   let a = matrix.from_lists([[3.0, 2.0, 0.0 - 1.0], [0.0, 4.0, 0.0]])
   let b = matrix.from_lists([[5.0, 0.0 - 4.0, 0.0 - 2.0], [9.0, 1.0, 0.0]])
   let y = hadamard_sign_rows(a, b)
-  assert_eq(matrix.get(y, 0, 0), 1.0)
-  assert_eq(matrix.get(y, 0, 1), 0.0 - 1.0)
-  assert_eq(matrix.get(y, 0, 2), 1.0)
-  assert_eq(matrix.get(y, 1, 0), 0.0)
+  assert_eq(matrix.get(y, 0, 0) ?? panic("matrix.get: out of range"), 1.0)
+  assert_eq(matrix.get(y, 0, 1) ?? panic("matrix.get: out of range"), 0.0 - 1.0)
+  assert_eq(matrix.get(y, 0, 2) ?? panic("matrix.get: out of range"), 1.0)
+  assert_eq(matrix.get(y, 1, 0) ?? panic("matrix.get: out of range"), 0.0)
 }
 
 // product of a sign-only matrix with itself is +1 wherever nonzero (s·s = 1).
 test "hadamard-sign of a matrix with itself is one on its support" {
   let a = matrix.from_lists([[7.0, 0.0 - 3.0]])
   let y = hadamard_sign_rows(a, a)
-  assert_eq(matrix.get(y, 0, 0), 1.0)
-  assert_eq(matrix.get(y, 0, 1), 1.0)
+  assert_eq(matrix.get(y, 0, 0) ?? panic("matrix.get: out of range"), 1.0)
+  assert_eq(matrix.get(y, 0, 1) ?? panic("matrix.get: out of range"), 1.0)
 }

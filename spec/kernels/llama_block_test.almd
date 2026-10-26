@@ -77,13 +77,13 @@ test "llama 1-block: uniform input propagates uniformly through attention" {
   // uniform — the attention distribution is softmax over identical
   // keys so it averages identical values.
   let (_rows, cols) = matrix.shape(attn_out)
-  let val00 = matrix.get(attn_out, 0, 0)
-  let val0_last = matrix.get(attn_out, 0, cols - 1)
+  let val00 = matrix.get(attn_out, 0, 0) ?? panic("matrix.get: out of range")
+  let val0_last = matrix.get(attn_out, 0, cols - 1) ?? panic("matrix.get: out of range")
   assert(approx_eq(val00, val0_last, 0.001))
   // Last row (can see all keys under causal mask) should match row 0
   // up to normalisation; for uniform V the mask doesn't change the
   // result since every accessible V row is identical.
-  let val_last_0 = matrix.get(attn_out, seq - 1, 0)
+  let val_last_0 = matrix.get(attn_out, seq - 1, 0) ?? panic("matrix.get: out of range")
   assert(approx_eq(val00, val_last_0, 0.001))
 }
 
@@ -101,8 +101,8 @@ test "llama 1-block: residual add preserves scale" {
     [30.0, 40.0]
   ])
   let r = a + b
-  assert_eq(matrix.get(r, 0, 0), 11.0)
-  assert_eq(matrix.get(r, 0, 1), 22.0)
-  assert_eq(matrix.get(r, 1, 0), 33.0)
-  assert_eq(matrix.get(r, 1, 1), 44.0)
+  assert_eq(matrix.get(r, 0, 0) ?? panic("matrix.get: out of range"), 11.0)
+  assert_eq(matrix.get(r, 0, 1) ?? panic("matrix.get: out of range"), 22.0)
+  assert_eq(matrix.get(r, 1, 0) ?? panic("matrix.get: out of range"), 33.0)
+  assert_eq(matrix.get(r, 1, 1) ?? panic("matrix.get: out of range"), 44.0)
 }

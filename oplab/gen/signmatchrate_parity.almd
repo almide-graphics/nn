@@ -12,7 +12,7 @@ test "sign_match_rate_rows numpy-parity (generated, seed 20260943)" {
   while r < 5 {
     var c = 0
     while c < 1 {
-      let got = matrix.get(y, r, c)
+      let got = matrix.get(y, r, c) ?? panic("matrix.get: out of range")
       let want = list.get(ref, r * 1 + c) ?? 0.0
       assert(float.abs(got - want) < 1.0e-09, "sign_match_rate_rows cell vs numpy")
       c = c + 1

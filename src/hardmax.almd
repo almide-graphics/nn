@@ -26,16 +26,16 @@ fn hardmax_rows(x: Matrix) -> Matrix = {
 test "hardmax is the one-hot of the row maximum" {
   let x = matrix.from_lists([[1.0, 5.0, 3.0]])
   let y = hardmax_rows(x)
-  assert_eq(matrix.get(y, 0, 0), 0.0)
-  assert_eq(matrix.get(y, 0, 1), 1.0)
-  assert_eq(matrix.get(y, 0, 2), 0.0)
+  assert_eq(matrix.get(y, 0, 0) ?? panic("matrix.get: out of range"), 0.0)
+  assert_eq(matrix.get(y, 0, 1) ?? panic("matrix.get: out of range"), 1.0)
+  assert_eq(matrix.get(y, 0, 2) ?? panic("matrix.get: out of range"), 0.0)
 }
 
 // works per row, including all-negative rows: row0 [−1,−2]→[1,0], row1 [4,9]→[0,1].
 test "hardmax selects the maximum independently per row" {
   let x = matrix.from_lists([[0.0 - 1.0, 0.0 - 2.0], [4.0, 9.0]])
   let y = hardmax_rows(x)
-  assert_eq(matrix.get(y, 0, 0), 1.0)
-  assert_eq(matrix.get(y, 1, 1), 1.0)
-  assert_eq(matrix.get(y, 1, 0), 0.0)
+  assert_eq(matrix.get(y, 0, 0) ?? panic("matrix.get: out of range"), 1.0)
+  assert_eq(matrix.get(y, 1, 1) ?? panic("matrix.get: out of range"), 1.0)
+  assert_eq(matrix.get(y, 1, 0) ?? panic("matrix.get: out of range"), 0.0)
 }

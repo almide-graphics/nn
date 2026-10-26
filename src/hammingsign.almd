@@ -34,12 +34,12 @@ test "hamming-sign counts the sign disagreements" {
   let a = matrix.from_lists([[1.0, 2.0, 0.0 - 3.0, 0.0 - 4.0]])
   let b = matrix.from_lists([[5.0, 0.0 - 6.0, 0.0 - 7.0, 8.0]])
   let y = hamming_sign_rows(a, b)
-  assert_eq(matrix.get(y, 0, 0), 2.0)
+  assert_eq(matrix.get(y, 0, 0) ?? panic("matrix.get: out of range"), 2.0)
 }
 
 // a matrix has zero Hamming distance to itself.
 test "hamming-sign of a matrix with itself is zero" {
   let a = matrix.from_lists([[7.0, 0.0 - 3.0, 9.0]])
   let y = hamming_sign_rows(a, a)
-  assert_eq(matrix.get(y, 0, 0), 0.0)
+  assert_eq(matrix.get(y, 0, 0) ?? panic("matrix.get: out of range"), 0.0)
 }

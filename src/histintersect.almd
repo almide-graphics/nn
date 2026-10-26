@@ -31,7 +31,7 @@ test "histogram intersection of identical histograms is their total mass" {
   let a = matrix.from_lists([[1.0, 2.0, 3.0]])
   let b = matrix.from_lists([[1.0, 2.0, 3.0]])
   let y = hist_intersection_rows(a, b)
-  assert(float.abs(matrix.get(y, 0, 0) - 6.0) < 0.000000001, "Σ=6")
+  assert(float.abs((matrix.get(y, 0, 0) ?? panic("matrix.get: out of range")) - 6.0) < 0.000000001, "Σ=6")
 }
 
 // disjoint histograms share nothing: min is 0 everywhere → 0.
@@ -39,5 +39,5 @@ test "histogram intersection of disjoint histograms is zero" {
   let a = matrix.from_lists([[2.0, 0.0]])
   let b = matrix.from_lists([[0.0, 2.0]])
   let y = hist_intersection_rows(a, b)
-  assert(float.abs(matrix.get(y, 0, 0)) < 0.000000001, "0")
+  assert(float.abs(matrix.get(y, 0, 0) ?? panic("matrix.get: out of range")) < 0.000000001, "0")
 }

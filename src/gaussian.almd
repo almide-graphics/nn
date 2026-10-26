@@ -8,10 +8,10 @@ fn gaussian(m: Matrix) -> Matrix =
 
 test "gaussian at zero is one" {
   let y = gaussian(matrix.from_lists([[0.0]]))
-  assert_eq(matrix.get(y, 0, 0), 1.0)
+  assert_eq(matrix.get(y, 0, 0) ?? panic("matrix.get: out of range"), 1.0)
 }
 
 test "gaussian at one is exp(-1)" {
   let y = gaussian(matrix.from_lists([[1.0]]))
-  assert(float.abs(matrix.get(y, 0, 0) - 0.36787944117144233) < 0.000000001, "e^-1")
+  assert(float.abs((matrix.get(y, 0, 0) ?? panic("matrix.get: out of range")) - 0.36787944117144233) < 0.000000001, "e^-1")
 }

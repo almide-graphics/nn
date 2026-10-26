@@ -22,16 +22,16 @@ fn reverse_cumsum_rows(x: Matrix) -> Matrix = {
 test "reverse cumsum is the suffix sum" {
   let x = matrix.from_lists([[1.0], [2.0], [3.0]])
   let y = reverse_cumsum_rows(x)
-  assert_eq(matrix.get(y, 0, 0), 6.0)
-  assert_eq(matrix.get(y, 1, 0), 5.0)
-  assert_eq(matrix.get(y, 2, 0), 3.0)
+  assert_eq(matrix.get(y, 0, 0) ?? panic("matrix.get: out of range"), 6.0)
+  assert_eq(matrix.get(y, 1, 0) ?? panic("matrix.get: out of range"), 5.0)
+  assert_eq(matrix.get(y, 2, 0) ?? panic("matrix.get: out of range"), 3.0)
 }
 
 // per-channel suffix sums of [[1,10],[2,20]] → [[3,30],[2,20]].
 test "reverse cumsum works per channel" {
   let x = matrix.from_lists([[1.0, 10.0], [2.0, 20.0]])
   let y = reverse_cumsum_rows(x)
-  assert_eq(matrix.get(y, 0, 0), 3.0)
-  assert_eq(matrix.get(y, 0, 1), 30.0)
-  assert_eq(matrix.get(y, 1, 1), 20.0)
+  assert_eq(matrix.get(y, 0, 0) ?? panic("matrix.get: out of range"), 3.0)
+  assert_eq(matrix.get(y, 0, 1) ?? panic("matrix.get: out of range"), 30.0)
+  assert_eq(matrix.get(y, 1, 1) ?? panic("matrix.get: out of range"), 20.0)
 }

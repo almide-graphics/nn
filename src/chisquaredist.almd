@@ -32,7 +32,7 @@ test "chi-square distance of identical histograms is zero" {
   let a = matrix.from_lists([[1.0, 2.0, 3.0]])
   let b = matrix.from_lists([[1.0, 2.0, 3.0]])
   let y = chi_square_dist_rows(a, b)
-  assert(float.abs(matrix.get(y, 0, 0)) < 0.000000001, "0")
+  assert(float.abs(matrix.get(y, 0, 0) ?? panic("matrix.get: out of range")) < 0.000000001, "0")
 }
 
 // disjoint mass [1,0] vs [0,1]: ½·(1²/1 + 1²/1) = 1.
@@ -40,5 +40,5 @@ test "chi-square distance of disjoint histograms" {
   let a = matrix.from_lists([[1.0, 0.0]])
   let b = matrix.from_lists([[0.0, 1.0]])
   let y = chi_square_dist_rows(a, b)
-  assert(float.abs(matrix.get(y, 0, 0) - 1.0) < 0.000000001, "½·(1+1)=1")
+  assert(float.abs((matrix.get(y, 0, 0) ?? panic("matrix.get: out of range")) - 1.0) < 0.000000001, "½·(1+1)=1")
 }

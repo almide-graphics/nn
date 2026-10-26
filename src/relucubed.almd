@@ -12,12 +12,12 @@ fn relu_cubed(m: Matrix) -> Matrix =
 // 0 for x≤0 (incl. 0).
 test "relu_cubed is zero for x<=0" {
   let y = relu_cubed(matrix.from_lists([[-2.0, 0.0]]))
-  assert_eq(matrix.get(y, 0, 0), 0.0)
-  assert_eq(matrix.get(y, 0, 1), 0.0)
+  assert_eq(matrix.get(y, 0, 0) ?? panic("matrix.get: out of range"), 0.0)
+  assert_eq(matrix.get(y, 0, 1) ?? panic("matrix.get: out of range"), 0.0)
 }
 
 // 2³=8 for x>0.
 test "relu_cubed is x cubed for x>0" {
   let y = relu_cubed(matrix.from_lists([[2.0]]))
-  assert_eq(matrix.get(y, 0, 0), 8.0)
+  assert_eq(matrix.get(y, 0, 0) ?? panic("matrix.get: out of range"), 8.0)
 }

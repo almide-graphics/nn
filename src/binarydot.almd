@@ -32,12 +32,12 @@ test "binary-dot sums sign agreements minus disagreements" {
   let a = matrix.from_lists([[1.0, 2.0, 0.0 - 3.0, 0.0 - 4.0]])
   let b = matrix.from_lists([[5.0, 0.0 - 6.0, 0.0 - 7.0, 8.0]])
   let y = binary_dot_rows(a, b)
-  assert_eq(matrix.get(y, 0, 0), 0.0)
+  assert_eq(matrix.get(y, 0, 0) ?? panic("matrix.get: out of range"), 0.0)
 }
 
 // a binary row dotted with itself counts its nonzeros: [+,−,+] → 3.
 test "binary-dot of a row with itself counts its support" {
   let a = matrix.from_lists([[2.0, 0.0 - 1.0, 9.0]])
   let y = binary_dot_rows(a, a)
-  assert_eq(matrix.get(y, 0, 0), 3.0)
+  assert_eq(matrix.get(y, 0, 0) ?? panic("matrix.get: out of range"), 3.0)
 }

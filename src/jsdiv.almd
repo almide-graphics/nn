@@ -33,7 +33,7 @@ fn js_div_rows(p: Matrix, q: Matrix) -> Matrix = {
 test "js_div of identical distributions is zero" {
   let p = matrix.from_lists([[0.2, 0.3, 0.5]])
   let y = js_div_rows(p, p)
-  assert(float.abs(matrix.get(y, 0, 0)) < 0.000000001, "self-JS 0")
+  assert(float.abs(matrix.get(y, 0, 0) ?? panic("matrix.get: out of range")) < 0.000000001, "self-JS 0")
 }
 
 // distinct distributions: 0 < JS < log2.
@@ -41,6 +41,6 @@ test "js_div is positive and below log2 for distinct" {
   let p = matrix.from_lists([[0.9, 0.1]])
   let q = matrix.from_lists([[0.1, 0.9]])
   let y = js_div_rows(p, q)
-  assert(matrix.get(y, 0, 0) > 0.0, "positive")
-  assert(matrix.get(y, 0, 0) < 0.6931471805599454, "≤ log2")
+  assert((matrix.get(y, 0, 0) ?? panic("matrix.get: out of range")) > 0.0, "positive")
+  assert((matrix.get(y, 0, 0) ?? panic("matrix.get: out of range")) < 0.6931471805599454, "≤ log2")
 }

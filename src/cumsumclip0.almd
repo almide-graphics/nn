@@ -25,15 +25,15 @@ fn cumsum_clip0_rows(x: Matrix) -> Matrix = {
 test "cumsum-clip0 accumulates only the positive part" {
   let x = matrix.from_lists([[2.0], [0.0 - 1.0], [3.0]])
   let y = cumsum_clip0_rows(x)
-  assert_eq(matrix.get(y, 0, 0), 2.0)
-  assert_eq(matrix.get(y, 1, 0), 2.0)
-  assert_eq(matrix.get(y, 2, 0), 5.0)
+  assert_eq(matrix.get(y, 0, 0) ?? panic("matrix.get: out of range"), 2.0)
+  assert_eq(matrix.get(y, 1, 0) ?? panic("matrix.get: out of range"), 2.0)
+  assert_eq(matrix.get(y, 2, 0) ?? panic("matrix.get: out of range"), 5.0)
 }
 
 // an all-negative column accumulates to 0 throughout.
 test "cumsum-clip0 is zero on an all-negative channel" {
   let x = matrix.from_lists([[0.0 - 1.0], [0.0 - 4.0]])
   let y = cumsum_clip0_rows(x)
-  assert_eq(matrix.get(y, 0, 0), 0.0)
-  assert_eq(matrix.get(y, 1, 0), 0.0)
+  assert_eq(matrix.get(y, 0, 0) ?? panic("matrix.get: out of range"), 0.0)
+  assert_eq(matrix.get(y, 1, 0) ?? panic("matrix.get: out of range"), 0.0)
 }

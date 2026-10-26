@@ -123,8 +123,8 @@ fn tensor_matrix(data: Bytes, data_offset: Int, locs: List[TensorLoc], name: Str
   let loc = loc_of(locs, name)
   let start = data_offset + loc.offset
   match loc.dtype {
-    0 => matrix.from_bytes_f32_le(data, start, loc.rows, loc.cols),
-    1 => matrix.from_bytes_f16_le(data, start, loc.rows, loc.cols),
+    0 => matrix.from_bytes_f32_le(data, start, loc.rows, loc.cols) ?? matrix.zeros(loc.rows, loc.cols),
+    1 => matrix.from_bytes_f16_le(data, start, loc.rows, loc.cols) ?? matrix.zeros(loc.rows, loc.cols),
     _ => matrix.zeros(loc.rows, loc.cols),
   }
 }
@@ -330,10 +330,10 @@ test "neox rope rotates (j, j+half) pairs in place" {
   let s1 = math.sin(1.0)
   let c2 = math.cos(0.01)
   let s2 = math.sin(0.01)
-  assert(approx(matrix.get(out, 0, 0), 1.0 * c1 - 3.0 * s1), "x0'")
-  assert(approx(matrix.get(out, 0, 2), 1.0 * s1 + 3.0 * c1), "x2'")
-  assert(approx(matrix.get(out, 0, 1), 2.0 * c2 - 4.0 * s2), "x1'")
-  assert(approx(matrix.get(out, 0, 3), 2.0 * s2 + 4.0 * c2), "x3'")
+  assert(approx(matrix.get(out, 0, 0) ?? panic("matrix.get: out of range"), 1.0 * c1 - 3.0 * s1), "x0'")
+  assert(approx(matrix.get(out, 0, 2) ?? panic("matrix.get: out of range"), 1.0 * s1 + 3.0 * c1), "x2'")
+  assert(approx(matrix.get(out, 0, 1) ?? panic("matrix.get: out of range"), 2.0 * c2 - 4.0 * s2), "x1'")
+  assert(approx(matrix.get(out, 0, 3) ?? panic("matrix.get: out of range"), 2.0 * s2 + 4.0 * c2), "x3'")
 }
 
 test "rope_perm interleaves the two halves of each head" {
@@ -361,17 +361,17 @@ test "interleaved rope on permuted layout equals NeoX rope" {
   let s1 = math.sin(1.0)
   let c2 = math.cos(0.01)
   let s2 = math.sin(0.01)
-  assert(approx(matrix.get(out, 0, 0), 1.0 * c1 - 3.0 * s1), "x0'")
-  assert(approx(matrix.get(out, 0, 1), 1.0 * s1 + 3.0 * c1), "x2'")
-  assert(approx(matrix.get(out, 0, 2), 2.0 * c2 - 4.0 * s2), "x1'")
-  assert(approx(matrix.get(out, 0, 3), 2.0 * s2 + 4.0 * c2), "x3'")
+  assert(approx(matrix.get(out, 0, 0) ?? panic("matrix.get: out of range"), 1.0 * c1 - 3.0 * s1), "x0'")
+  assert(approx(matrix.get(out, 0, 1) ?? panic("matrix.get: out of range"), 1.0 * s1 + 3.0 * c1), "x2'")
+  assert(approx(matrix.get(out, 0, 2) ?? panic("matrix.get: out of range"), 2.0 * c2 - 4.0 * s2), "x1'")
+  assert(approx(matrix.get(out, 0, 3) ?? panic("matrix.get: out of range"), 2.0 * s2 + 4.0 * c2), "x3'")
 }
 
 test "rope_rotate_at start_pos 0 is identity" {
   let m = matrix.from_lists([[1.0, 2.0, 3.0, 4.0]])
   let out = kernels.rope_rotate_at(m, 1, 4, 10000.0, 0)
-  assert(approx(matrix.get(out, 0, 0), 1.0))
-  assert(approx(matrix.get(out, 0, 3), 4.0))
+  assert(approx(matrix.get(out, 0, 0) ?? panic("matrix.get: out of range"), 1.0))
+  assert(approx(matrix.get(out, 0, 3) ?? panic("matrix.get: out of range"), 4.0))
 }
 
 test "loc_of returns found=false for unknown names" {

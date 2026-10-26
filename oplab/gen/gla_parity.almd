@@ -14,7 +14,7 @@ test "gla numpy-parity (generated, seed 20260702)" {
   while r < 5 {
     var c = 0
     while c < 4 {
-      let got = matrix.get(y, r, c)
+      let got = matrix.get(y, r, c) ?? panic("matrix.get: out of range")
       let want = list.get(ref, r * 4 + c) ?? 0.0
       assert(float.abs(got - want) < 1.0e-09, "gla cell vs numpy")
       c = c + 1

@@ -31,17 +31,17 @@ fn signed_cube_root_rows(x: Matrix) -> Matrix = {
 test "signed-cube-root inverts the signed cube" {
   let x = matrix.from_lists([[8.0, 0.0 - 27.0], [0.0, 1.0]])
   let y = signed_cube_root_rows(x)
-  assert(float.abs(matrix.get(y, 0, 0) - 2.0) < 0.000000001, "cbrt 8 = 2")
-  assert(float.abs(matrix.get(y, 0, 1) - (0.0 - 3.0)) < 0.000000001, "cbrt -27 = -3")
-  assert_eq(matrix.get(y, 1, 0), 0.0)
-  assert(float.abs(matrix.get(y, 1, 1) - 1.0) < 0.000000001, "cbrt 1 = 1")
+  assert(float.abs((matrix.get(y, 0, 0) ?? panic("matrix.get: out of range")) - 2.0) < 0.000000001, "cbrt 8 = 2")
+  assert(float.abs((matrix.get(y, 0, 1) ?? panic("matrix.get: out of range")) - (0.0 - 3.0)) < 0.000000001, "cbrt -27 = -3")
+  assert_eq(matrix.get(y, 1, 0) ?? panic("matrix.get: out of range"), 0.0)
+  assert(float.abs((matrix.get(y, 1, 1) ?? panic("matrix.get: out of range")) - 1.0) < 0.000000001, "cbrt 1 = 1")
 }
 
 // odd symmetry: f(v) + f(−v) = 0 exactly.
 test "signed-cube-root is an odd function" {
   let x = matrix.from_lists([[5.0]])
   let xn = matrix.from_lists([[0.0 - 5.0]])
-  let a = matrix.get(signed_cube_root_rows(x), 0, 0)
-  let b = matrix.get(signed_cube_root_rows(xn), 0, 0)
+  let a = matrix.get(signed_cube_root_rows(x), 0, 0) ?? panic("matrix.get: out of range")
+  let b = matrix.get(signed_cube_root_rows(xn), 0, 0) ?? panic("matrix.get: out of range")
   assert_eq(a + b, 0.0)
 }

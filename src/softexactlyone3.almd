@@ -43,9 +43,9 @@ test "soft-exactly-one-3 is 1 iff exactly one input is on (corners)" {
   let b = matrix.from_lists([[0.0, 0.0, 1.0]])
   let c = matrix.from_lists([[0.0, 1.0, 0.0]])
   let y = soft_exactly_one3_rows(a, b, c)
-  assert_eq(matrix.get(y, 0, 0), 1.0)
-  assert_eq(matrix.get(y, 0, 1), 1.0)
-  assert_eq(matrix.get(y, 0, 2), 0.0)
+  assert_eq(matrix.get(y, 0, 0) ?? panic("matrix.get: out of range"), 1.0)
+  assert_eq(matrix.get(y, 0, 1) ?? panic("matrix.get: out of range"), 1.0)
+  assert_eq(matrix.get(y, 0, 2) ?? panic("matrix.get: out of range"), 0.0)
 }
 
 // at a = b = c = ½: 3·(½·½·½) = ⅜.
@@ -54,5 +54,5 @@ test "soft-exactly-one-3 at p=0.5 is three eighths" {
   let b = matrix.from_lists([[0.5]])
   let c = matrix.from_lists([[0.5]])
   let y = soft_exactly_one3_rows(a, b, c)
-  assert(float.abs(matrix.get(y, 0, 0) - 0.375) < 0.000000001, "0.375")
+  assert(float.abs((matrix.get(y, 0, 0) ?? panic("matrix.get: out of range")) - 0.375) < 0.000000001, "0.375")
 }

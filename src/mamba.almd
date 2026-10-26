@@ -32,12 +32,12 @@ fn mamba_abar(delta: Matrix, a: Matrix) -> Matrix = {
 // Δ=0 (or A=0) → exp(0) = 1: no discretization, decay is identity.
 test "mamba_abar zero step is identity gate" {
   let y = mamba_abar(matrix.from_lists([[0.0, 0.0]]), matrix.from_lists([[-1.0, 2.0]]))
-  assert_eq(matrix.get(y, 0, 0), 1.0)
-  assert_eq(matrix.get(y, 0, 1), 1.0)
+  assert_eq(matrix.get(y, 0, 0) ?? panic("matrix.get: out of range"), 1.0)
+  assert_eq(matrix.get(y, 0, 1) ?? panic("matrix.get: out of range"), 1.0)
 }
 
 // Δ=1, A=-1 → Ā = exp(-1).
 test "mamba_abar exp of product" {
   let y = mamba_abar(matrix.from_lists([[1.0]]), matrix.from_lists([[-1.0]]))
-  assert(float.abs(matrix.get(y, 0, 0) - 0.36787944117144233) < 0.000000001, "exp(-1)")
+  assert(float.abs((matrix.get(y, 0, 0) ?? panic("matrix.get: out of range")) - 0.36787944117144233) < 0.000000001, "exp(-1)")
 }

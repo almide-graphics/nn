@@ -17,11 +17,11 @@ fn mish(m: Matrix) -> Matrix =
 // mish(0) = 0 · tanh(softplus(0)) = 0.
 test "mish at zero is zero" {
   let y = mish(matrix.from_lists([[0.0]]))
-  assert_eq(matrix.get(y, 0, 0), 0.0)
+  assert_eq(matrix.get(y, 0, 0) ?? panic("matrix.get: out of range"), 0.0)
 }
 
 // Large positive x → softplus≈x, tanh≈1 → mish≈x.
 test "mish large positive approaches x" {
   let y = mish(matrix.from_lists([[20.0]]))
-  assert(float.abs(matrix.get(y, 0, 0) - 20.0) < 0.0001, "≈ x")
+  assert(float.abs((matrix.get(y, 0, 0) ?? panic("matrix.get: out of range")) - 20.0) < 0.0001, "≈ x")
 }

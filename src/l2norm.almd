@@ -21,6 +21,6 @@ fn l2_normalize(x: Matrix) -> Matrix = {
 // [3,4] → [0.6,0.8] (norm 5). eps shifts it by < 1e-4.
 test "l2_normalize unit row" {
   let y = l2_normalize(matrix.from_lists([[3.0, 4.0]]))
-  assert(float.abs(matrix.get(y, 0, 0) - 0.6) < 0.0001, "x/||x|| col0")
-  assert(float.abs(matrix.get(y, 0, 1) - 0.8) < 0.0001, "x/||x|| col1")
+  assert(float.abs((matrix.get(y, 0, 0) ?? panic("matrix.get: out of range")) - 0.6) < 0.0001, "x/||x|| col0")
+  assert(float.abs((matrix.get(y, 0, 1) ?? panic("matrix.get: out of range")) - 0.8) < 0.0001, "x/||x|| col1")
 }

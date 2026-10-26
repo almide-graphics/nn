@@ -33,7 +33,7 @@ test "weighted variance with uniform weights is the population variance" {
   let x = matrix.from_lists([[1.0, 2.0, 3.0, 4.0]])
   let w = matrix.from_lists([[1.0, 1.0, 1.0, 1.0]])
   let y = weighted_var_rows(x, w)
-  assert(float.abs(matrix.get(y, 0, 0) - 1.25) < 0.000000001, "5/4=1.25")
+  assert(float.abs((matrix.get(y, 0, 0) ?? panic("matrix.get: out of range")) - 1.25) < 0.000000001, "5/4=1.25")
 }
 
 // a single weighted point has no spread → 0.
@@ -41,5 +41,5 @@ test "weighted variance of a single weighted point is zero" {
   let x = matrix.from_lists([[1.0, 2.0, 3.0]])
   let w = matrix.from_lists([[0.0, 1.0, 0.0]])
   let y = weighted_var_rows(x, w)
-  assert(float.abs(matrix.get(y, 0, 0)) < 0.0000001, "0")
+  assert(float.abs(matrix.get(y, 0, 0) ?? panic("matrix.get: out of range")) < 0.0000001, "0")
 }

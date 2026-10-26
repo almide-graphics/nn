@@ -20,12 +20,12 @@ fn l1_normalize_rows(x: Matrix) -> Matrix = {
 // Σ|output| = 1.
 test "l1_normalize makes abs sum one" {
   let y = l1_normalize_rows(matrix.from_lists([[1.0, 1.0, 1.0, 1.0]]))
-  assert(float.abs(matrix.get(y, 0, 0) - 0.25) < 0.000000001, "1/4")
+  assert(float.abs((matrix.get(y, 0, 0) ?? panic("matrix.get: out of range")) - 0.25) < 0.000000001, "1/4")
 }
 
 // Signs preserved, magnitudes scaled by 1/Σ|x|.
 test "l1_normalize preserves signs" {
   let y = l1_normalize_rows(matrix.from_lists([[3.0, -1.0]]))
-  assert(float.abs(matrix.get(y, 0, 0) - 0.75) < 0.000000001, "0.75")
-  assert(float.abs(matrix.get(y, 0, 1) + 0.25) < 0.000000001, "-0.25")
+  assert(float.abs((matrix.get(y, 0, 0) ?? panic("matrix.get: out of range")) - 0.75) < 0.000000001, "0.75")
+  assert(float.abs((matrix.get(y, 0, 1) ?? panic("matrix.get: out of range")) + 0.25) < 0.000000001, "-0.25")
 }

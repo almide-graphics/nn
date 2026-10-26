@@ -30,16 +30,16 @@ fn cumabsmax_minus_abs_rows(x: Matrix) -> Matrix = {
 test "cumabsmax-minus-abs measures the fall below the running magnitude peak" {
   let x = matrix.from_lists([[2.0], [0.0 - 5.0], [1.0], [0.0 - 3.0]])
   let y = cumabsmax_minus_abs_rows(x)
-  assert_eq(matrix.get(y, 0, 0), 0.0)
-  assert_eq(matrix.get(y, 1, 0), 0.0)
-  assert_eq(matrix.get(y, 2, 0), 4.0)
-  assert_eq(matrix.get(y, 3, 0), 2.0)
+  assert_eq(matrix.get(y, 0, 0) ?? panic("matrix.get: out of range"), 0.0)
+  assert_eq(matrix.get(y, 1, 0) ?? panic("matrix.get: out of range"), 0.0)
+  assert_eq(matrix.get(y, 2, 0) ?? panic("matrix.get: out of range"), 4.0)
+  assert_eq(matrix.get(y, 3, 0) ?? panic("matrix.get: out of range"), 2.0)
 }
 
 // the first row sets the initial peak, so its drawdown is zero everywhere.
 test "cumabsmax-minus-abs starts at zero on the first row" {
   let x = matrix.from_lists([[0.0 - 2.0, 5.0], [7.0, 0.0 - 1.0]])
   let y = cumabsmax_minus_abs_rows(x)
-  assert_eq(matrix.get(y, 0, 0), 0.0)
-  assert_eq(matrix.get(y, 0, 1), 0.0)
+  assert_eq(matrix.get(y, 0, 0) ?? panic("matrix.get: out of range"), 0.0)
+  assert_eq(matrix.get(y, 0, 1) ?? panic("matrix.get: out of range"), 0.0)
 }

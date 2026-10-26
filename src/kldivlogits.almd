@@ -44,7 +44,7 @@ test "kl of identical logit distributions is zero" {
   let a = matrix.from_lists([[1.0, 2.0, 3.0]])
   let b = matrix.from_lists([[1.0, 2.0, 3.0]])
   let y = kl_div_logits_rows(a, b)
-  assert(float.abs(matrix.get(y, 0, 0)) < 0.000000001, "KL(p‖p) = 0")
+  assert(float.abs(matrix.get(y, 0, 0) ?? panic("matrix.get: out of range")) < 0.000000001, "KL(p‖p) = 0")
 }
 
 // p = softmax([0,0]) = [½,½], q = softmax([0, log 3]) = [¼,¾]:
@@ -53,5 +53,5 @@ test "kl from logits matches the two-class closed form" {
   let a = matrix.from_lists([[0.0, 0.0]])
   let b = matrix.from_lists([[0.0, 1.0986122886681098]])
   let y = kl_div_logits_rows(a, b)
-  assert(float.abs(matrix.get(y, 0, 0) - 0.14384103622589042) < 0.000000001, "½(2log2−log3)")
+  assert(float.abs((matrix.get(y, 0, 0) ?? panic("matrix.get: out of range")) - 0.14384103622589042) < 0.000000001, "½(2log2−log3)")
 }

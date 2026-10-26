@@ -26,7 +26,7 @@ fn dot_rows(a: Matrix, b: Matrix) -> Matrix = {
 test "dot of a row with itself is squared norm" {
   let a = matrix.from_lists([[3.0, 4.0]])
   let y = dot_rows(a, a)
-  assert_eq(matrix.get(y, 0, 0), 25.0)
+  assert_eq(matrix.get(y, 0, 0) ?? panic("matrix.get: out of range"), 25.0)
 }
 
 // orthogonal rows → 0.
@@ -34,5 +34,5 @@ test "dot of orthogonal rows is zero" {
   let a = matrix.from_lists([[1.0, 0.0]])
   let b = matrix.from_lists([[0.0, 1.0]])
   let y = dot_rows(a, b)
-  assert_eq(matrix.get(y, 0, 0), 0.0)
+  assert_eq(matrix.get(y, 0, 0) ?? panic("matrix.get: out of range"), 0.0)
 }

@@ -83,7 +83,7 @@ effect fn transcribe(model_bytes: Bytes, mel_bytes: Bytes, mel_frames: Int, max_
   let weights = wl.load_weights(model, config, 4, 4, 51864)
 
   // 2. Reconstruct mel matrix from JS-supplied bytes
-  let mel_mat = matrix.from_bytes_f64_le(mel_bytes, 0, mel_frames, config.n_mels)
+  let mel_mat = matrix.from_bytes_f64_le(mel_bytes, 0, mel_frames, config.n_mels) ?? matrix.zeros(mel_frames, config.n_mels)
 
   let conv1_w = wl.load_conv1_weight(model, config.d_model, config.n_mels)
   let conv1_b = wl.load_conv1_bias(model, config.d_model)

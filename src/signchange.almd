@@ -33,17 +33,17 @@ fn sign_change_rows(x: Matrix) -> Matrix = {
 test "sign-change marks the zero crossings" {
   let x = matrix.from_lists([[1.0], [0.0 - 2.0], [0.0 - 3.0], [4.0]])
   let y = sign_change_rows(x)
-  assert_eq(matrix.get(y, 0, 0), 0.0)
-  assert_eq(matrix.get(y, 1, 0), 1.0)
-  assert_eq(matrix.get(y, 2, 0), 0.0)
-  assert_eq(matrix.get(y, 3, 0), 1.0)
+  assert_eq(matrix.get(y, 0, 0) ?? panic("matrix.get: out of range"), 0.0)
+  assert_eq(matrix.get(y, 1, 0) ?? panic("matrix.get: out of range"), 1.0)
+  assert_eq(matrix.get(y, 2, 0) ?? panic("matrix.get: out of range"), 0.0)
+  assert_eq(matrix.get(y, 3, 0) ?? panic("matrix.get: out of range"), 1.0)
 }
 
 // a constant-sign column never crosses → all zeros.
 test "sign-change is zero on a sign-stable column" {
   let x = matrix.from_lists([[2.0], [5.0], [1.0]])
   let y = sign_change_rows(x)
-  assert_eq(matrix.get(y, 0, 0), 0.0)
-  assert_eq(matrix.get(y, 1, 0), 0.0)
-  assert_eq(matrix.get(y, 2, 0), 0.0)
+  assert_eq(matrix.get(y, 0, 0) ?? panic("matrix.get: out of range"), 0.0)
+  assert_eq(matrix.get(y, 1, 0) ?? panic("matrix.get: out of range"), 0.0)
+  assert_eq(matrix.get(y, 2, 0) ?? panic("matrix.get: out of range"), 0.0)
 }

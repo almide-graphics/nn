@@ -34,12 +34,12 @@ fn magnitude_centroid_rows(x: Matrix) -> Matrix = {
 test "magnitude centroid points at the dominant index" {
   let x = matrix.from_lists([[0.0, 0.0, 5.0, 0.0]])
   let y = magnitude_centroid_rows(x)
-  assert(float.abs(matrix.get(y, 0, 0) - 2.0) < 0.0000001, "10/5=2")
+  assert(float.abs((matrix.get(y, 0, 0) ?? panic("matrix.get: out of range")) - 2.0) < 0.0000001, "10/5=2")
 }
 
 // symmetric magnitude at indices 0 and 3: centroid is the middle 1.5.
 test "magnitude centroid of a symmetric magnitude is the middle" {
   let x = matrix.from_lists([[1.0, 0.0, 0.0, 1.0]])
   let y = magnitude_centroid_rows(x)
-  assert(float.abs(matrix.get(y, 0, 0) - 1.5) < 0.0000001, "(0+3)/2=1.5")
+  assert(float.abs((matrix.get(y, 0, 0) ?? panic("matrix.get: out of range")) - 1.5) < 0.0000001, "(0+3)/2=1.5")
 }

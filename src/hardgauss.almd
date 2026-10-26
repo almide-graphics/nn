@@ -10,13 +10,13 @@ fn hard_gaussian(m: Matrix) -> Matrix =
 // peak 1 at 0; 1-0.25=0.75 at 0.5.
 test "hard_gaussian peak and interior" {
   let y = hard_gaussian(matrix.from_lists([[0.0, 0.5]]))
-  assert_eq(matrix.get(y, 0, 0), 1.0)
-  assert_eq(matrix.get(y, 0, 1), 0.75)
+  assert_eq(matrix.get(y, 0, 0) ?? panic("matrix.get: out of range"), 1.0)
+  assert_eq(matrix.get(y, 0, 1) ?? panic("matrix.get: out of range"), 0.75)
 }
 
 // exactly 0 at and beyond |x|=1.
 test "hard_gaussian zero outside unit" {
   let y = hard_gaussian(matrix.from_lists([[1.0, -2.0]]))
-  assert_eq(matrix.get(y, 0, 0), 0.0)
-  assert_eq(matrix.get(y, 0, 1), 0.0)
+  assert_eq(matrix.get(y, 0, 0) ?? panic("matrix.get: out of range"), 0.0)
+  assert_eq(matrix.get(y, 0, 1) ?? panic("matrix.get: out of range"), 0.0)
 }

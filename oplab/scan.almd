@@ -40,7 +40,7 @@ effect fn main() -> () = {
   while r < t {
     var c = 0
     while c < d {
-      s = s + float.to_string(matrix.get(y, r, c)) + " "
+      s = s + float.to_string(matrix.get(y, r, c) ?? panic("matrix.get: out of range")) + " "
       c = c + 1
     }
     r = r + 1

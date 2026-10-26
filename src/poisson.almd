@@ -30,7 +30,7 @@ test "poisson with zero target equals mean prediction" {
   let p = matrix.from_lists([[2.0, 2.0]])
   let t = matrix.from_lists([[0.0, 0.0]])
   let y = poisson_loss_rows(p, t)
-  assert_eq(matrix.get(y, 0, 0), 2.0)
+  assert_eq(matrix.get(y, 0, 0) ?? panic("matrix.get: out of range"), 2.0)
 }
 
 // p=1, t=1: 1 − 1·log1 = 1.
@@ -38,5 +38,5 @@ test "poisson at unit rate and count is one" {
   let p = matrix.from_lists([[1.0]])
   let t = matrix.from_lists([[1.0]])
   let y = poisson_loss_rows(p, t)
-  assert_eq(matrix.get(y, 0, 0), 1.0)
+  assert_eq(matrix.get(y, 0, 0) ?? panic("matrix.get: out of range"), 1.0)
 }

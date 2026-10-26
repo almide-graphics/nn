@@ -32,12 +32,12 @@ fn signed_geomean_rows(x: Matrix) -> Matrix = {
 test "signed-geomean of [2,8] is +4, the root of the product" {
   let x = matrix.from_lists([[2.0, 8.0]])
   let y = signed_geomean_rows(x)
-  assert(float.abs(matrix.get(y, 0, 0) - 4.0) < 0.000000001, "sqrt(16)=4")
+  assert(float.abs((matrix.get(y, 0, 0) ?? panic("matrix.get: out of range")) - 4.0) < 0.000000001, "sqrt(16)=4")
 }
 
 // one negative flips the sign: row [−2,8] → magnitude 4, sign − → −4.
 test "signed-geomean carries the sign of the product" {
   let x = matrix.from_lists([[0.0 - 2.0, 8.0]])
   let y = signed_geomean_rows(x)
-  assert(float.abs(matrix.get(y, 0, 0) - (0.0 - 4.0)) < 0.000000001, "−sqrt(16)=−4")
+  assert(float.abs((matrix.get(y, 0, 0) ?? panic("matrix.get: out of range")) - (0.0 - 4.0)) < 0.000000001, "−sqrt(16)=−4")
 }

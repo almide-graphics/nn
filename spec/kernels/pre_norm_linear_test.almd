@@ -22,10 +22,10 @@ test "pre_norm_linear: nested form matches unfused chain" {
   let normed = kernels.layer_norm_rows(x, gamma, beta, 0.00001)
   let expected = kernels.linear_row(normed, weight, bias)
   let actual = kernels.linear_row(kernels.layer_norm_rows(x, gamma, beta, 0.00001), weight, bias)
-  assert(approx_eq(matrix.get(expected, 0, 0), matrix.get(actual, 0, 0), 0.00001))
-  assert(approx_eq(matrix.get(expected, 0, 1), matrix.get(actual, 0, 1), 0.00001))
-  assert(approx_eq(matrix.get(expected, 1, 0), matrix.get(actual, 1, 0), 0.00001))
-  assert(approx_eq(matrix.get(expected, 1, 1), matrix.get(actual, 1, 1), 0.00001))
+  assert(approx_eq(matrix.get(expected, 0, 0) ?? panic("matrix.get: out of range"), matrix.get(actual, 0, 0) ?? panic("matrix.get: out of range"), 0.00001))
+  assert(approx_eq(matrix.get(expected, 0, 1) ?? panic("matrix.get: out of range"), matrix.get(actual, 0, 1) ?? panic("matrix.get: out of range"), 0.00001))
+  assert(approx_eq(matrix.get(expected, 1, 0) ?? panic("matrix.get: out of range"), matrix.get(actual, 1, 0) ?? panic("matrix.get: out of range"), 0.00001))
+  assert(approx_eq(matrix.get(expected, 1, 1) ?? panic("matrix.get: out of range"), matrix.get(actual, 1, 1) ?? panic("matrix.get: out of range"), 0.00001))
 }
 
 test "pre_norm_linear let-split fuses when normalized is single-use" {
@@ -44,7 +44,7 @@ test "pre_norm_linear let-split fuses when normalized is single-use" {
   // Normed: [(1-2)*sqrt(1.5), 0, (3-2)*sqrt(1.5)]
   //       ≈ [-1.2247, 0, 1.2247]
   // Linear row with W=[1,1,1]: sum ≈ 0 (symmetric).
-  assert(approx_eq(matrix.get(y, 0, 0), 0.0, 0.0001))
+  assert(approx_eq(matrix.get(y, 0, 0) ?? panic("matrix.get: out of range"), 0.0, 0.0001))
 }
 
 test "pre_norm_linear let-split skipped when normalized is reused" {
@@ -59,9 +59,9 @@ test "pre_norm_linear let-split skipped when normalized is reused" {
   let bias = [0.0]
   let n = kernels.layer_norm_rows(x, gamma, beta, 0.00001)
   let y = kernels.linear_row(n, weight, bias)
-  let external = matrix.get(n, 0, 1)
+  let external = matrix.get(n, 0, 1) ?? panic("matrix.get: out of range")
   // extra use → no fusion
-  assert(approx_eq(matrix.get(y, 0, 0), 0.0, 0.0001))
+  assert(approx_eq(matrix.get(y, 0, 0) ?? panic("matrix.get: out of range"), 0.0, 0.0001))
   // mean-centered, middle = 0
   assert(approx_eq(external, 0.0, 0.0001))
 }

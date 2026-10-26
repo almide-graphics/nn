@@ -34,7 +34,7 @@ test "an easy triplet has zero loss" {
   let p = matrix.from_lists([[0.0, 0.0]])
   let n = matrix.from_lists([[3.0, 4.0]])
   let z = triplet_loss_rows(a, p, n)
-  assert(float.abs(matrix.get(z, 0, 0)) < 0.000000001, "0−5+1 < 0 → 0")
+  assert(float.abs(matrix.get(z, 0, 0) ?? panic("matrix.get: out of range")) < 0.000000001, "0−5+1 < 0 → 0")
 }
 
 // violated triplet: positive far (d_ap=5), negative on anchor (d_an=0) → loss 5−0+1 = 6.
@@ -43,5 +43,5 @@ test "a violated triplet incurs loss d_ap − d_an + margin" {
   let p = matrix.from_lists([[3.0, 4.0]])
   let n = matrix.from_lists([[0.0, 0.0]])
   let z = triplet_loss_rows(a, p, n)
-  assert(float.abs(matrix.get(z, 0, 0) - 6.0) < 0.000000001, "5−0+1=6")
+  assert(float.abs((matrix.get(z, 0, 0) ?? panic("matrix.get: out of range")) - 6.0) < 0.000000001, "5−0+1=6")
 }

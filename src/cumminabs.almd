@@ -26,15 +26,15 @@ fn cummin_abs_rows(x: Matrix) -> Matrix = {
 test "cummin abs is the running lower envelope" {
   let x = matrix.from_lists([[3.0], [0.0 - 1.0], [5.0]])
   let y = cummin_abs_rows(x)
-  assert_eq(matrix.get(y, 0, 0), 3.0)
-  assert_eq(matrix.get(y, 1, 0), 1.0)
-  assert_eq(matrix.get(y, 2, 0), 1.0)
+  assert_eq(matrix.get(y, 0, 0) ?? panic("matrix.get: out of range"), 3.0)
+  assert_eq(matrix.get(y, 1, 0) ?? panic("matrix.get: out of range"), 1.0)
+  assert_eq(matrix.get(y, 2, 0) ?? panic("matrix.get: out of range"), 1.0)
 }
 
 // per channel: [[2,-4],[-5,1]] → row1 = [min(2,5), min(4,1)] = [2,1].
 test "cummin abs works per channel" {
   let x = matrix.from_lists([[2.0, 0.0 - 4.0], [0.0 - 5.0, 1.0]])
   let y = cummin_abs_rows(x)
-  assert_eq(matrix.get(y, 1, 0), 2.0)
-  assert_eq(matrix.get(y, 1, 1), 1.0)
+  assert_eq(matrix.get(y, 1, 0) ?? panic("matrix.get: out of range"), 2.0)
+  assert_eq(matrix.get(y, 1, 1) ?? panic("matrix.get: out of range"), 1.0)
 }

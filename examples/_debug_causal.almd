@@ -16,14 +16,14 @@ effect fn main() -> () = {
   let causal = kernels.masked_multi_head_attention(q, k, v, 1)
 
   println("--- non-causal ---")
-  println("pos0: " + float.to_string(matrix.get(non_causal, 0, 0)) + ", " + float.to_string(matrix.get(non_causal, 0, 1)))
-  println("pos1: " + float.to_string(matrix.get(non_causal, 1, 0)) + ", " + float.to_string(matrix.get(non_causal, 1, 1)))
-  println("pos2: " + float.to_string(matrix.get(non_causal, 2, 0)) + ", " + float.to_string(matrix.get(non_causal, 2, 1)))
+  println("pos0: " + float.to_string(matrix.get(non_causal, 0, 0) ?? panic("matrix.get: out of range")) + ", " + float.to_string(matrix.get(non_causal, 0, 1) ?? panic("matrix.get: out of range")))
+  println("pos1: " + float.to_string(matrix.get(non_causal, 1, 0) ?? panic("matrix.get: out of range")) + ", " + float.to_string(matrix.get(non_causal, 1, 1) ?? panic("matrix.get: out of range")))
+  println("pos2: " + float.to_string(matrix.get(non_causal, 2, 0) ?? panic("matrix.get: out of range")) + ", " + float.to_string(matrix.get(non_causal, 2, 1) ?? panic("matrix.get: out of range")))
 
   println("--- causal ---")
-  println("pos0: " + float.to_string(matrix.get(causal, 0, 0)) + ", " + float.to_string(matrix.get(causal, 0, 1)))
-  println("pos1: " + float.to_string(matrix.get(causal, 1, 0)) + ", " + float.to_string(matrix.get(causal, 1, 1)))
-  println("pos2: " + float.to_string(matrix.get(causal, 2, 0)) + ", " + float.to_string(matrix.get(causal, 2, 1)))
+  println("pos0: " + float.to_string(matrix.get(causal, 0, 0) ?? panic("matrix.get: out of range")) + ", " + float.to_string(matrix.get(causal, 0, 1) ?? panic("matrix.get: out of range")))
+  println("pos1: " + float.to_string(matrix.get(causal, 1, 0) ?? panic("matrix.get: out of range")) + ", " + float.to_string(matrix.get(causal, 1, 1) ?? panic("matrix.get: out of range")))
+  println("pos2: " + float.to_string(matrix.get(causal, 2, 0) ?? panic("matrix.get: out of range")) + ", " + float.to_string(matrix.get(causal, 2, 1) ?? panic("matrix.get: out of range")))
 
   println("")
   println("Expected causal pos0 = v[0] = (10, 0)  (only attends to self)")

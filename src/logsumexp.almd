@@ -22,11 +22,11 @@ fn logsumexp_rows(x: Matrix) -> Matrix = {
 // logsumexp([0,0]) = log 2.
 test "logsumexp of equal logits is log n" {
   let y = logsumexp_rows(matrix.from_lists([[0.0, 0.0]]))
-  assert(float.abs(matrix.get(y, 0, 0) - 0.6931471805599453) < 0.000000001, "log 2")
+  assert(float.abs((matrix.get(y, 0, 0) ?? panic("matrix.get: out of range")) - 0.6931471805599453) < 0.000000001, "log 2")
 }
 
 // Single element → that element (smooth max of one value).
 test "logsumexp of single element is identity" {
   let y = logsumexp_rows(matrix.from_lists([[5.0]]))
-  assert(float.abs(matrix.get(y, 0, 0) - 5.0) < 0.000000001, "= x")
+  assert(float.abs((matrix.get(y, 0, 0) ?? panic("matrix.get: out of range")) - 5.0) < 0.000000001, "= x")
 }

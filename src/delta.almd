@@ -36,8 +36,8 @@ test "delta_rule zero-beta is no-op" {
   let k = matrix.from_lists([[0.5], [2.0]])
   let v = matrix.from_lists([[9.0], [3.0]])
   let y = delta_rule_diag(k, v, matrix.from_lists([[0.0], [0.0]]))
-  assert_eq(matrix.get(y, 0, 0), 0.0)
-  assert_eq(matrix.get(y, 1, 0), 0.0)
+  assert_eq(matrix.get(y, 0, 0) ?? panic("matrix.get: out of range"), 0.0)
+  assert_eq(matrix.get(y, 1, 0) ?? panic("matrix.get: out of range"), 0.0)
 }
 
 // β=1, k=1 → full write of the error each step → s_t = v_t.
@@ -45,6 +45,6 @@ test "delta_rule full write stores v" {
   let k = matrix.from_lists([[1.0], [1.0]])
   let v = matrix.from_lists([[3.0], [7.0]])
   let y = delta_rule_diag(k, v, matrix.from_lists([[1.0], [1.0]]))
-  assert_eq(matrix.get(y, 0, 0), 3.0)
-  assert_eq(matrix.get(y, 1, 0), 7.0)
+  assert_eq(matrix.get(y, 0, 0) ?? panic("matrix.get: out of range"), 3.0)
+  assert_eq(matrix.get(y, 1, 0) ?? panic("matrix.get: out of range"), 7.0)
 }

@@ -28,16 +28,16 @@ fn decayed_max_rows(x: Matrix) -> Matrix = {
 test "decayed max holds a peak and leaks by the decay" {
   let x = matrix.from_lists([[10.0], [0.0], [0.0]])
   let y = decayed_max_rows(x)
-  assert(float.abs(matrix.get(y, 0, 0) - 10.0) < 0.000000001, "10")
-  assert(float.abs(matrix.get(y, 1, 0) - 9.0) < 0.000000001, "max(0,0.9·10)=9")
-  assert(float.abs(matrix.get(y, 2, 0) - 8.1) < 0.000000001, "max(0,0.9·9)=8.1")
+  assert(float.abs((matrix.get(y, 0, 0) ?? panic("matrix.get: out of range")) - 10.0) < 0.000000001, "10")
+  assert(float.abs((matrix.get(y, 1, 0) ?? panic("matrix.get: out of range")) - 9.0) < 0.000000001, "max(0,0.9·10)=9")
+  assert(float.abs((matrix.get(y, 2, 0) ?? panic("matrix.get: out of range")) - 8.1) < 0.000000001, "max(0,0.9·9)=8.1")
 }
 
 // a new higher peak overrides the decayed hold: [1,5,2] → [1, 5, 4.5].
 test "decayed max jumps up to a new higher peak" {
   let x = matrix.from_lists([[1.0], [5.0], [2.0]])
   let y = decayed_max_rows(x)
-  assert(float.abs(matrix.get(y, 0, 0) - 1.0) < 0.000000001, "1")
-  assert(float.abs(matrix.get(y, 1, 0) - 5.0) < 0.000000001, "max(5,0.9)=5")
-  assert(float.abs(matrix.get(y, 2, 0) - 4.5) < 0.000000001, "max(2,4.5)=4.5")
+  assert(float.abs((matrix.get(y, 0, 0) ?? panic("matrix.get: out of range")) - 1.0) < 0.000000001, "1")
+  assert(float.abs((matrix.get(y, 1, 0) ?? panic("matrix.get: out of range")) - 5.0) < 0.000000001, "max(5,0.9)=5")
+  assert(float.abs((matrix.get(y, 2, 0) ?? panic("matrix.get: out of range")) - 4.5) < 0.000000001, "max(2,4.5)=4.5")
 }

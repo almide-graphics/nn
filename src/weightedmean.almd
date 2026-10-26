@@ -30,7 +30,7 @@ test "weighted mean with uniform weights is the plain mean" {
   let x = matrix.from_lists([[1.0, 2.0, 3.0, 4.0]])
   let w = matrix.from_lists([[1.0, 1.0, 1.0, 1.0]])
   let y = weighted_mean_rows(x, w)
-  assert(float.abs(matrix.get(y, 0, 0) - 2.5) < 0.000000001, "10/4=2.5")
+  assert(float.abs((matrix.get(y, 0, 0) ?? panic("matrix.get: out of range")) - 2.5) < 0.000000001, "10/4=2.5")
 }
 
 // a one-hot weight selects that element: weight on index 1 → x[1] = 2.
@@ -38,5 +38,5 @@ test "weighted mean concentrates on the heavily weighted entry" {
   let x = matrix.from_lists([[1.0, 2.0, 3.0]])
   let w = matrix.from_lists([[0.0, 1.0, 0.0]])
   let y = weighted_mean_rows(x, w)
-  assert(float.abs(matrix.get(y, 0, 0) - 2.0) < 0.0000001, "2/1=2")
+  assert(float.abs((matrix.get(y, 0, 0) ?? panic("matrix.get: out of range")) - 2.0) < 0.0000001, "2/1=2")
 }

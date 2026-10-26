@@ -47,7 +47,7 @@ fn bitnet_b158_quant_snr_rows(x: Matrix) -> Matrix = {
 test "an already-b1.58 row has near-zero noise and a huge finite SNR" {
   let x = matrix.from_lists([[2.0, 2.0, 0.0 - 2.0, 0.0 - 2.0]])
   let y = bitnet_b158_quant_snr_rows(x)
-  assert(matrix.get(y, 0, 0) > 1000000.0, "exact b1.58 → huge SNR")
+  assert((matrix.get(y, 0, 0) ?? panic("matrix.get: out of range")) > 1000000.0, "exact b1.58 → huge SNR")
 }
 
 // single row [4,1,1,0]: γ=1.5; code [+1,+1,+1,0]; q=[1.5,1.5,1.5,0];
@@ -55,5 +55,5 @@ test "an already-b1.58 row has near-zero noise and a huge finite SNR" {
 test "b1.58-quant-snr is row signal power over b1.58 noise power" {
   let x = matrix.from_lists([[4.0, 1.0, 1.0, 0.0]])
   let y = bitnet_b158_quant_snr_rows(x)
-  assert(float.abs(matrix.get(y, 0, 0) - 2.6666666666666665) < 0.0000001, "8/3")
+  assert(float.abs((matrix.get(y, 0, 0) ?? panic("matrix.get: out of range")) - 2.6666666666666665) < 0.0000001, "8/3")
 }

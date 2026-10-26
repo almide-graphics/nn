@@ -29,7 +29,7 @@ fn chebyshev_dist_rows(a: Matrix, b: Matrix) -> Matrix = {
 test "chebyshev distance of identical rows is zero" {
   let a = matrix.from_lists([[1.0, 2.0, 3.0, 4.0]])
   let y = chebyshev_dist_rows(a, a)
-  assert_eq(matrix.get(y, 0, 0), 0.0)
+  assert_eq(matrix.get(y, 0, 0) ?? panic("matrix.get: out of range"), 0.0)
 }
 
 // max(|1|, |3|) = 3.
@@ -37,5 +37,5 @@ test "chebyshev distance is the max abs difference" {
   let a = matrix.from_lists([[0.0, 0.0]])
   let b = matrix.from_lists([[1.0, 3.0]])
   let y = chebyshev_dist_rows(a, b)
-  assert_eq(matrix.get(y, 0, 0), 3.0)
+  assert_eq(matrix.get(y, 0, 0) ?? panic("matrix.get: out of range"), 3.0)
 }

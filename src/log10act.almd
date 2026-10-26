@@ -8,12 +8,12 @@ fn log10_act(m: Matrix) -> Matrix =
 
 test "log10_act at zero is zero" {
   let y = log10_act(matrix.from_lists([[0.0]]))
-  assert_eq(matrix.get(y, 0, 0), 0.0)
+  assert_eq(matrix.get(y, 0, 0) ?? panic("matrix.get: out of range"), 0.0)
 }
 
 // log10(1+9)=1, log10(1+99)=2.
 test "log10_act at 9 and 99" {
   let y = log10_act(matrix.from_lists([[9.0, 99.0]]))
-  assert(float.abs(matrix.get(y, 0, 0) - 1.0) < 0.000000001, "log10(10)=1")
-  assert(float.abs(matrix.get(y, 0, 1) - 2.0) < 0.000000001, "log10(100)=2")
+  assert(float.abs((matrix.get(y, 0, 0) ?? panic("matrix.get: out of range")) - 1.0) < 0.000000001, "log10(10)=1")
+  assert(float.abs((matrix.get(y, 0, 1) ?? panic("matrix.get: out of range")) - 2.0) < 0.000000001, "log10(100)=2")
 }

@@ -61,54 +61,54 @@ fn approx(a: Float, b: Float) -> Bool =
 
 fn approx_row(m: Matrix, row: Int, expected: List[Float]) -> Bool =
   list.zip(list.range(0, list.len(expected)), expected)
-    |> list.all((pair) => approx(matrix.get(m, row, pair.0), pair.1))
+    |> list.all((pair) => approx(matrix.get(m, row, pair.0) ?? panic("matrix.get: out of range"), pair.1))
 
 // -- Activation tests --
 
 test "relu zeros negatives" {
   let m = matrix.from_lists([[-1.0, 0.0, 2.0, -3.0]])
   let r = relu(m)
-  assert_eq(matrix.get(r, 0, 0), 0.0)
-  assert_eq(matrix.get(r, 0, 1), 0.0)
-  assert_eq(matrix.get(r, 0, 2), 2.0)
-  assert_eq(matrix.get(r, 0, 3), 0.0)
+  assert_eq(matrix.get(r, 0, 0) ?? panic("matrix.get: out of range"), 0.0)
+  assert_eq(matrix.get(r, 0, 1) ?? panic("matrix.get: out of range"), 0.0)
+  assert_eq(matrix.get(r, 0, 2) ?? panic("matrix.get: out of range"), 2.0)
+  assert_eq(matrix.get(r, 0, 3) ?? panic("matrix.get: out of range"), 0.0)
 }
 
 test "gelu at 0 is 0" {
   let m = matrix.from_lists([[0.0]])
   let r = gelu(m)
-  assert(approx(matrix.get(r, 0, 0), 0.0))
+  assert(approx(matrix.get(r, 0, 0) ?? panic("matrix.get: out of range"), 0.0))
 }
 
 test "gelu at 1 is ~0.841" {
   // PyTorch: torch.nn.functional.gelu(torch.tensor(1.0)) = 0.8412
   let m = matrix.from_lists([[1.0]])
   let r = gelu(m)
-  assert(approx(matrix.get(r, 0, 0), 0.841))
+  assert(approx(matrix.get(r, 0, 0) ?? panic("matrix.get: out of range"), 0.841))
 }
 
 test "gelu at -1 is ~-0.159" {
   let m = matrix.from_lists([[-1.0]])
   let r = gelu(m)
-  assert(approx(matrix.get(r, 0, 0), -0.159))
+  assert(approx(matrix.get(r, 0, 0) ?? panic("matrix.get: out of range"), -0.159))
 }
 
 test "sigmoid at 0 is 0.5" {
   let m = matrix.from_lists([[0.0]])
   let r = sigmoid(m)
-  assert(approx(matrix.get(r, 0, 0), 0.5))
+  assert(approx(matrix.get(r, 0, 0) ?? panic("matrix.get: out of range"), 0.5))
 }
 
 test "sigmoid large positive is ~1" {
   let m = matrix.from_lists([[10.0]])
   let r = sigmoid(m)
-  assert(matrix.get(r, 0, 0) > 0.999)
+  assert((matrix.get(r, 0, 0) ?? panic("matrix.get: out of range")) > 0.999)
 }
 
 test "tanh at 0 is 0" {
   let m = matrix.from_lists([[0.0]])
   let r = tanh(m)
-  assert(approx(matrix.get(r, 0, 0), 0.0))
+  assert(approx(matrix.get(r, 0, 0) ?? panic("matrix.get: out of range"), 0.0))
 }
 
 // -- Softmax tests --
@@ -124,15 +124,15 @@ test "softmax rows sum to 1" {
 test "softmax equal inputs give uniform" {
   let m = matrix.from_lists([[1.0, 1.0, 1.0]])
   let s = softmax(m)
-  assert(approx(matrix.get(s, 0, 0), 0.333))
-  assert(approx(matrix.get(s, 0, 1), 0.333))
+  assert(approx(matrix.get(s, 0, 0) ?? panic("matrix.get: out of range"), 0.333))
+  assert(approx(matrix.get(s, 0, 1) ?? panic("matrix.get: out of range"), 0.333))
 }
 
 test "softmax largest gets highest prob" {
   let m = matrix.from_lists([[1.0, 5.0, 2.0]])
   let s = softmax(m)
-  assert(matrix.get(s, 0, 1) > matrix.get(s, 0, 0))
-  assert(matrix.get(s, 0, 1) > matrix.get(s, 0, 2))
+  assert((matrix.get(s, 0, 1) ?? panic("matrix.get: out of range")) > (matrix.get(s, 0, 0) ?? panic("matrix.get: out of range")))
+  assert((matrix.get(s, 0, 1) ?? panic("matrix.get: out of range")) > (matrix.get(s, 0, 2) ?? panic("matrix.get: out of range")))
 }
 
 // -- LayerNorm tests --
@@ -155,8 +155,8 @@ test "layer_norm with gamma and beta" {
   let gamma = [2.0, 2.0]
   let beta = [10.0, 10.0]
   let n = layer_norm(m, gamma, beta)
-  assert(approx(matrix.get(n, 0, 0), 8.0))
-  assert(approx(matrix.get(n, 0, 1), 12.0))
+  assert(approx(matrix.get(n, 0, 0) ?? panic("matrix.get: out of range"), 8.0))
+  assert(approx(matrix.get(n, 0, 1) ?? panic("matrix.get: out of range"), 12.0))
 }
 
 // -- Linear tests --
@@ -176,9 +176,9 @@ test "linear 2x3 @ 4x3 + bias" {
   assert_eq(t.rows(y), 2)
   assert_eq(t.cols(y), 4)
   // Row 0: [1,0,0] @ W^T + bias = [1+0.1, 0+0.2, 0+0.3, 1+0.4] = [1.1, 0.2, 0.3, 1.4]
-  assert(approx(matrix.get(y, 0, 0), 1.1))
-  assert(approx(matrix.get(y, 0, 1), 0.2))
-  assert(approx(matrix.get(y, 0, 3), 1.4))
+  assert(approx(matrix.get(y, 0, 0) ?? panic("matrix.get: out of range"), 1.1))
+  assert(approx(matrix.get(y, 0, 1) ?? panic("matrix.get: out of range"), 0.2))
+  assert(approx(matrix.get(y, 0, 3) ?? panic("matrix.get: out of range"), 1.4))
   // Row 1: [0,1,0] @ W^T + bias = [0+0.1, 1+0.2, 0+0.3, 1+0.4] = [0.1, 1.2, 0.3, 1.4]
-  assert(approx(matrix.get(y, 1, 1), 1.2))
+  assert(approx(matrix.get(y, 1, 1) ?? panic("matrix.get: out of range"), 1.2))
 }

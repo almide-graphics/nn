@@ -33,12 +33,12 @@ fn magnitude_entropy_rows(x: Matrix) -> Matrix = {
 test "uniform magnitudes give maximal entropy log(D)" {
   let x = matrix.from_lists([[2.0, 2.0, 2.0, 2.0]])
   let y = magnitude_entropy_rows(x)
-  assert(float.abs(matrix.get(y, 0, 0) - 1.3862943611198906) < 0.000000001, "log 4")
+  assert(float.abs((matrix.get(y, 0, 0) ?? panic("matrix.get: out of range")) - 1.3862943611198906) < 0.000000001, "log 4")
 }
 
 // all energy in one coordinate → near-zero magnitude entropy (sign-blind).
 test "a single-nonzero row has near-zero magnitude entropy" {
   let x = matrix.from_lists([[5.0, 0.0, 0.0, 0.0]])
   let y = magnitude_entropy_rows(x)
-  assert(float.abs(matrix.get(y, 0, 0)) < 0.000001, "concentrated → ≈ 0")
+  assert(float.abs(matrix.get(y, 0, 0) ?? panic("matrix.get: out of range")) < 0.000001, "concentrated → ≈ 0")
 }

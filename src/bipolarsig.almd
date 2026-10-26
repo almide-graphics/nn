@@ -8,11 +8,11 @@ fn bipolar_sigmoid(m: Matrix) -> Matrix =
 
 test "bipolar_sigmoid at zero is zero" {
   let y = bipolar_sigmoid(matrix.from_lists([[0.0]]))
-  assert_eq(matrix.get(y, 0, 0), 0.0)
+  assert_eq(matrix.get(y, 0, 0) ?? panic("matrix.get: out of range"), 0.0)
 }
 
 test "bipolar_sigmoid saturates to plus/minus one" {
   let y = bipolar_sigmoid(matrix.from_lists([[30.0, -30.0]]))
-  assert(float.abs(matrix.get(y, 0, 0) - 1.0) < 0.000000001, "→ 1")
-  assert(float.abs(matrix.get(y, 0, 1) + 1.0) < 0.000000001, "→ -1")
+  assert(float.abs((matrix.get(y, 0, 0) ?? panic("matrix.get: out of range")) - 1.0) < 0.000000001, "→ 1")
+  assert(float.abs((matrix.get(y, 0, 1) ?? panic("matrix.get: out of range")) + 1.0) < 0.000000001, "→ -1")
 }

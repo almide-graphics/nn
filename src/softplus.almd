@@ -9,5 +9,5 @@ fn softplus(m: Matrix) -> Matrix =
 
 test "softplus at zero is log 2" {
   let y = softplus(matrix.from_lists([[0.0]]))
-  assert(float.abs(matrix.get(y, 0, 0) - 0.6931471805599453) < 0.000000001, "softplus(0)=ln2")
+  assert(float.abs((matrix.get(y, 0, 0) ?? panic("matrix.get: out of range")) - 0.6931471805599453) < 0.000000001, "softplus(0)=ln2")
 }

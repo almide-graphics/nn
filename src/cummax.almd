@@ -25,16 +25,16 @@ fn cummax_rows(x: Matrix) -> Matrix = {
 test "cummax accumulates the running max down rows" {
   let x = matrix.from_lists([[1.0, 2.0], [3.0, 1.0], [2.0, 5.0]])
   let y = cummax_rows(x)
-  assert_eq(matrix.get(y, 0, 0), 1.0)
-  assert_eq(matrix.get(y, 1, 0), 3.0)
-  assert_eq(matrix.get(y, 2, 1), 5.0)
+  assert_eq(matrix.get(y, 0, 0) ?? panic("matrix.get: out of range"), 1.0)
+  assert_eq(matrix.get(y, 1, 0) ?? panic("matrix.get: out of range"), 3.0)
+  assert_eq(matrix.get(y, 2, 1) ?? panic("matrix.get: out of range"), 5.0)
 }
 
 // single channel stays at the running peak: 5,5,8.
 test "cummax holds the peak" {
   let x = matrix.from_lists([[5.0], [3.0], [8.0]])
   let y = cummax_rows(x)
-  assert_eq(matrix.get(y, 0, 0), 5.0)
-  assert_eq(matrix.get(y, 1, 0), 5.0)
-  assert_eq(matrix.get(y, 2, 0), 8.0)
+  assert_eq(matrix.get(y, 0, 0) ?? panic("matrix.get: out of range"), 5.0)
+  assert_eq(matrix.get(y, 1, 0) ?? panic("matrix.get: out of range"), 5.0)
+  assert_eq(matrix.get(y, 2, 0) ?? panic("matrix.get: out of range"), 8.0)
 }

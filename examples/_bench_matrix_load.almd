@@ -23,8 +23,8 @@ fn bench_new(model: gw.Model, t: gw.TensorMeta) -> Int = {
   let rows = list.get(t.dims, 0) ?? 1
   let cols = list.get(t.dims, 1) ?? 1
   let m = match t.ftype {
-    0 => matrix.from_bytes_f32_le(model.data, t.data_offset, rows, cols),
-    1 => matrix.from_bytes_f16_le(model.data, t.data_offset, rows, cols),
+    0 => matrix.from_bytes_f32_le(model.data, t.data_offset, rows, cols) ?? matrix.zeros(rows, cols),
+    1 => matrix.from_bytes_f16_le(model.data, t.data_offset, rows, cols) ?? matrix.zeros(rows, cols),
     _ => matrix.zeros(1, 1),
   }
   let (r, c) = matrix.shape(m)

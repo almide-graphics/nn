@@ -29,7 +29,7 @@ test "bce at half is log2" {
   let p = matrix.from_lists([[0.5, 0.5]])
   let t = matrix.from_lists([[1.0, 0.0]])
   let y = bce_rows(p, t)
-  assert(float.abs(matrix.get(y, 0, 0) - 0.6931471805599453) < 0.000000001, "log2")
+  assert(float.abs((matrix.get(y, 0, 0) ?? panic("matrix.get: out of range")) - 0.6931471805599453) < 0.000000001, "log2")
 }
 
 // confident-correct predictions give strictly lower loss than the p=0.5 case.
@@ -37,6 +37,6 @@ test "bce confident correct gives lower loss" {
   let p = matrix.from_lists([[0.9, 0.1]])
   let t = matrix.from_lists([[1.0, 0.0]])
   let y = bce_rows(p, t)
-  assert(matrix.get(y, 0, 0) > 0.0, "positive")
-  assert(matrix.get(y, 0, 0) < 0.6931471805599453, "< log2")
+  assert((matrix.get(y, 0, 0) ?? panic("matrix.get: out of range")) > 0.0, "positive")
+  assert((matrix.get(y, 0, 0) ?? panic("matrix.get: out of range")) < 0.6931471805599453, "< log2")
 }

@@ -10,12 +10,12 @@ fn relu_tanh(m: Matrix) -> Matrix =
 // 0 for x≤0 (incl. 0).
 test "relu_tanh is zero for x<=0" {
   let y = relu_tanh(matrix.from_lists([[-3.0, 0.0]]))
-  assert_eq(matrix.get(y, 0, 0), 0.0)
-  assert_eq(matrix.get(y, 0, 1), 0.0)
+  assert_eq(matrix.get(y, 0, 0) ?? panic("matrix.get: out of range"), 0.0)
+  assert_eq(matrix.get(y, 0, 1) ?? panic("matrix.get: out of range"), 0.0)
 }
 
 // tanh(1) for x=1.
 test "relu_tanh is tanh for x>0" {
   let y = relu_tanh(matrix.from_lists([[1.0]]))
-  assert(float.abs(matrix.get(y, 0, 0) - 0.7615941559557649) < 0.000000001, "tanh(1)")
+  assert(float.abs((matrix.get(y, 0, 0) ?? panic("matrix.get: out of range")) - 0.7615941559557649) < 0.000000001, "tanh(1)")
 }

@@ -146,7 +146,7 @@ fn extract_samples_loop(data: Bytes, start: Int, count: Int, channels: Int, bits
 effect fn load(path: String) -> Result[WavData, String] =
   match fs.read_bytes(path) {
     err(e) => err("failed to read " + path + ": " + e)
-    ok(raw) => parse(bytes.from_list(raw))
+    ok(raw) => parse(raw)
   }
 
 // ── Resampling (simple linear interpolation) ──

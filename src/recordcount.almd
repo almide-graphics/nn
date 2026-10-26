@@ -41,16 +41,16 @@ fn record_count_rows(x: Matrix) -> Matrix = {
 test "record count of an increasing column increments every step" {
   let x = matrix.from_lists([[1.0], [2.0], [3.0]])
   let y = record_count_rows(x)
-  assert_eq(matrix.get(y, 0, 0), 1.0)
-  assert_eq(matrix.get(y, 1, 0), 2.0)
-  assert_eq(matrix.get(y, 2, 0), 3.0)
+  assert_eq(matrix.get(y, 0, 0) ?? panic("matrix.get: out of range"), 1.0)
+  assert_eq(matrix.get(y, 1, 0) ?? panic("matrix.get: out of range"), 2.0)
+  assert_eq(matrix.get(y, 2, 0) ?? panic("matrix.get: out of range"), 3.0)
 }
 
 // a decreasing column: only the first entry is a record → [1,1,1].
 test "record count of a decreasing column stays at one" {
   let x = matrix.from_lists([[3.0], [2.0], [1.0]])
   let y = record_count_rows(x)
-  assert_eq(matrix.get(y, 0, 0), 1.0)
-  assert_eq(matrix.get(y, 1, 0), 1.0)
-  assert_eq(matrix.get(y, 2, 0), 1.0)
+  assert_eq(matrix.get(y, 0, 0) ?? panic("matrix.get: out of range"), 1.0)
+  assert_eq(matrix.get(y, 1, 0) ?? panic("matrix.get: out of range"), 1.0)
+  assert_eq(matrix.get(y, 2, 0) ?? panic("matrix.get: out of range"), 1.0)
 }

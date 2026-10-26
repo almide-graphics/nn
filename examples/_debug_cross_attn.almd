@@ -11,8 +11,8 @@ effect fn main() -> () = {
 
   let out = kernels.multi_head_attention(q, k, v, 1)
   println("cross-attn shape: " + int.to_string(matrix.rows(out)) + "x" + int.to_string(matrix.cols(out)))
-  println("pos0: " + float.to_string(matrix.get(out, 0, 0)) + ", " + float.to_string(matrix.get(out, 0, 1)))
-  println("pos1: " + float.to_string(matrix.get(out, 1, 0)) + ", " + float.to_string(matrix.get(out, 1, 1)))
+  println("pos0: " + float.to_string(matrix.get(out, 0, 0) ?? panic("matrix.get: out of range")) + ", " + float.to_string(matrix.get(out, 0, 1) ?? panic("matrix.get: out of range")))
+  println("pos1: " + float.to_string(matrix.get(out, 1, 0) ?? panic("matrix.get: out of range")) + ", " + float.to_string(matrix.get(out, 1, 1) ?? panic("matrix.get: out of range")))
 
   // Expected: q[0]=(1,0) aligns with k[0]=(1,0), so pos0 output ≈ v[0] = (10, 0)
   //           q[1]=(0,1) aligns with k[2]=(0,1), so pos1 output ≈ v[2] = (5, 5)

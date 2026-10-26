@@ -64,12 +64,12 @@ test "kernel e2e: attention + SiLU block matches independent golden" {
   let out = h + g
   // Golden: independent pure-Python reference, exact libm exp.
   let tol = 0.00001
-  assert(approx_eq(matrix.get(out, 0, 0), -0.020879734419, tol))
-  assert(approx_eq(matrix.get(out, 0, 1), -0.112295720075, tol))
-  assert(approx_eq(matrix.get(out, 0, 2), 0.436994755551, tol))
-  assert(approx_eq(matrix.get(out, 0, 3), -0.378460838425, tol))
-  assert(approx_eq(matrix.get(out, 1, 0), -0.484824851486, tol))
-  assert(approx_eq(matrix.get(out, 1, 1), 0.984807656918, tol))
-  assert(approx_eq(matrix.get(out, 1, 2), -0.4988798046, tol))
-  assert(approx_eq(matrix.get(out, 1, 3), 1.111784016365, tol))
+  assert(approx_eq(matrix.get(out, 0, 0) ?? panic("matrix.get: out of range"), -0.020879734419, tol))
+  assert(approx_eq(matrix.get(out, 0, 1) ?? panic("matrix.get: out of range"), -0.112295720075, tol))
+  assert(approx_eq(matrix.get(out, 0, 2) ?? panic("matrix.get: out of range"), 0.436994755551, tol))
+  assert(approx_eq(matrix.get(out, 0, 3) ?? panic("matrix.get: out of range"), -0.378460838425, tol))
+  assert(approx_eq(matrix.get(out, 1, 0) ?? panic("matrix.get: out of range"), -0.484824851486, tol))
+  assert(approx_eq(matrix.get(out, 1, 1) ?? panic("matrix.get: out of range"), 0.984807656918, tol))
+  assert(approx_eq(matrix.get(out, 1, 2) ?? panic("matrix.get: out of range"), -0.4988798046, tol))
+  assert(approx_eq(matrix.get(out, 1, 3) ?? panic("matrix.get: out of range"), 1.111784016365, tol))
 }

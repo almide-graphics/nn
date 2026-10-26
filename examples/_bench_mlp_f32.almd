@@ -11,7 +11,7 @@ effect fn bench(label: String, seq: Int, d_in: Int, d_mid: Int, iters: Int) -> (
   let b1: List[Float] = list.range(0, d_mid) |> list.map((_) => 0.1)
   let b2: List[Float] = list.range(0, d_in)  |> list.map((_) => 0.1)
   // warm
-  let _w = matrix.get(x * w1, 0, 0)
+  let _w = matrix.get(x * w1, 0, 0) ?? panic("matrix.get: out of range")
 
   let t0 = datetime.now_ms()
   var i = 0
@@ -23,7 +23,7 @@ effect fn bench(label: String, seq: Int, d_in: Int, d_mid: Int, iters: Int) -> (
     let a   = kernels.gelu(h1b)
     let h2  = a * w2
     let out = matrix.broadcast_add_row(h2, b2)
-    acc = acc + matrix.get(out, 0, 0)
+    acc = acc + (matrix.get(out, 0, 0) ?? panic("matrix.get: out of range"))
     i = i + 1
   }
   let el = datetime.now_ms() - t0

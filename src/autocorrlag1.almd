@@ -36,12 +36,12 @@ fn autocorr_lag1_rows(x: Matrix) -> Matrix = {
 test "a smooth ramp has positive lag-1 autocorrelation" {
   let x = matrix.from_lists([[1.0, 2.0, 3.0, 4.0]])
   let y = autocorr_lag1_rows(x)
-  assert(float.abs(matrix.get(y, 0, 0) - 0.25) < 0.000000001, "1.25/5")
+  assert(float.abs((matrix.get(y, 0, 0) ?? panic("matrix.get: out of range")) - 0.25) < 0.000000001, "1.25/5")
 }
 
 // alternating [1,−1,1,−1]: μ=0, num=−3, den=4 → −0.75 (negative).
 test "an alternating row has negative lag-1 autocorrelation" {
   let x = matrix.from_lists([[1.0, 0.0 - 1.0, 1.0, 0.0 - 1.0]])
   let y = autocorr_lag1_rows(x)
-  assert(float.abs(matrix.get(y, 0, 0) - (0.0 - 0.75)) < 0.000000001, "−3/4")
+  assert(float.abs((matrix.get(y, 0, 0) ?? panic("matrix.get: out of range")) - (0.0 - 0.75)) < 0.000000001, "−3/4")
 }
