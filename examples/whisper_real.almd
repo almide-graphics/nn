@@ -23,7 +23,7 @@ import self.transformer as tf
 import self.activations as act
 import self.mel as mel_mod
 import env
-import nnlib
+import self.kernels
 
 // Special-token labels for Whisper tiny.en (n_vocab=51864). Values taken
 // straight from whisper.cpp src/whisper.cpp so there is one source of truth.
@@ -128,13 +128,13 @@ effect fn main() -> () = {
   // conv1: (T, 80) → (T, 384), kernel=3 stride=1 padding=1
   let conv1_w = wl.load_conv1_weight(model, config.d_model, config.n_mels)
   let conv1_b = wl.load_conv1_bias(model, config.d_model)
-  let after_conv1 = nnlib.gelu(nnlib.conv1d(mel_mat, conv1_w, conv1_b, 3, 1, 1))
+  let after_conv1 = kernels.gelu(kernels.conv1d(mel_mat, conv1_w, conv1_b, 3, 1, 1))
   println("after conv1+gelu: " + int.to_string(matrix.rows(after_conv1)) + "x" + int.to_string(matrix.cols(after_conv1)))
 
   // conv2: (T, 384) → (T/2, 384), kernel=3 stride=2 padding=1
   let conv2_w = wl.load_conv2_weight(model, config.d_model)
   let conv2_b = wl.load_conv2_bias(model, config.d_model)
-  let after_conv2 = nnlib.gelu(nnlib.conv1d(after_conv1, conv2_w, conv2_b, 3, 2, 1))
+  let after_conv2 = kernels.gelu(kernels.conv1d(after_conv1, conv2_w, conv2_b, 3, 2, 1))
   println("after conv2+gelu: " + int.to_string(matrix.rows(after_conv2)) + "x" + int.to_string(matrix.cols(after_conv2)))
 
   // Add positional embedding (truncated to current time steps)

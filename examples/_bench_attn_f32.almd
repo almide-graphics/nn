@@ -4,7 +4,7 @@
 //   scores = softmax(Q @ K^T / sqrt(d))
 //   out = scores @ V @ Wo
 import env
-import nnlib
+import self.kernels
 
 effect fn bench(label: String, seq: Int, d: Int, iters: Int) -> () = {
   let x  = matrix.ones(seq, d) |> (m) => matrix.scale(m, 0.001)
@@ -16,7 +16,7 @@ effect fn bench(label: String, seq: Int, d: Int, iters: Int) -> () = {
   let beta:  List[Float] = list.range(0, d) |> list.map((_) => 0.0)
   let scale_factor = 1.0 / math.sqrt(float.from(d))
   // warm
-  let _w = matrix.get(nnlib.layer_norm_rows(x, gamma, beta, 0.00001), 0, 0)
+  let _w = matrix.get(kernels.layer_norm_rows(x, gamma, beta, 0.00001), 0, 0)
 
   let t0 = datetime.now_ms()
   var i = 0
@@ -24,12 +24,12 @@ effect fn bench(label: String, seq: Int, d: Int, iters: Int) -> () = {
   while i < iters {
     let eps_iter = 1.0 + float.from(i) * 0.000000001
     let x_i  = matrix.scale(x, eps_iter)
-    let x_ln = nnlib.layer_norm_rows(x_i, gamma, beta, 0.00001)
+    let x_ln = kernels.layer_norm_rows(x_i, gamma, beta, 0.00001)
     let q = x_ln * wq
     let k = x_ln * wk
     let v = x_ln * wv
     let scores = matrix.scale(q * matrix.transpose(k), scale_factor)
-    let weights = nnlib.softmax_rows(scores)
+    let weights = kernels.softmax_rows(scores)
     let attn = weights * v
     let out = attn * wo
     acc = acc + matrix.get(out, 0, 0)

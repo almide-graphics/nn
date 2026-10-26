@@ -2,7 +2,7 @@
 //   y = gelu(X @ W1 + b1) @ W2 + b2
 // Stresses matmul + bias + gelu + matmul + bias, all SmallF32 path.
 import env
-import nnlib
+import self.kernels
 
 effect fn bench(label: String, seq: Int, d_in: Int, d_mid: Int, iters: Int) -> () = {
   let x  = matrix.ones(seq, d_in)  |> (m) => matrix.scale(m, 0.001)
@@ -20,7 +20,7 @@ effect fn bench(label: String, seq: Int, d_in: Int, d_mid: Int, iters: Int) -> (
     let eps = 1.0 + float.from(i) * 0.000000001
     let h1  = matrix.scale(x * w1, eps)       // X * eps @ W1
     let h1b = matrix.broadcast_add_row(h1, b1)
-    let a   = nnlib.gelu(h1b)
+    let a   = kernels.gelu(h1b)
     let h2  = a * w2
     let out = matrix.broadcast_add_row(h2, b2)
     acc = acc + matrix.get(out, 0, 0)

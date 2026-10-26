@@ -5,7 +5,7 @@
 
 import math
 import self.tensor as t
-import nnlib
+import self.kernels
 
 // ── Activation functions (element-wise via matrix.map) ──
 
@@ -17,7 +17,7 @@ fn gelu(m: Matrix) -> Matrix =
   // (burn+BLAS for `almide run`, pure Vec<f64> otherwise). Previously
   // this used matrix.map with a lambda, which forced per-element Rust
   // closure calls and a list-of-list round-trip.
-  nnlib.gelu(m)
+  kernels.gelu(m)
 
 fn sigmoid(m: Matrix) -> Matrix =
   matrix.map(m, (x) => 1.0 / (1.0 + math.exp(0.0 - x)))
@@ -31,12 +31,12 @@ fn tanh(m: Matrix) -> Matrix =
 // ── Softmax (row-wise, numerically stable) ──
 
 fn softmax(m: Matrix) -> Matrix =
-  nnlib.softmax_rows(m)
+  kernels.softmax_rows(m)
 
 // ── Layer Normalization ──
 
 fn layer_norm(m: Matrix, gamma: List[Float], beta: List[Float]) -> Matrix =
-  nnlib.layer_norm_rows(m, gamma, beta, 0.00001)
+  kernels.layer_norm_rows(m, gamma, beta, 0.00001)
 
 fn layer_norm_simple(m: Matrix) -> Matrix = {
   let c = t.cols(m)
@@ -49,10 +49,10 @@ fn layer_norm_simple(m: Matrix) -> Matrix = {
 
 fn linear(x: Matrix, weight: Matrix, bias: List[Float]) -> Matrix =
   // Fused native: transpose + matmul + broadcast add in one call.
-  nnlib.linear_row(x, weight, bias)
+  kernels.linear_row(x, weight, bias)
 
 fn linear_no_bias(x: Matrix, weight: Matrix) -> Matrix =
-  nnlib.linear_row_no_bias(x, weight)
+  kernels.linear_row_no_bias(x, weight)
 
 // ── Tests ──
 

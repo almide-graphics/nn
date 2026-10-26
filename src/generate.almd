@@ -8,7 +8,7 @@
 import self.tensor as t
 import self.activations as act
 import self.transformer as tf
-import nnlib
+import self.kernels
 
 // ── argmax over a vector of logits ──
 
@@ -32,7 +32,7 @@ fn project(hidden_last: List[Float], embedding: Matrix) -> List[Float] = {
   // vocab row — that was ~51k native calls per step for Whisper and would
   // be ~152k at Qwen vocab size.
   let h = matrix.from_lists([hidden_last])
-  let rows = matrix.to_lists(nnlib.linear_row_no_bias(h, embedding))
+  let rows = matrix.to_lists(kernels.linear_row_no_bias(h, embedding))
   list.get(rows, 0) ?? []
 }
 
@@ -120,7 +120,7 @@ fn decode_step_pos(
   let pos_slice = matrix.slice_rows(pos_embed, 0, list.len(tokens))
   let x = x_tok + pos_slice
   let hidden = tf.decode(x, encoder_out, layers, n_heads)
-  let hidden_ln = nnlib.layer_norm_rows(hidden, final_ln_gamma, final_ln_beta, 0.00001)
+  let hidden_ln = kernels.layer_norm_rows(hidden, final_ln_gamma, final_ln_beta, 0.00001)
   let hidden_rows = matrix.to_lists(hidden_ln)
   let last = list.get(hidden_rows, list.len(hidden_rows) - 1) |> option.unwrap_or([])
   let logits = project(last, embedding)

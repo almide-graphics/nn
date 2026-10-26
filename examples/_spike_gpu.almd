@@ -7,7 +7,7 @@
 import datetime
 import self.qwen
 import self.qwen_loader
-import nnlib
+import self.kernels
 
 // native externs (root-level: @extern is dropped inside linked modules)
 @extern(rs, "gpu", "init")
@@ -32,7 +32,7 @@ effect fn main() -> () = {
 
     // CPU reference
     let xm = matrix.from_lists([x])
-    let cpu = nnlib.linear_q8_0_row_no_bias(xm, raw, cfg.emb_off, cfg.vocab, cfg.hidden)
+    let cpu = kernels.linear_q8_0_row_no_bias(xm, raw, cfg.emb_off, cfg.vocab, cfg.hidden)
     let cpu_row = list.get(matrix.to_lists(cpu), 0) ?? []
 
     // GPU: upload (timed) + dispatch (timed)

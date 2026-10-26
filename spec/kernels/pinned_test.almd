@@ -1,0 +1,119 @@
+// Values the stdlib pinned for the 25 kernels before epoch 14, as assertions.
+// Every expected value is the stdlib's own answer (its wasm leg where its
+// native leg was known wrong on some platform; see README "Known issues").
+import self.kernels
+
+fn bits(m: Matrix) -> List[List[Int]] = matrix.to_lists(m) |> list.map((row) => row |> list.map((x) => float.to_bits(x)))
+
+fn nan() -> Float = float.parse("NaN") ?? 0.0
+
+fn inf() -> Float = float.parse("inf") ?? 0.0
+
+test "q8_0: a -128 weight quant against a negative activation is exact" {
+  let w = bytes.from_list([0, 60] + list.repeat(128, 32))
+  let y = kernels.linear_q8_0_row_no_bias(matrix.from_lists([list.repeat(-1.0, 32)]), w, 0, 1, 32)
+  assert_eq(matrix.to_lists(y), [
+    [4095.999984741211]
+  ])
+}
+
+test "q1_0: the packed GEMV is the decoded GEMV" {
+  // Eighth-valued activations keep every product and partial sum exact.
+  let x = matrix.from_lists([
+    list.range(0, 128) |> list.map((k) => float.from(k % 9 - 4) / 8.0)
+  ])
+  let w = bytes.from_list(list.range(0, 36) |> list.map((i) => if i % 18 == 1 then 56
+  else if i % 18 == 0 then 0 else (i * 37 + 11) % 256))
+  let packed = kernels.linear_q1_0_row_no_bias(x, w, 0, 2, 128)
+  let decoded = kernels.linear_row_no_bias(x, kernels.from_q1_0_bytes(w, 0, 2, 128))
+  assert_eq(matrix.to_lists(packed), matrix.to_lists(decoded))
+}
+
+test "q1_0: bit 1 is +scale, bit 0 is -scale, a zero scale is +0.0" {
+  // scale 0x3C00 = 1.0; first sign byte 0b00000101
+  let w = bytes.from_list([0, 60, 5] + list.repeat(0, 15))
+  let row = matrix.to_lists(kernels.from_q1_0_bytes(w, 0, 1, 4))
+  assert_eq(row, [
+    [1.0, -1.0, 1.0, -1.0]
+  ])
+  let z = bytes.from_list([0, 128] + list.repeat(0, 16))
+  assert_eq(bits(kernels.from_q1_0_bytes(z, 0, 1, 2)), [
+    [0, 0]
+  ])
+}
+
+test "softmax_rows: a row holding NaN or +inf, or all -inf, is all NaN" {
+  let m = matrix.from_lists([
+    [1.0, nan(), 2.0],
+    [1.0, inf(), 2.0],
+    [0.0 - inf(), 0.0 - inf(), 0.0 - inf()],
+    [1.0, 2.0, 3.0]
+  ])
+  let r = matrix.to_lists(kernels.softmax_rows(m))
+  assert(r[0] |> list.all((x) => float.is_nan(x)))
+  assert(r[1] |> list.all((x) => float.is_nan(x)))
+  assert(r[2] |> list.all((x) => float.is_nan(x)))
+  // the canonical fast exp, not libm exp
+  assert_eq(r[3], [0.09003057170450977, 0.24472848334961012, 0.66524094494588])
+}
+
+test "softmax_rows: the fast exp clamps a -1e9 mask at exp(-708), not 0" {
+  let r = matrix.to_lists(kernels.softmax_rows(matrix.from_lists([
+    [0.0, -1000000000.0, 0.5]
+  ])))
+  assert_eq(r, [
+    [0.3775406684031748, 2.0588173391886224e-308, 0.6224593315968252]
+  ])
+}
+
+test "gelu: f64::MAX halves before it doubles and stays finite" {
+  let r = matrix.to_lists(kernels.gelu(matrix.from_lists([
+    [1.7976931348623157e308, 0.0, -0.0]
+  ])))
+  assert_eq(r[0][0], 1.7976931348623157e308)
+  assert_eq(float.to_bits(r[0][1]), 0)
+  assert_eq(float.to_bits(r[0][2]), float.to_bits(-0.0))
+}
+
+test "rope_rotate_at: head_dim 4 rotates the second pair through 1/theta^(1/2)" {
+  let x = matrix.from_lists([
+    [1.0, 0.0, 1.0, 0.0]
+  ])
+  let r = matrix.to_lists(kernels.rope_rotate_at(x, 1, 4, 10000.0, 1))
+  assert_eq(r[0][0], math.cos(1.0))
+  assert_eq(r[0][1], math.sin(1.0))
+  assert_eq(r[0][2], math.cos(0.01))
+}
+
+test "rope: columns past n_heads * head_dim copy through; empty matrix stays empty" {
+  let x = matrix.from_lists([
+    [1.0, 2.0, 3.0, 4.0, 5.0]
+  ])
+  let r = matrix.to_lists(kernels.rope_rotate(x, 1, 4, 10000.0))
+  assert_eq(r[0][4], 5.0)
+  assert_eq(r[0][0], 1.0)
+  assert_eq(matrix.rows(kernels.rope_rotate_neox_at(matrix.zeros(0, 0), 3, 8, 10000.0, 2)), 0)
+}
+
+test "attention: one head over identical keys averages the values" {
+  let q = matrix.ones(1, 2)
+  let k = matrix.ones(2, 2)
+  let v = matrix.from_lists([
+    [1.0, 2.0],
+    [3.0, 4.0]
+  ])
+  assert_eq(matrix.to_lists(kernels.multi_head_attention(q, k, v, 1)), [
+    [2.0, 3.0]
+  ])
+  // causal: query row 0 of 2 sees only key 0
+  let q2 = matrix.ones(2, 2)
+  assert_eq(matrix.to_lists(kernels.masked_multi_head_attention(q2, k, v, 1))[0], [1.0, 2.0])
+}
+
+test "causal_mask_add adds only above the diagonal" {
+  let r = kernels.causal_mask_add(matrix.zeros(2, 3), -5.0)
+  assert_eq(matrix.to_lists(r), [
+    [0.0, -5.0, -5.0],
+    [0.0, 0.0, -5.0]
+  ])
+}

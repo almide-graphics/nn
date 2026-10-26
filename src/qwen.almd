@@ -18,7 +18,7 @@
 
 // ── Model types ──
 
-import nnlib
+import self.kernels
 
 type QwenConfig = {
   n_layers: Int,
@@ -58,7 +58,7 @@ type QwenModel = {
 
 fn per_head_norm(m: Matrix, gamma: List[Float], n_heads: Int, eps: Float) -> Matrix =
   matrix.split_cols_even(m, n_heads)
-    |> list.map((h) => nnlib.rms_norm_rows(h, gamma, eps))
+    |> list.map((h) => kernels.rms_norm_rows(h, gamma, eps))
     |> matrix.concat_cols
 
 // ── GQA expansion ──
@@ -83,26 +83,26 @@ fn expand_kv(m: Matrix, n_kv: Int, n_q: Int) -> Matrix =
 
 fn qwen_block(x: Matrix, layer: QwenLayer, cfg: QwenConfig, start_pos: Int) -> Matrix = {
   // Pre-norm attention
-  let xn = nnlib.rms_norm_rows(x, layer.attn_norm, cfg.eps)
-  let q = nnlib.linear_row_no_bias(xn, layer.wq)
-  let k = nnlib.linear_row_no_bias(xn, layer.wk)
-  let v = nnlib.linear_row_no_bias(xn, layer.wv)
+  let xn = kernels.rms_norm_rows(x, layer.attn_norm, cfg.eps)
+  let q = kernels.linear_row_no_bias(xn, layer.wq)
+  let k = kernels.linear_row_no_bias(xn, layer.wk)
+  let v = kernels.linear_row_no_bias(xn, layer.wv)
 
   let qn = per_head_norm(q, layer.q_norm, cfg.n_heads, cfg.eps)
   let kn = per_head_norm(k, layer.k_norm, cfg.n_kv_heads, cfg.eps)
 
-  let qr = nnlib.rope_rotate_at(qn, cfg.n_heads, cfg.head_dim, cfg.rope_theta, start_pos)
-  let kr = nnlib.rope_rotate_at(kn, cfg.n_kv_heads, cfg.head_dim, cfg.rope_theta, start_pos)
+  let qr = kernels.rope_rotate_at(qn, cfg.n_heads, cfg.head_dim, cfg.rope_theta, start_pos)
+  let kr = kernels.rope_rotate_at(kn, cfg.n_kv_heads, cfg.head_dim, cfg.rope_theta, start_pos)
 
   let k_full = expand_kv(kr, cfg.n_kv_heads, cfg.n_heads)
   let v_full = expand_kv(v, cfg.n_kv_heads, cfg.n_heads)
 
-  let attended = nnlib.masked_multi_head_attention(qr, k_full, v_full, cfg.n_heads)
-  let h = x + nnlib.linear_row_no_bias(attended, layer.wo)
+  let attended = kernels.masked_multi_head_attention(qr, k_full, v_full, cfg.n_heads)
+  let h = x + kernels.linear_row_no_bias(attended, layer.wo)
 
   // Pre-norm SwiGLU FFN
-  let hn = nnlib.rms_norm_rows(h, layer.ffn_norm, cfg.eps)
-  let ffn_out = nnlib.linear_row_no_bias(nnlib.swiglu_gate(hn, layer.w_gate, layer.w_up), layer.w_down)
+  let hn = kernels.rms_norm_rows(h, layer.ffn_norm, cfg.eps)
+  let ffn_out = kernels.linear_row_no_bias(kernels.swiglu_gate(hn, layer.w_gate, layer.w_up), layer.w_down)
   h + ffn_out
 }
 
@@ -111,7 +111,7 @@ fn qwen_block(x: Matrix, layer: QwenLayer, cfg: QwenConfig, start_pos: Int) -> M
 fn qwen_forward(tokens: List[Int], model: QwenModel) -> Matrix = {
   let x = matrix.gather_rows(model.embedding, tokens)
   let hidden = list.fold(model.layers, x, (h, layer) => qwen_block(h, layer, model.cfg, 0))
-  nnlib.rms_norm_rows(hidden, model.final_norm, model.cfg.eps)
+  kernels.rms_norm_rows(hidden, model.final_norm, model.cfg.eps)
 }
 
 // ── Logits ──
@@ -121,7 +121,7 @@ fn qwen_forward(tokens: List[Int], model: QwenModel) -> Matrix = {
 // generation only needs the last row.
 
 fn logits(hidden: Matrix, embedding: Matrix) -> Matrix =
-  nnlib.linear_row_no_bias(hidden, embedding)
+  kernels.linear_row_no_bias(hidden, embedding)
 
 fn logits_last(hidden: Matrix, embedding: Matrix) -> List[Float] = {
   let n = matrix.rows(hidden)
@@ -148,16 +148,16 @@ fn qwen_block_kv(
   x: Matrix, layer: QwenLayer, cfg: QwenConfig,
   k_cache: Matrix, v_cache: Matrix, start_pos: Int, causal: Bool,
 ) -> (Matrix, Matrix, Matrix) = {
-  let xn = nnlib.rms_norm_rows(x, layer.attn_norm, cfg.eps)
-  let q = nnlib.linear_row_no_bias(xn, layer.wq)
-  let k = nnlib.linear_row_no_bias(xn, layer.wk)
-  let v = nnlib.linear_row_no_bias(xn, layer.wv)
+  let xn = kernels.rms_norm_rows(x, layer.attn_norm, cfg.eps)
+  let q = kernels.linear_row_no_bias(xn, layer.wq)
+  let k = kernels.linear_row_no_bias(xn, layer.wk)
+  let v = kernels.linear_row_no_bias(xn, layer.wv)
 
   let qn = per_head_norm(q, layer.q_norm, cfg.n_heads, cfg.eps)
   let kn = per_head_norm(k, layer.k_norm, cfg.n_kv_heads, cfg.eps)
 
-  let qr = nnlib.rope_rotate_at(qn, cfg.n_heads, cfg.head_dim, cfg.rope_theta, start_pos)
-  let kr = nnlib.rope_rotate_at(kn, cfg.n_kv_heads, cfg.head_dim, cfg.rope_theta, start_pos)
+  let qr = kernels.rope_rotate_at(qn, cfg.n_heads, cfg.head_dim, cfg.rope_theta, start_pos)
+  let kr = kernels.rope_rotate_at(kn, cfg.n_kv_heads, cfg.head_dim, cfg.rope_theta, start_pos)
 
   let k_all = if matrix.rows(k_cache) == 0 then kr else matrix.concat_rows([k_cache, kr])
   let v_all = if matrix.rows(v_cache) == 0 then v else matrix.concat_rows([v_cache, v])
@@ -165,12 +165,12 @@ fn qwen_block_kv(
   let k_full = expand_kv(k_all, cfg.n_kv_heads, cfg.n_heads)
   let v_full = expand_kv(v_all, cfg.n_kv_heads, cfg.n_heads)
   let attended =
-    if causal then nnlib.masked_multi_head_attention(qr, k_full, v_full, cfg.n_heads)
-    else nnlib.multi_head_attention(qr, k_full, v_full, cfg.n_heads)
-  let h = x + nnlib.linear_row_no_bias(attended, layer.wo)
+    if causal then kernels.masked_multi_head_attention(qr, k_full, v_full, cfg.n_heads)
+    else kernels.multi_head_attention(qr, k_full, v_full, cfg.n_heads)
+  let h = x + kernels.linear_row_no_bias(attended, layer.wo)
 
-  let hn = nnlib.rms_norm_rows(h, layer.ffn_norm, cfg.eps)
-  let ffn_out = nnlib.linear_row_no_bias(nnlib.swiglu_gate(hn, layer.w_gate, layer.w_up), layer.w_down)
+  let hn = kernels.rms_norm_rows(h, layer.ffn_norm, cfg.eps)
+  let ffn_out = kernels.linear_row_no_bias(kernels.swiglu_gate(hn, layer.w_gate, layer.w_up), layer.w_down)
   (h + ffn_out, k_all, v_all)
 }
 
@@ -183,7 +183,7 @@ fn qwen_prefill(tokens: List[Int], model: QwenModel) -> (Matrix, QwenCache) = {
     let (x2, k2, v2) = qwen_block_kv(x, layer, model.cfg, empty, empty, 0, true)
     (x2, ks + [k2], vs + [v2])
   })
-  (nnlib.rms_norm_rows(h, model.final_norm, model.cfg.eps), { ks: ks, vs: vs })
+  (kernels.rms_norm_rows(h, model.final_norm, model.cfg.eps), { ks: ks, vs: vs })
 }
 
 // One generation step: project the single new token, append to the cache,
@@ -199,7 +199,7 @@ fn qwen_decode_step(token: Int, pos: Int, model: QwenModel, cache: QwenCache) ->
     let (x2, k2, v2) = qwen_block_kv(x, layer, model.cfg, k_c, v_c, pos, false)
     (x2, ks + [k2], vs + [v2])
   })
-  let hidden = nnlib.rms_norm_rows(h, model.final_norm, model.cfg.eps)
+  let hidden = kernels.rms_norm_rows(h, model.final_norm, model.cfg.eps)
   (logits_last(hidden, model.embedding), { ks: ks, vs: vs })
 }
 
@@ -262,12 +262,12 @@ fn forward_layers_f32(
     let v_c = list.get(cache_vs, i) ?? matrix.zeros(0, 1)
     let (x2, k2, v2) =
       if cfg.wtype == 8 then
-        nnlib.qwen3_block_q8_0_kv(
+        kernels.qwen3_block_q8_0_kv(
           x, k_c, v_c, raw, g, w, pos,
           cfg.n_heads, cfg.n_kv_heads, cfg.head_dim, cfg.ffn_hidden,
           cfg.rope_theta, cfg.eps)
       else
-        nnlib.qwen3_block_f32_kv(
+        kernels.qwen3_block_f32_kv(
           x, k_c, v_c, raw, g, w, pos,
           cfg.n_heads, cfg.n_kv_heads, cfg.head_dim, cfg.ffn_hidden,
           cfg.rope_theta, cfg.eps)
@@ -280,15 +280,15 @@ fn forward_layers_f32(
 }
 
 fn embed_rows(raw: Bytes, cfg: QwenF32Cfg, ids: List[Int]) -> Matrix =
-  if cfg.wtype == 8 then nnlib.select_rows_q8_0_dq(raw, cfg.emb_off, cfg.hidden, ids)
-  else nnlib.select_rows_f32(raw, cfg.emb_off, cfg.hidden, ids)
+  if cfg.wtype == 8 then kernels.select_rows_q8_0_dq(raw, cfg.emb_off, cfg.hidden, ids)
+  else kernels.select_rows_f32(raw, cfg.emb_off, cfg.hidden, ids)
 
 fn logits_last_f32(hidden: Matrix, raw: Bytes, cfg: QwenF32Cfg) -> List[Float] = {
   let n = matrix.rows(hidden)
   let last = matrix.slice_rows(hidden, n - 1, n)
   let lg =
-    if cfg.wtype == 8 then nnlib.linear_q8_0_row_no_bias(last, raw, cfg.emb_off, cfg.vocab, cfg.hidden)
-    else nnlib.linear_f32_row_no_bias(last, raw, cfg.emb_off, cfg.vocab, cfg.hidden)
+    if cfg.wtype == 8 then kernels.linear_q8_0_row_no_bias(last, raw, cfg.emb_off, cfg.vocab, cfg.hidden)
+    else kernels.linear_f32_row_no_bias(last, raw, cfg.emb_off, cfg.vocab, cfg.hidden)
   let rows = matrix.to_lists(lg)
   list.get(rows, 0) ?? []
 }
@@ -300,7 +300,7 @@ fn prefill_f32(
   let x0 = embed_rows(raw, cfg, tokens)
   let (h, ks, vs) = forward_layers_f32(x0, raw, gammas, weights, [], [], cfg, 0)
   let gamma_out = bytes.get_f32_le_array(raw, cfg.out_norm_off, cfg.hidden) ?? []
-  (nnlib.rms_norm_rows(h, gamma_out, cfg.eps), ks, vs)
+  (kernels.rms_norm_rows(h, gamma_out, cfg.eps), ks, vs)
 }
 
 fn decode_step_f32(
@@ -311,7 +311,7 @@ fn decode_step_f32(
   let x0 = embed_rows(raw, cfg, [token])
   let (h, ks, vs) = forward_layers_f32(x0, raw, gammas, weights, cache_ks, cache_vs, cfg, pos)
   let gamma_out = bytes.get_f32_le_array(raw, cfg.out_norm_off, cfg.hidden) ?? []
-  let hidden = nnlib.rms_norm_rows(h, gamma_out, cfg.eps)
+  let hidden = kernels.rms_norm_rows(h, gamma_out, cfg.eps)
   (logits_last_f32(hidden, raw, cfg), ks, vs)
 }
 

@@ -6,7 +6,7 @@
 import math
 import self.tensor as t
 import self.activations as act
-import nnlib
+import self.kernels
 
 // ── Scaled dot-product attention ──
 //
@@ -36,7 +36,7 @@ fn masked_scaled_dot_product(q: Matrix, k: Matrix, v: Matrix) -> Matrix = {
   let seq_q = t.rows(q)
   let seq_k = t.rows(k)
   // Native causal mask — adds `-1e9` to upper triangle in one pass.
-  let masked = if seq_q == seq_k then nnlib.causal_mask_add(scores, -1000000000.0) else scores
+  let masked = if seq_q == seq_k then kernels.causal_mask_add(scores, -1000000000.0) else scores
   let weights = act.softmax(masked)
   weights * v
 }
@@ -66,7 +66,7 @@ fn multi_head_attention(
   let q = act.linear(q_in, w_q, b_q)
   let k = act.linear(k_in, w_k, b_k)
   let v = act.linear(v_in, w_v, b_v)
-  let attended = nnlib.multi_head_attention(q, k, v, n_heads)
+  let attended = kernels.multi_head_attention(q, k, v, n_heads)
   act.linear(attended, w_o, b_o)
 }
 
@@ -83,7 +83,7 @@ fn masked_multi_head_attention(
   let q = act.linear(q_in, w_q, b_q)
   let k = act.linear(k_in, w_k, b_k)
   let v = act.linear(v_in, w_v, b_v)
-  let attended = nnlib.masked_multi_head_attention(q, k, v, n_heads)
+  let attended = kernels.masked_multi_head_attention(q, k, v, n_heads)
   act.linear(attended, w_o, b_o)
 }
 
@@ -116,7 +116,7 @@ test "softmax attention weights sum to 1" {
 
 test "causal_mask_add applies upper-triangular bias" {
   let z = matrix.zeros(3, 3)
-  let m = nnlib.causal_mask_add(z, -1000000.0)
+  let m = kernels.causal_mask_add(z, -1000000.0)
   // Diagonal and below = 0
   assert_eq(matrix.get(m, 0, 0), 0.0)
   assert_eq(matrix.get(m, 1, 0), 0.0)

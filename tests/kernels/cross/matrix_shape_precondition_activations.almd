@@ -1,0 +1,36 @@
+// Ported from the Almide compiler's spec/wasm_cross/matrix_shape_precondition_activations.almd (pre-epoch-14),
+// with matrix.X renamed to kernels.X for the functions that moved to this package.
+// @contract: C-353
+// The activation half of the shape-precondition family (C-353), split from
+// spec/wasm_cross/matrix_shape_precondition_family.almd because these four
+// entries route through the canonical fast-exp / sqrt kernels that the
+// judge's reference evaluator does not implement, and one abstaining cell
+// abstains the whole program.
+//
+// `swiglu_gate` in domain (both weights (d_out, d_in) against cols(x)) and
+// the elementwise/row-norm ZIP cells that stay OUT of the abort rule:
+// `silu_mul` truncates rows and cols to the shorter operand, and the row
+// norms truncate the output to the shorter gamma/beta. They are pinned so
+// the guard work can never silently convert them into aborts.
+import self.kernels
+
+fn show(m: Matrix) -> String = "r=${matrix.rows(m)} c=${matrix.cols(m)} ${matrix.to_lists(m)}"
+
+fn main() -> Unit = {
+  let a = matrix.from_lists([
+    [1.0, 2.0, 3.0],
+    [4.0, 5.0, 6.0]
+  ])
+  let b = matrix.from_lists([
+    [1.0, 0.0],
+    [0.0, 1.0],
+    [1.0, 1.0]
+  ])
+  println("swiglu=${show(kernels.swiglu_gate(a, a, a))}")
+  println("swiglu_empty=${show(kernels.swiglu_gate(matrix.zeros(0, 0), a, a))}")
+  println("silu_zip=${show(kernels.silu_mul(b, a))}")
+  println("silu_zip_rev=${show(kernels.silu_mul(a, b))}")
+  println("rms_short=${show(kernels.rms_norm_rows(a, [1.0], 0.00001))}")
+  println("rms_long=${show(kernels.rms_norm_rows(a, [1.0, 1.0, 1.0, 1.0], 0.00001))}")
+  println("ln_short=${show(kernels.layer_norm_rows(a, [1.0], [0.0, 0.0, 0.0], 0.00001))}")
+}
