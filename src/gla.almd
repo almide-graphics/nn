@@ -17,10 +17,10 @@ fn gla_diag(q: Matrix, k: Matrix, v: Matrix, a: Matrix) -> Matrix = {
   var out: List[List[Float]] = []
   var i = 0
   while i < t {
-    let qi = list.get_or(rq, i, [])
-    let ki = list.get_or(rk, i, [])
-    let vi = list.get_or(rv, i, [])
-    let ai = list.get_or(ra, i, [])
+    let qi = list.get(rq, i) ?? []
+    let ki = list.get(rk, i) ?? []
+    let vi = list.get(rv, i) ?? []
+    let ai = list.get(ra, i) ?? []
     let decayed = list.zip_with(ai, h, (p, s) => p * s)
     let kv = list.zip_with(ki, vi, (p, s) => p * s)
     h = list.zip_with(decayed, kv, (p, s) => p + s)

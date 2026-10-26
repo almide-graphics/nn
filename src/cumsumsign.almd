@@ -12,7 +12,7 @@ fn cumsum_sign_rows(x: Matrix) -> Matrix = {
   var out: List[List[Float]] = []
   var i = 0
   while i < t {
-    let xi = list.get_or(rx, i, [])
+    let xi = list.get(rx, i) ?? []
     acc = list.zip_with(acc, xi, (a, b) =>
       a + (if b > 0.0 then 1.0 else (if b < 0.0 then 0.0 - 1.0 else 0.0)))
     out = out + [acc]

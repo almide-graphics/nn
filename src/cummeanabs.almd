@@ -13,9 +13,9 @@ fn cummean_abs_rows(x: Matrix) -> Matrix = {
   var out: List[List[Float]] = []
   var i = 0
   while i < t {
-    let xi = list.get_or(rx, i, [])
+    let xi = list.get(rx, i) ?? []
     acc = list.zip_with(acc, xi, (a, b) => a + float.abs(b))
-    let cnt = int.to_float(i + 1)
+    let cnt = float.from(i + 1)
     out = out + [acc |> list.map((v) => v / cnt)]
     i = i + 1
   }

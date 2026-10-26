@@ -27,6 +27,7 @@
 import fs
 import self.qwen
 import self.gguf_prims
+import nnlib
 
 // ── Flat metadata table (no variant types — see header comment) ──
 
@@ -132,8 +133,8 @@ fn tensor_vec(data: Bytes, data_offset: Int, locs: List[TensorLoc], name: String
   let loc = loc_of(locs, name)
   let start = data_offset + loc.offset
   match loc.dtype {
-    0 => bytes.read_f32_le_array(data, start, loc.cols),
-    1 => bytes.read_f16_le_array(data, start, loc.cols),
+    0 => bytes.get_f32_le_array(data, start, loc.cols) ?? [],
+    1 => bytes.get_f16_le_array(data, start, loc.cols) ?? [],
     _ => list.repeat(0.0, loc.cols),
   }
 }
@@ -195,7 +196,7 @@ fn validate(locs: List[TensorLoc], n_layers: Int) -> List[String] = {
 // Returns (model, eos_token_id).
 
 effect fn load(path: String) -> Result[(qwen.QwenModel, Int), String] =
-  match fs.read_bytes_raw(path) {
+  match fs.read_bytes(path) {
     err(e) => err("failed to read " + path + ": " + e)
     ok(data) => {
       if gguf_prims.r_u32(data, 0) != 1179993927 then err(path + " is not a GGUF file")
@@ -265,7 +266,7 @@ fn layer_weight_offs(data_offset: Int, locs: List[TensorLoc], i: Int) -> List[In
 // f32 tensors only — dtype is validated so a quantized GGUF fails loudly
 // instead of decoding garbage.
 effect fn load_f32(path: String) -> Result[(Bytes, qwen.QwenF32Cfg, List[List[Int]], List[List[Int]]), String] =
-  match fs.read_bytes_raw(path) {
+  match fs.read_bytes(path) {
     err(e) => err("failed to read " + path + ": " + e)
     ok(data) => {
       if gguf_prims.r_u32(data, 0) != 1179993927 then err(path + " is not a GGUF file")
@@ -324,7 +325,7 @@ test "neox rope rotates (j, j+half) pairs in place" {
   // x = [1,2,3,4], head_dim 4, pos 1, theta 10000 — same numbers as the
   // interleaved test above but WITHOUT any permutation.
   let m = matrix.from_lists([[1.0, 2.0, 3.0, 4.0]])
-  let out = matrix.rope_rotate_neox_at(m, 1, 4, 10000.0, 1)
+  let out = nnlib.rope_rotate_neox_at(m, 1, 4, 10000.0, 1)
   let c1 = math.cos(1.0)
   let s1 = math.sin(1.0)
   let c2 = math.cos(0.01)
@@ -355,7 +356,7 @@ test "interleaved rope on permuted layout equals NeoX rope" {
   // Our pipeline permutes to [1,3,2,4] and rotates interleaved pairs;
   // the result lands in permuted layout [x0', x2', x1', x3'].
   let permuted = matrix.from_lists([[1.0, 3.0, 2.0, 4.0]])
-  let out = matrix.rope_rotate_at(permuted, 1, 4, 10000.0, 1)
+  let out = nnlib.rope_rotate_at(permuted, 1, 4, 10000.0, 1)
   let c1 = math.cos(1.0)
   let s1 = math.sin(1.0)
   let c2 = math.cos(0.01)
@@ -368,7 +369,7 @@ test "interleaved rope on permuted layout equals NeoX rope" {
 
 test "rope_rotate_at start_pos 0 is identity" {
   let m = matrix.from_lists([[1.0, 2.0, 3.0, 4.0]])
-  let out = matrix.rope_rotate_at(m, 1, 4, 10000.0, 0)
+  let out = nnlib.rope_rotate_at(m, 1, 4, 10000.0, 0)
   assert(approx(matrix.get(out, 0, 0), 1.0))
   assert(approx(matrix.get(out, 0, 3), 4.0))
 }

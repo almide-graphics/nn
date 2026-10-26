@@ -10,18 +10,18 @@
 fn up_run_length_rows(x: Matrix) -> Matrix = {
   let rx = matrix.to_lists(x)
   let (t, d) = matrix.shape(x)
-  var prev = list.get_or(rx, 0, [])
+  var prev = list.get(rx, 0) ?? []
   var run: List[Float] = list.range(0, d) |> list.map((_) => 0.0)
   var out: List[List[Float]] = []
   var i = 0
   while i < t {
-    let xi = list.get_or(rx, i, [])
+    let xi = list.get(rx, i) ?? []
     var nr: List[Float] = []
     var j = 0
     while j < d {
-      let xv = list.get_or(xi, j, 0.0)
-      let pv = list.get_or(prev, j, 0.0)
-      let rv = list.get_or(run, j, 0.0)
+      let xv = list.get(xi, j) ?? 0.0
+      let pv = list.get(prev, j) ?? 0.0
+      let rv = list.get(run, j) ?? 0.0
       nr = nr + [if xv > pv then rv + 1.0 else 0.0]
       j = j + 1
     }

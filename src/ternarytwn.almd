@@ -12,11 +12,11 @@ import float
 fn ternary_twn_rows(x: Matrix) -> Matrix = {
   let rx = matrix.to_lists(x)
   let (t, d) = matrix.shape(x)
-  let df = int.to_float(d)
+  let df = float.from(d)
   var out: List[List[Float]] = []
   var i = 0
   while i < t {
-    let xi = list.get_or(rx, i, [])
+    let xi = list.get(rx, i) ?? []
     let s = xi |> list.fold(0.0, (acc, v) => acc + float.abs(v))
     let delta = 0.7 * (s / df)
     let row = xi |> list.map((v) =>

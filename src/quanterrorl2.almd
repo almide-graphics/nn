@@ -13,12 +13,12 @@ import math
 fn quant_error_l2_rows(x: Matrix) -> Matrix = {
   let rx = matrix.to_lists(x)
   let (t, d) = matrix.shape(x)
-  let n = int.to_float(t * d)
+  let n = float.from(t * d)
   // pass 1: absmean scale β over the whole tensor.
   var total = 0.0
   var p = 0
   while p < t {
-    let xp = list.get_or(rx, p, [])
+    let xp = list.get(rx, p) ?? []
     let s = xp |> list.fold(0.0, (acc, v) => acc + float.abs(v))
     total = total + s
     p = p + 1
@@ -28,7 +28,7 @@ fn quant_error_l2_rows(x: Matrix) -> Matrix = {
   var out: List[List[Float]] = []
   var i = 0
   while i < t {
-    let xi = list.get_or(rx, i, [])
+    let xi = list.get(rx, i) ?? []
     let sq = xi |> list.fold(0.0, (acc, v) => {
       let e = v - beta * (if v >= 0.0 then 1.0 else 0.0 - 1.0)
       acc + e * e

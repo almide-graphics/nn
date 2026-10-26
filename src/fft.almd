@@ -49,7 +49,7 @@ fn combine(
 ) -> List[Complex] =
   if k >= half then list.flatten([first_half, second_half])
   else {
-    let angle = -2.0 * math.pi() * int.to_float(k) / int.to_float(n)
+    let angle = -2.0 * math.pi() * float.from(k) / float.from(n)
     let twiddle = (math.cos(angle), math.sin(angle))
     let e = list.get(fft_even, k) |> option.unwrap_or((0.0, 0.0))
     let o = list.get(fft_odd, k) |> option.unwrap_or((0.0, 0.0))
@@ -116,7 +116,7 @@ test "fft preserves energy (Parseval)" {
 test "rfft of sine wave has peak at frequency" {
   let n = 8
   let input = list.range(0, n) |> list.map((i) =>
-    math.sin(2.0 * math.pi() * int.to_float(i) / int.to_float(n))
+    math.sin(2.0 * math.pi() * float.from(i) / float.from(n))
   )
   let spectrum = rfft(input)
   // Extract magnitudes individually to avoid multi-use of spectrum

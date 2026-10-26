@@ -23,8 +23,8 @@ fn build_matrix(m: gw.Model, name: String, rows: Int, cols: Int) -> Matrix =
 fn build_vec(m: gw.Model, name: String, n: Int) -> List[Float] =
   match gw.find_tensor(m.tensors, name) {
     some(t) => match t.ftype {
-      0 => bytes.read_f32_le_array(m.data, t.data_offset, n),
-      1 => bytes.read_f16_le_array(m.data, t.data_offset, n),
+      0 => bytes.get_f32_le_array(m.data, t.data_offset, n) ?? [],
+      1 => bytes.get_f16_le_array(m.data, t.data_offset, n) ?? [],
       _ => list.map(list.range(0, n), (_) => 0.0),
     },
     none => list.map(list.range(0, n), (_) => 0.0),
@@ -59,9 +59,9 @@ fn build_encoder_layer0(m: gw.Model, d_model: Int, d_ff: Int) -> tf.EncoderLayer
 
 effect fn main() -> () = {
   println("Loading ggml-tiny.bin ...")
-  let t_load0 = env.millis()
+  let t_load0 = datetime.now_ms()
   let model = gw.load("/tmp/whisper_demo/ggml-tiny.bin")!
-  let t_load1 = env.millis()
+  let t_load1 = datetime.now_ms()
   println("loaded in " + int.to_string(t_load1 - t_load0) + " ms, " + int.to_string(list.len(model.tensors)) + " tensors")
 
   let d_model = 384
@@ -70,15 +70,15 @@ effect fn main() -> () = {
   let seq_len = 1500  // Whisper encoder fixed context
 
   println("Building encoder.blocks.0 weights (d=" + int.to_string(d_model) + ", d_ff=" + int.to_string(d_ff) + ", heads=" + int.to_string(n_heads) + ") ...")
-  let t_build0 = env.millis()
+  let t_build0 = datetime.now_ms()
   let layer = build_encoder_layer0(model, d_model, d_ff)
-  let t_build1 = env.millis()
+  let t_build1 = datetime.now_ms()
   println("built in " + int.to_string(t_build1 - t_build0) + " ms")
 
   // Synthetic input: (seq_len, d_model) with some structure so we can
   // spot-check the first cell.
   println("Building input (" + int.to_string(seq_len) + ", " + int.to_string(d_model) + ") ...")
-  let row = list.map(list.range(0, d_model), (i) => int.to_float(i) * 0.001)
+  let row = list.map(list.range(0, d_model), (i) => float.from(i) * 0.001)
   let input_lists = list.map(list.range(0, seq_len), (_) => row)
   let x = matrix.from_lists(input_lists)
 
@@ -89,7 +89,7 @@ effect fn main() -> () = {
 
   // Timed runs
   let iters = 5
-  let t_fwd0 = env.millis()
+  let t_fwd0 = datetime.now_ms()
   var acc = 0.0
   var i = 0
   while i < iters {
@@ -97,8 +97,8 @@ effect fn main() -> () = {
     acc = acc + matrix.get(out, 0, 0)
     i = i + 1
   }
-  let t_fwd1 = env.millis()
+  let t_fwd1 = datetime.now_ms()
   let elapsed = t_fwd1 - t_fwd0
-  let per_run_ms = int.to_float(elapsed) / int.to_float(iters)
+  let per_run_ms = float.from(elapsed) / float.from(iters)
   println("forward: " + int.to_string(iters) + " iters in " + int.to_string(elapsed) + " ms = " + float.to_string(per_run_ms) + " ms/run (acc=" + float.to_string(acc) + ")")
 }

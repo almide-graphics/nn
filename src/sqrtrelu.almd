@@ -5,7 +5,7 @@
 import math
 
 fn sqrt_relu(m: Matrix) -> Matrix =
-  matrix.map(m, (x) => math.sqrt(math.fmax(0.0, x)))
+  matrix.map(m, (x) => math.sqrt(float.max(0.0, x)))
 
 // 0 for x≤0 (incl. 0).
 test "sqrt_relu is zero for x<=0" {

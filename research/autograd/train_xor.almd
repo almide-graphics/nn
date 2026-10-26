@@ -91,8 +91,8 @@ effect fn main() -> () = {
         g = g + 1
       }
       let e = o - (list.get(tv, i) ?? 0.0)
-      loss = loss + e * e / int.to_float(m)
-      list.push(dout, 2.0 * e / int.to_float(m))
+      loss = loss + e * e / float.from(m)
+      list.push(dout, 2.0 * e / float.from(m))
       i = i + 1
     }
     // dL/dp_g

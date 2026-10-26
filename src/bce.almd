@@ -11,12 +11,12 @@ fn bce_rows(p: Matrix, t: Matrix) -> Matrix = {
   let rp = matrix.to_lists(p)
   let rt = matrix.to_lists(t)
   let (rows, d) = matrix.shape(p)
-  let df = int.to_float(d)
+  let df = float.from(d)
   var out: List[List[Float]] = []
   var n = 0
   while n < rows {
-    let pn = list.get_or(rp, n, [])
-    let tn = list.get_or(rt, n, [])
+    let pn = list.get(rp, n) ?? []
+    let tn = list.get(rt, n) ?? []
     let s = list.zip_with(pn, tn, (pj, tj) => 0.0 - (tj * math.log(pj) + (1.0 - tj) * math.log(1.0 - pj))) |> list.fold(0.0, (acc, v) => acc + v)
     out = out + [[s / df]]
     n = n + 1

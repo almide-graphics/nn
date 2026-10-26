@@ -17,17 +17,17 @@ fn median3_filter_rows(x: Matrix) -> Matrix = {
   while i < t {
     let lo = if i > 0 then i - 1 else 0
     let hi = if i < t - 1 then i + 1 else t - 1
-    let al = list.get_or(rx, lo, [])
-    let bl = list.get_or(rx, i, [])
-    let cl = list.get_or(rx, hi, [])
+    let al = list.get(rx, lo) ?? []
+    let bl = list.get(rx, i) ?? []
+    let cl = list.get(rx, hi) ?? []
     var row: List[Float] = []
     var j = 0
     while j < d {
-      let a = list.get_or(al, j, 0.0)
-      let b = list.get_or(bl, j, 0.0)
-      let c = list.get_or(cl, j, 0.0)
-      let hi3 = math.fmax(math.fmax(a, b), c)
-      let lo3 = math.fmin(math.fmin(a, b), c)
+      let a = list.get(al, j) ?? 0.0
+      let b = list.get(bl, j) ?? 0.0
+      let c = list.get(cl, j) ?? 0.0
+      let hi3 = float.max(float.max(a, b), c)
+      let lo3 = float.min(float.min(a, b), c)
       row = row + [a + b + c - hi3 - lo3]
       j = j + 1
     }

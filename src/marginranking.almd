@@ -15,20 +15,20 @@ fn margin_ranking_loss_rows(a: Matrix, b: Matrix, y: Matrix) -> Matrix = {
   let rb = matrix.to_lists(b)
   let ry = matrix.to_lists(y)
   let (t, d) = matrix.shape(a)
-  let df = int.to_float(d)
+  let df = float.from(d)
   var out: List[List[Float]] = []
   var i = 0
   while i < t {
-    let ai = list.get_or(ra, i, [])
-    let bi = list.get_or(rb, i, [])
-    let yi = list.get_or(ry, i, [])
+    let ai = list.get(ra, i) ?? []
+    let bi = list.get(rb, i) ?? []
+    let yi = list.get(ry, i) ?? []
     var s = 0.0
     var j = 0
     while j < d {
-      let av = list.get_or(ai, j, 0.0)
-      let bv = list.get_or(bi, j, 0.0)
-      let yv = list.get_or(yi, j, 0.0)
-      s = s + math.fmax(0.0, 0.0 - yv * (av - bv) + 1.0)
+      let av = list.get(ai, j) ?? 0.0
+      let bv = list.get(bi, j) ?? 0.0
+      let yv = list.get(yi, j) ?? 0.0
+      s = s + float.max(0.0, 0.0 - yv * (av - bv) + 1.0)
       j = j + 1
     }
     out = out + [[s / df]]

@@ -19,8 +19,8 @@ fn hgrn(g: Matrix, i: Matrix, lb: List[Float]) -> Matrix = {
   var out: List[List[Float]] = []
   var n = 0
   while n < t {
-    let gn = list.get_or(rg, n, [])
-    let inp = list.get_or(ri, n, [])
+    let gn = list.get(rg, n) ?? []
+    let inp = list.get(ri, n) ?? []
     let f = list.zip_with(lb, gn, (l, gg) => l + (1.0 - l) * (1.0 / (1.0 + math.exp(0.0 - gg))))
     let keep = list.zip_with(f, h, (ff, hh) => ff * hh)
     let take = list.zip_with(f, inp, (ff, ii) => (1.0 - ff) * ii)

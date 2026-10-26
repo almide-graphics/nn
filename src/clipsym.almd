@@ -4,7 +4,7 @@
 import math
 
 fn clip_symmetric(m: Matrix, c: Float) -> Matrix =
-  matrix.map(m, (x) => math.fmax(0.0 - c, math.fmin(c, x)))
+  matrix.map(m, (x) => float.max(0.0 - c, float.min(c, x)))
 
 // |x|>c saturates to ±c; |x|<c passes through.
 test "clip_symmetric to [-c,c]" {

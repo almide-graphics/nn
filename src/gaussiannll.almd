@@ -15,19 +15,19 @@ fn gaussian_nll_rows(mu: Matrix, x: Matrix, sig2: Matrix) -> Matrix = {
   let rx = matrix.to_lists(x)
   let rs = matrix.to_lists(sig2)
   let (t, d) = matrix.shape(mu)
-  let df = int.to_float(d)
+  let df = float.from(d)
   var out: List[List[Float]] = []
   var i = 0
   while i < t {
-    let mui = list.get_or(rmu, i, [])
-    let xi = list.get_or(rx, i, [])
-    let si = list.get_or(rs, i, [])
+    let mui = list.get(rmu, i) ?? []
+    let xi = list.get(rx, i) ?? []
+    let si = list.get(rs, i) ?? []
     var s = 0.0
     var j = 0
     while j < d {
-      let muv = list.get_or(mui, j, 0.0)
-      let xv = list.get_or(xi, j, 0.0)
-      let vv = math.fmax(list.get_or(si, j, 0.0), 0.000001)
+      let muv = list.get(mui, j) ?? 0.0
+      let xv = list.get(xi, j) ?? 0.0
+      let vv = float.max(list.get(si, j) ?? 0.0, 0.000001)
       let diff = xv - muv
       s = s + 0.5 * (math.log(vv) + diff * diff / vv)
       j = j + 1

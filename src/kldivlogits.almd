@@ -19,17 +19,17 @@ fn kl_div_logits_rows(a: Matrix, b: Matrix) -> Matrix = {
   var out: List[List[Float]] = []
   var i = 0
   while i < t {
-    let ai = list.get_or(ra, i, [])
-    let bi = list.get_or(rb, i, [])
-    let ma = ai |> list.fold(0.0 - 100000000000000000000.0, (acc, v) => math.fmax(acc, v))
-    let mb = bi |> list.fold(0.0 - 100000000000000000000.0, (acc, v) => math.fmax(acc, v))
+    let ai = list.get(ra, i) ?? []
+    let bi = list.get(rb, i) ?? []
+    let ma = ai |> list.fold(0.0 - 100000000000000000000.0, (acc, v) => float.max(acc, v))
+    let mb = bi |> list.fold(0.0 - 100000000000000000000.0, (acc, v) => float.max(acc, v))
     let lse_a = ma + math.log(ai |> list.fold(0.0, (acc, v) => acc + math.exp(v - ma)))
     let lse_b = mb + math.log(bi |> list.fold(0.0, (acc, v) => acc + math.exp(v - mb)))
     var s = 0.0
     var j = 0
     while j < d {
-      let la = list.get_or(ai, j, 0.0) - lse_a
-      let lb = list.get_or(bi, j, 0.0) - lse_b
+      let la = list.get(ai, j) ?? 0.0 - lse_a
+      let lb = list.get(bi, j) ?? 0.0 - lse_b
       s = s + math.exp(la) * (la - lb)
       j = j + 1
     }

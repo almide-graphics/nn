@@ -5,7 +5,7 @@
 import math
 
 fn softplus_half(m: Matrix) -> Matrix =
-  matrix.map(m, (x) => 0.5 * (math.fmax(x, 0.0) + math.log(1.0 + math.exp(0.0 - float.abs(x)))))
+  matrix.map(m, (x) => 0.5 * (float.max(x, 0.0) + math.log(1.0 + math.exp(0.0 - float.abs(x)))))
 
 // ½·softplus(0) = ½·log2.
 test "softplus_half at zero is half log2" {

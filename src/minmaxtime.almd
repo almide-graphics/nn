@@ -8,20 +8,20 @@ import math
 fn minmax_time_rows(x: Matrix) -> Matrix = {
   let rx = matrix.to_lists(x)
   let (t, _) = matrix.shape(x)
-  var mn: List[Float] = list.get_or(rx, 0, [])
-  var mx: List[Float] = list.get_or(rx, 0, [])
+  var mn: List[Float] = list.get(rx, 0) ?? []
+  var mx: List[Float] = list.get(rx, 0) ?? []
   var i = 0
   while i < t {
-    let xi = list.get_or(rx, i, [])
-    mn = list.zip_with(mn, xi, (a, b) => math.fmin(a, b))
-    mx = list.zip_with(mx, xi, (a, b) => math.fmax(a, b))
+    let xi = list.get(rx, i) ?? []
+    mn = list.zip_with(mn, xi, (a, b) => float.min(a, b))
+    mx = list.zip_with(mx, xi, (a, b) => float.max(a, b))
     i = i + 1
   }
   let den = list.zip_with(mx, mn, (a, b) => a - b)
   var out: List[List[Float]] = []
   var j = 0
   while j < t {
-    let xj = list.get_or(rx, j, [])
+    let xj = list.get(rx, j) ?? []
     let num = list.zip_with(xj, mn, (a, b) => a - b)
     out = out + [list.zip_with(num, den, (a, b) => a / b)]
     j = j + 1

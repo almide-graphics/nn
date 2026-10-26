@@ -9,17 +9,17 @@ import math
 fn softmax_time_rows(x: Matrix) -> Matrix = {
   let rx = matrix.to_lists(x)
   let (t, _) = matrix.shape(x)
-  var m: List[Float] = list.get_or(rx, 0, [])
+  var m: List[Float] = list.get(rx, 0) ?? []
   var i = 0
   while i < t {
-    let xi = list.get_or(rx, i, [])
-    m = list.zip_with(m, xi, (a, b) => math.fmax(a, b))
+    let xi = list.get(rx, i) ?? []
+    m = list.zip_with(m, xi, (a, b) => float.max(a, b))
     i = i + 1
   }
   var z: List[Float] = m |> list.map((_) => 0.0)
   var k = 0
   while k < t {
-    let xk = list.get_or(rx, k, [])
+    let xk = list.get(rx, k) ?? []
     let e = list.zip_with(xk, m, (a, b) => math.exp(a - b))
     z = list.zip_with(z, e, (a, b) => a + b)
     k = k + 1
@@ -27,7 +27,7 @@ fn softmax_time_rows(x: Matrix) -> Matrix = {
   var out: List[List[Float]] = []
   var j = 0
   while j < t {
-    let xj = list.get_or(rx, j, [])
+    let xj = list.get(rx, j) ?? []
     let e = list.zip_with(xj, m, (a, b) => math.exp(a - b))
     out = out + [list.zip_with(e, z, (a, b) => a / b)]
     j = j + 1

@@ -6,7 +6,7 @@
 import math
 
 fn hardswish(m: Matrix) -> Matrix =
-  matrix.map(m, (x) => x * math.fmax(0.0, math.fmin(1.0, (x + 3.0) / 6.0)))
+  matrix.map(m, (x) => x * float.max(0.0, float.min(1.0, (x + 3.0) / 6.0)))
 
 // x ≤ -3 → hardσ = 0 → hardswish = 0.
 test "hardswish saturates left to zero" {

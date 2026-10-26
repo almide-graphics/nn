@@ -95,7 +95,7 @@ effect fn main() -> () = {
     var k = 0
     while k < NB {
       let bit = int.band(int.bshr(e, NB - 1 - k), 1)
-      list.push(row, int.to_float(bit))
+      list.push(row, float.from(bit))
       k = k + 1
     }
     list.push(xs, row)
@@ -104,7 +104,7 @@ effect fn main() -> () = {
     let x2 = int.band(int.bshr(e, 1), 1)
     let x3 = int.band(e, 1)
     let f = int.bor(int.bxor(x0, x1), int.band(x2, x3))
-    list.push(ts, int.to_float(f))
+    list.push(ts, float.from(f))
     e = e + 1
   }
 
@@ -140,7 +140,7 @@ effect fn main() -> () = {
     var i = 0
     while i < NPARAM {
       rs = rng_next(rs)
-      list.push(logits, (int.to_float(int.band(rs, 65535)) / 32768.0) - 1.0)
+      list.push(logits, (float.from(int.band(rs, 65535)) / 32768.0) - 1.0)
       i = i + 1
     }
     var mAd = list.repeat(0.0, NPARAM)
@@ -189,7 +189,7 @@ effect fn main() -> () = {
         let y = list.get(list.get(acts, DEP + 1) ?? [], 0) ?? 0.0
         let t = list.get(ts, ex) ?? 0.0
         // dL/dy
-        let dy = 2.0 * (y - t) / int.to_float(NEX)
+        let dy = 2.0 * (y - t) / float.from(NEX)
 
         // backward: gradient wrt each unit's output, top layer first
         // dunit[layer] = list of dL/d(output of unit)
@@ -252,9 +252,9 @@ effect fn main() -> () = {
       }
 
       // Adam
-      let tt = int.to_float(step + 1)
-      let bc1 = 1.0 - math.fpow(b1, tt)
-      let bc2 = 1.0 - math.fpow(b2, tt)
+      let tt = float.from(step + 1)
+      let bc1 = 1.0 - float.pow(b1, tt)
+      let bc2 = 1.0 - float.pow(b2, tt)
       var j = 0
       while j < NPARAM {
         let gj = list.get(grad, j) ?? 0.0

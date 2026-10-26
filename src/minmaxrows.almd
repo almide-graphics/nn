@@ -15,9 +15,9 @@ fn minmax_rows(x: Matrix) -> Matrix = {
   var out: List[List[Float]] = []
   var i = 0
   while i < t {
-    let xi = list.get_or(rx, i, [])
-    let mn = xi |> list.fold(list.get_or(xi, 0, 0.0), (acc, v) => math.fmin(acc, v))
-    let mx = xi |> list.fold(list.get_or(xi, 0, 0.0), (acc, v) => math.fmax(acc, v))
+    let xi = list.get(rx, i) ?? []
+    let mn = xi |> list.fold(list.get(xi, 0) ?? 0.0, (acc, v) => float.min(acc, v))
+    let mx = xi |> list.fold(list.get(xi, 0) ?? 0.0, (acc, v) => float.max(acc, v))
     let span = mx - mn
     out = out + [xi |> list.map((v) => (v - mn) / (span + 0.000000000001))]
     i = i + 1

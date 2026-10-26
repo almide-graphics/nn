@@ -14,8 +14,8 @@ fn cummax_abs_rows(x: Matrix) -> Matrix = {
   var out: List[List[Float]] = []
   var i = 0
   while i < t {
-    let xi = list.get_or(rx, i, [])
-    acc = list.zip_with(acc, xi, (a, b) => math.fmax(a, float.abs(b)))
+    let xi = list.get(rx, i) ?? []
+    acc = list.zip_with(acc, xi, (a, b) => float.max(a, float.abs(b)))
     out = out + [acc]
     i = i + 1
   }

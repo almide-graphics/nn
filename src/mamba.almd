@@ -21,8 +21,8 @@ fn mamba_abar(delta: Matrix, a: Matrix) -> Matrix = {
   var out: List[List[Float]] = []
   var i = 0
   while i < t {
-    let di = list.get_or(rd, i, [])
-    let ai = list.get_or(ra, i, [])
+    let di = list.get(rd, i) ?? []
+    let ai = list.get(ra, i) ?? []
     out = out + [list.zip_with(di, ai, (dd, aa) => math.exp(dd * aa))]
     i = i + 1
   }

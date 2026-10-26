@@ -12,7 +12,7 @@ test "bipolar_sigmoid numpy-parity (generated, seed 20260746)" {
     var c = 0
     while c < 4 {
       let got = matrix.get(y, r, c)
-      let want = list.get_or(ref, r * 4 + c, 0.0)
+      let want = list.get(ref, r * 4 + c) ?? 0.0
       assert(float.abs(got - want) < 1.0e-09, "bipolar_sigmoid cell vs numpy")
       c = c + 1
     }

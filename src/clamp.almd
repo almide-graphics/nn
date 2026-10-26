@@ -18,16 +18,16 @@ fn clamp_rows(x: Matrix, lo: Matrix, hi: Matrix) -> Matrix = {
   var out: List[List[Float]] = []
   var i = 0
   while i < t {
-    let xi = list.get_or(rx, i, [])
-    let li = list.get_or(rl, i, [])
-    let hii = list.get_or(rh, i, [])
+    let xi = list.get(rx, i) ?? []
+    let li = list.get(rl, i) ?? []
+    let hii = list.get(rh, i) ?? []
     var row: List[Float] = []
     var j = 0
     while j < d {
-      let xv = list.get_or(xi, j, 0.0)
-      let lv = list.get_or(li, j, 0.0)
-      let hv = list.get_or(hii, j, 0.0)
-      row = row + [math.fmax(lv, math.fmin(hv, xv))]
+      let xv = list.get(xi, j) ?? 0.0
+      let lv = list.get(li, j) ?? 0.0
+      let hv = list.get(hii, j) ?? 0.0
+      row = row + [float.max(lv, float.min(hv, xv))]
       j = j + 1
     }
     out = out + [row]

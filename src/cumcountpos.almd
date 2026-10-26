@@ -13,7 +13,7 @@ fn cumcount_pos_rows(x: Matrix) -> Matrix = {
   var out: List[List[Float]] = []
   var i = 0
   while i < t {
-    let xi = list.get_or(rx, i, [])
+    let xi = list.get(rx, i) ?? []
     acc = list.zip_with(acc, xi, (a, v) => a + (if v > 0.0 then 1.0 else 0.0))
     out = out + [acc]
     i = i + 1

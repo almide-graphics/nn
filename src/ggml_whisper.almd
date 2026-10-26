@@ -65,13 +65,13 @@ type Model = {
 // a single WASM `i32.load` / `i64.load` when available, so these are much
 // faster than assembling bytes one at a time.
 
-fn read_u32(data: Bytes, pos: Int) -> Int = bytes.read_u32_le(data, pos)
-fn read_i32(data: Bytes, pos: Int) -> Int = bytes.read_i32_le(data, pos)
+fn read_u32(data: Bytes, pos: Int) -> Int = bytes.get_u32_le(data, pos) ?? 0
+fn read_i32(data: Bytes, pos: Int) -> Int = bytes.get_i32_le(data, pos) ?? 0
 
 fn read_bytes_string(data: Bytes, pos: Int, len: Int) -> String =
-  // Native UTF-8 slice → String. Previously a lambda-based per-byte concat
+  // UTF-8 slice → String. Previously a lambda-based per-byte concat
   // forced `data` to be captured by value (moving the Bytes into every call).
-  bytes.read_string_at(data, pos, len)
+  bytes.to_string_lossy(bytes.slice(data, pos, pos + len))
 
 // ── Parse stages ──
 
@@ -104,14 +104,17 @@ fn read_mel_filters_header(data: Bytes, pos: Int) -> (Int, Int, Int, Int) = {
 
 // Skip past the vocab section without materialising every token string.
 // Returns (n_vocab, section_start, section_end).
-// Uses native `bytes.skip_length_prefixed_le` to walk 50k+ entries in one call —
-// pure-Almide recursion would clone the 77MB Bytes on every iteration.
+// Each entry is a u32 length and that many bytes.
 fn skip_vocab(data: Bytes, pos: Int) -> (Int, Int, Int) = {
   let n = read_i32(data, pos)
   let start = pos + 4
-  let end = bytes.skip_length_prefixed_le(data, start, n)
+  let end = skip_entries(data, start, n)
   (n, start, end)
 }
+
+fn skip_entries(data: Bytes, pos: Int, remaining: Int) -> Int =
+  if remaining <= 0 then pos
+  else skip_entries(data, pos + 4 + read_u32(data, pos), remaining - 1)
 
 // Read one vocab entry by index. Does a linear scan from the section start,
 // so repeated calls are O(n); for bulk decoding, callers should materialise
@@ -125,10 +128,18 @@ fn vocab_at_loop(data: Bytes, pos: Int, target: Int, i: Int) -> Option[String] =
   else vocab_at_loop(data, pos + 4 + len, target, i + 1)
 }
 
-// Read the entire vocab as a List[String] in one native pass — O(n), no
-// O(n²) Almide-side append. Indexable by token id.
-fn vocab_all(model: Model) -> List[String] =
-  bytes.read_length_prefixed_strings_le(model.data, model.vocab_offset, model.n_vocab)
+// Read the entire vocab as a List[String]. Indexable by token id.
+fn vocab_all(model: Model) -> List[String] = {
+  let data = model.data
+  var pos = model.vocab_offset
+  var out: List[String] = []
+  for _ in list.range(0, model.n_vocab) {
+    let len = read_u32(data, pos)
+    out = out + [read_bytes_string(data, pos + 4, len)]
+    pos = pos + 4 + len
+  }
+  out
+}
 
 // Align `pos` up to the next 32-byte boundary. whisper.cpp pads tensor data
 // to match the GGML memory alignment requirement.
@@ -150,7 +161,7 @@ fn parse_tensor_meta(data: Bytes, pos: Int, total: Int) -> (TensorMeta, Int) = {
   let dims_start = pos + 12
   // Bulk-read dims in one native call — previously a lambda-captured `data`
   // (a 77MB Bytes) forced ownership, cascading to every caller.
-  let dims = bytes.read_i32_le_array(data, dims_start, n_dims)
+  let dims = bytes.get_i32_le_array(data, dims_start, n_dims) ?? []
   let name_start = dims_start + n_dims * 4
   let name = read_bytes_string(data, name_start, name_len)
   // Element count = product of dims
@@ -193,8 +204,8 @@ fn parse_tensors_loop(data: Bytes, pos: Int, total: Int, acc: List[TensorMeta]) 
 // hardware load + convert on Rust, and to a single `call` on WASM (f16
 // expansion is done by a 20-instruction runtime helper).
 
-fn read_f32_le(data: Bytes, pos: Int) -> Float = bytes.read_f32_le(data, pos)
-fn read_f16_le(data: Bytes, pos: Int) -> Float = bytes.read_f16_le(data, pos)
+fn read_f32_le(data: Bytes, pos: Int) -> Float = bytes.get_f32_le(data, pos) ?? 0.0
+fn read_f16_le(data: Bytes, pos: Int) -> Float = bytes.get_f16_le(data, pos) ?? 0.0
 
 fn tensor_to_floats(model: Model, tensor: TensorMeta) -> List[Float] = {
   let elem_count = list.fold(tensor.dims, 1, (acc, d) => acc * d)
@@ -240,7 +251,7 @@ fn parse(data: Bytes) -> Result[Model, String] = {
 // ── Effect-fn load helper ──
 
 effect fn load(path: String) -> Result[Model, String] =
-  match fs.read_bytes_raw(path) {
+  match fs.read_bytes(path) {
     ok(data) => parse(data),
     err(e) => err("failed to read " + path + ": " + e),
   }

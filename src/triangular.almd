@@ -5,7 +5,7 @@
 import math
 
 fn triangular(m: Matrix) -> Matrix =
-  matrix.map(m, (x) => math.fmax(0.0, 1.0 - float.abs(x)))
+  matrix.map(m, (x) => float.max(0.0, 1.0 - float.abs(x)))
 
 // peak 1 at 0; 1-0.5=0.5 at 0.5.
 test "triangular peak and slope" {

@@ -48,8 +48,8 @@ fn read_i16_le(data: Bytes, offset: Int) -> Int = {
 
 fn bytes_to_string(data: Bytes, offset: Int, len: Int) -> String =
   list.range(offset, offset + len)
-    |> list.map((i) => string.from_codepoint(int.band((bytes.get(data, i) ?? 0), 255)))
-    |> string.join("")
+    |> list.map((i) => string.from_codepoint(int.band((bytes.get(data, i) ?? 0), 255)) ?? "")
+    |> list.join("")
 
 // ── Parser ──
 
@@ -129,15 +129,15 @@ fn extract_samples_loop(data: Bytes, start: Int, count: Int, channels: Int, bits
     let offset = start + idx * channels * (bits / 8)
     let sample = if bits == 16 then {
       let raw = read_i16_le(data, offset)
-      int.to_float(raw) / 32768.0
+      float.from(raw) / 32768.0
     } else if bits == 32 then {
       // 32-bit PCM
       let raw = read_u32_le(data, offset)
-      int.to_float(raw) / 2147483648.0
+      float.from(raw) / 2147483648.0
     } else {
       // 8-bit unsigned
       let raw = int.band((bytes.get(data, offset) ?? 0), 255)
-      (int.to_float(raw) - 128.0) / 128.0
+      (float.from(raw) - 128.0) / 128.0
     }
     // Mono: take first channel only
     extract_samples_loop(data, start, count, channels, bits, idx + 1, acc + [sample])
@@ -154,8 +154,8 @@ effect fn load(path: String) -> Result[WavData, String] =
 fn resample(samples: List[Float], from_rate: Int, to_rate: Int) -> List[Float] = {
   if from_rate == to_rate then samples
   else {
-    let ratio = int.to_float(from_rate) / int.to_float(to_rate)
-    let out_len = float.to_int(int.to_float(list.len(samples)) / ratio)
+    let ratio = float.from(from_rate) / float.from(to_rate)
+    let out_len = int.from_saturating(float.from(list.len(samples)) / ratio)
     resample_loop(samples, ratio, out_len, 0, [])
   }
 }
@@ -163,9 +163,9 @@ fn resample(samples: List[Float], from_rate: Int, to_rate: Int) -> List[Float] =
 fn resample_loop(samples: List[Float], ratio: Float, out_len: Int, idx: Int, acc: List[Float]) -> List[Float] =
   if idx >= out_len then acc
   else {
-    let src_pos = int.to_float(idx) * ratio
-    let i0 = float.to_int(src_pos)
-    let frac = src_pos - int.to_float(i0)
+    let src_pos = float.from(idx) * ratio
+    let i0 = int.from_saturating(src_pos)
+    let frac = src_pos - float.from(i0)
     let s0 = list.get(samples, i0) |> option.unwrap_or(0.0)
     let s1 = list.get(samples, i0 + 1) |> option.unwrap_or(s0)
     let sample = s0 + (s1 - s0) * frac

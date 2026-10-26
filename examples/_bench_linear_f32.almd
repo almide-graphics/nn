@@ -4,27 +4,27 @@ import env
 
 effect fn bench(label: String, seq: Int, d: Int, iters: Int) -> () = {
   // X: (seq, d), W: (d, d), b: (d,)
-  let x = matrix.ones_f32(seq, d) |> (m) => matrix.scale(m, 0.001)
-  let w1 = matrix.ones_f32(d, d) |> (m) => matrix.scale(m, 0.01)
-  let w2 = matrix.ones_f32(d, d) |> (m) => matrix.scale(m, 0.01)
+  let x = matrix.ones(seq, d) |> (m) => matrix.scale(m, 0.001)
+  let w1 = matrix.ones(d, d) |> (m) => matrix.scale(m, 0.01)
+  let w2 = matrix.ones(d, d) |> (m) => matrix.scale(m, 0.01)
   let b1 = [0.1, 0.1, 0.1] |> list.map((_) => 0.1)  // Not actually used below
   // Warm up
-  let _w = matrix.get(matrix.mul_f32(x, w1), 0, 0)
+  let _w = matrix.get(x * w1, 0, 0)
 
-  let t0 = env.millis()
+  let t0 = datetime.now_ms()
   var i = 0
   var acc = 0.0
   while i < iters {
-    let eps = 1.0 + int.to_float(i) * 0.000000001
-    let y = matrix.mul_f32_scaled(x, eps, w1)
-    let z = matrix.mul_f32(y, w2)
+    let eps = 1.0 + float.from(i) * 0.000000001
+    let y = matrix.scale(x * w1, eps)
+    let z = y * w2
     acc = acc + matrix.get(z, 0, 0)
     i = i + 1
   }
-  let el = env.millis() - t0
-  let usc = int.to_float(el) * 1000.0 / int.to_float(iters)
+  let el = datetime.now_ms() - t0
+  let usc = float.from(el) * 1000.0 / float.from(iters)
   let tf = 2 * (seq * d * d) * 2  // 2 matmuls per iter
-  let gflops = int.to_float(tf * iters) / (int.to_float(el) / 1000.0) / 1e9
+  let gflops = float.from(tf * iters) / (float.from(el) / 1000.0) / 1e9
   println(label + " seq=" + int.to_string(seq) + " d=" + int.to_string(d) + ": " + int.to_string(el) + "ms " + float.to_string(gflops) + "GF " + float.to_string(usc) + "µs/call (acc=" + float.to_string(acc) + ")")
 }
 

@@ -14,12 +14,12 @@ fn hadamard_ternary_rows(a: Matrix, b: Matrix) -> Matrix = {
   let ra = matrix.to_lists(a)
   let rb = matrix.to_lists(b)
   let (t, d) = matrix.shape(a)
-  let df = int.to_float(d)
+  let df = float.from(d)
   var out: List[List[Float]] = []
   var i = 0
   while i < t {
-    let ai = list.get_or(ra, i, [])
-    let bi = list.get_or(rb, i, [])
+    let ai = list.get(ra, i) ?? []
+    let bi = list.get(rb, i) ?? []
     let da = 0.7 * ((ai |> list.fold(0.0, (acc, v) => acc + float.abs(v))) / df)
     let db = 0.7 * ((bi |> list.fold(0.0, (acc, v) => acc + float.abs(v))) / df)
     let row = list.zip_with(ai, bi, (u, v) => {

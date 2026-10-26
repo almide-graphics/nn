@@ -10,11 +10,11 @@ import float
 fn mean_abs_rows(x: Matrix) -> Matrix = {
   let rx = matrix.to_lists(x)
   let (rows, d) = matrix.shape(x)
-  let df = int.to_float(d)
+  let df = float.from(d)
   var out: List[List[Float]] = []
   var n = 0
   while n < rows {
-    let xn = list.get_or(rx, n, [])
+    let xn = list.get(rx, n) ?? []
     let s = xn |> list.fold(0.0, (acc, v) => acc + float.abs(v))
     out = out + [[s / df]]
     n = n + 1

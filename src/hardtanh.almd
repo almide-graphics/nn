@@ -4,7 +4,7 @@
 import math
 
 fn hardtanh(m: Matrix) -> Matrix =
-  matrix.map(m, (x) => math.fmax(-1.0, math.fmin(1.0, x)))
+  matrix.map(m, (x) => float.max(-1.0, float.min(1.0, x)))
 
 // x ≤ -1 → -1, x in [-1,1] → x, x ≥ 1 → 1.
 test "hardtanh clamps to [-1,1]" {

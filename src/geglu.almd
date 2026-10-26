@@ -18,8 +18,8 @@ fn geglu(x: Matrix, g: Matrix) -> Matrix = {
   var out: List[List[Float]] = []
   var n = 0
   while n < t {
-    let xn = list.get_or(rx, n, [])
-    let gn = list.get_or(rg, n, [])
+    let xn = list.get(rx, n) ?? []
+    let gn = list.get(rg, n) ?? []
     out = out + [list.zip_with(xn, gn, (xx, gg) => xx * gelu_scalar(gg))]
     n = n + 1
   }

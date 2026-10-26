@@ -109,7 +109,7 @@ type Matrix[T: Numeric] = ...
 
 // stdlib は generic signature を持つ
 matrix.ones[T: Numeric](rows: Int, cols: Int) -> Matrix[T]
-matrix.mul[T: Numeric](a: Matrix[T], b: Matrix[T]) -> Matrix[T]
+(x, y) => x * y[T: Numeric](a: Matrix[T], b: Matrix[T]) -> Matrix[T]
 matrix.scale[T: Numeric](m: Matrix[T], s: T) -> Matrix[T]
 ```
 

@@ -60,12 +60,12 @@ fn r_i32(data: Bytes, pos: Int) -> Int = {
 }
 
 fn r_f32(data: Bytes, pos: Int) -> Float =
-  int.bits_to_float(r_u32(data, pos))
+  float.from_bits(r_u32(data, pos))
 
 fn r_string(data: Bytes, pos: Int) -> (String, Int) = {
   let len = r_u64(data, pos)
   let raw = bytes.to_list(bytes.slice(data, pos + 8, pos + 8 + len))
-  (string.from_bytes(raw), pos + 8 + len)
+  (bytes.to_string_lossy(bytes.from_list(raw)), pos + 8 + len)
 }
 
 // ── GGUF value type enum ──
@@ -185,7 +185,7 @@ effect fn load(path: String) -> Result[GGUFFile, String] =
   // read_bytes_raw returns Bytes directly — the List[Int] round-trip of
   // fs.read_bytes costs 8 bytes of memory per file byte (19 GB for a
   // 2.4 GB model file).
-  match fs.read_bytes_raw(path) {
+  match fs.read_bytes(path) {
     err(e) => err("failed to read " + path + ": " + e)
     ok(raw) => parse(raw)
   }
@@ -229,13 +229,13 @@ fn f16_to_f32(raw: Int) -> Float = {
   let mantissa = int.band(raw, 1023)
   if exponent == 0 then {
     // Subnormal
-    let val = int.to_float(mantissa) / 1024.0 * math.fpow(2.0, -14.0)
+    let val = float.from(mantissa) / 1024.0 * float.pow(2.0, -14.0)
     if sign == 1 then 0.0 - val else val
   } else if exponent == 31 then {
     // Inf/NaN → approximate as large float
     if sign == 1 then -99999.0 else 99999.0
   } else {
-    let val = (1.0 + int.to_float(mantissa) / 1024.0) * math.fpow(2.0, int.to_float(exponent) - 15.0)
+    let val = (1.0 + float.from(mantissa) / 1024.0) * float.pow(2.0, float.from(exponent) - 15.0)
     if sign == 1 then 0.0 - val else val
   }
 }
@@ -272,7 +272,7 @@ fn get_metadata_float(file: GGUFFile, key: String) -> Option[Float] =
   list.find(file.metadata.entries, (e) => e.0 == key)
     |> option.flat_map((e) => match e.1 {
       ValFloat(f) => some(f)
-      ValInt(n) => some(int.to_float(n))
+      ValInt(n) => some(float.from(n))
       _ => none
     })
 

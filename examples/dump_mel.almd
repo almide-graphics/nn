@@ -30,12 +30,12 @@ effect fn main() -> () = {
   let n_mels = list.len(list.get(mel_lists, 0) |> option.unwrap_or([]))
   println("mel: " + int.to_string(n_frames) + " x " + int.to_string(n_mels))
 
-  var buf = bytes.new(0)
+  var buf = bytes.zeros(0)
   for row in mel_lists {
     for v in row {
       bytes.append_f64_le(buf, v)
     }
   }
-  fs.write_bytes_raw(out_path, buf)!
+  fs.write_bytes(out_path, buf)!
   println("wrote mel to " + out_path + " (" + int.to_string(bytes.len(buf)) + " bytes)")
 }

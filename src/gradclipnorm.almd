@@ -16,9 +16,9 @@ fn grad_clip_norm_rows(g: Matrix) -> Matrix = {
   var out: List[List[Float]] = []
   var i = 0
   while i < t {
-    let gi = list.get_or(rg, i, [])
+    let gi = list.get(rg, i) ?? []
     let n = math.sqrt(gi |> list.fold(0.0, (acc, v) => acc + v * v))
-    let scale = math.fmin(1.0, 1.0 / (n + 0.000000000001))
+    let scale = float.min(1.0, 1.0 / (n + 0.000000000001))
     out = out + [gi |> list.map((v) => v * scale)]
     i = i + 1
   }

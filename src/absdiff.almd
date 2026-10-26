@@ -11,11 +11,11 @@ fn abs_diff_rows(x: Matrix) -> Matrix = {
   let rx = matrix.to_lists(x)
   let (t, d) = matrix.shape(x)
   let zero = list.range(0, d) |> list.map((_) => 0.0)
-  var prev: List[Float] = list.get_or(rx, 0, [])
+  var prev: List[Float] = list.get(rx, 0) ?? []
   var out: List[List[Float]] = []
   var i = 0
   while i < t {
-    let xi = list.get_or(rx, i, [])
+    let xi = list.get(rx, i) ?? []
     let row = if i == 0 then zero else list.zip_with(prev, xi, (p, c) => float.abs(c - p))
     out = out + [row]
     prev = xi

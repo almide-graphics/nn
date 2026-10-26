@@ -7,7 +7,7 @@ import math
 fn tricube(m: Matrix) -> Matrix =
   matrix.map(m, (x) => {
     let a = float.abs(x)
-    let u = math.fmax(0.0, 1.0 - a * a * a)
+    let u = float.max(0.0, 1.0 - a * a * a)
     u * u * u
   })
 

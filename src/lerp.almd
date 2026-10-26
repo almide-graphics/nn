@@ -16,9 +16,9 @@ fn lerp_rows(a: Matrix, b: Matrix, t: Matrix) -> Matrix = {
   var out: List[List[Float]] = []
   var i = 0
   while i < rows {
-    let ai = list.get_or(ra, i, [])
-    let bi = list.get_or(rb, i, [])
-    let ti = list.get_or(rt, i, [])
+    let ai = list.get(ra, i) ?? []
+    let bi = list.get(rb, i) ?? []
+    let ti = list.get(rt, i) ?? []
     let diff = list.zip_with(bi, ai, (bv, av) => bv - av)
     let scaled = list.zip_with(ti, diff, (tv, dv) => tv * dv)
     let row = list.zip_with(ai, scaled, (av, sv) => av + sv)

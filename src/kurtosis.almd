@@ -13,11 +13,11 @@ import float
 fn kurtosis_rows(x: Matrix) -> Matrix = {
   let rx = matrix.to_lists(x)
   let (t, d) = matrix.shape(x)
-  let df = int.to_float(d)
+  let df = float.from(d)
   var out: List[List[Float]] = []
   var i = 0
   while i < t {
-    let xi = list.get_or(rx, i, [])
+    let xi = list.get(rx, i) ?? []
     let mean = (xi |> list.fold(0.0, (acc, v) => acc + v)) / df
     let m2 = (xi |> list.fold(0.0, (acc, v) => acc + (v - mean) * (v - mean))) / df
     let m4 = (xi |> list.fold(0.0, (acc, v) => {

@@ -17,8 +17,8 @@ fn weighted_var_rows(x: Matrix, w: Matrix) -> Matrix = {
   var out: List[List[Float]] = []
   var i = 0
   while i < t {
-    let xi = list.get_or(rx, i, [])
-    let wi = list.get_or(rw, i, [])
+    let xi = list.get(rx, i) ?? []
+    let wi = list.get(rw, i) ?? []
     let sw = wi |> list.fold(0.0, (acc, v) => acc + v)
     let mu = (list.zip_with(xi, wi, (xv, wv) => xv * wv) |> list.fold(0.0, (acc, v) => acc + v)) / (sw + 0.000000000001)
     let wvar = (list.zip_with(xi, wi, (xv, wv) => wv * (xv - mu) * (xv - mu)) |> list.fold(0.0, (acc, v) => acc + v)) / (sw + 0.000000000001)

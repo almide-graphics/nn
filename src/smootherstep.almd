@@ -6,7 +6,7 @@ import math
 
 fn smootherstep(m: Matrix) -> Matrix =
   matrix.map(m, (x) => {
-    let c = math.fmax(0.0, math.fmin(1.0, x))
+    let c = float.max(0.0, float.min(1.0, x))
     c * c * c * (c * (c * 6.0 - 15.0) + 10.0)
   })
 

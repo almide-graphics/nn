@@ -15,8 +15,8 @@ fn dice_coeff_rows(a: Matrix, b: Matrix) -> Matrix = {
   var out: List[List[Float]] = []
   var i = 0
   while i < t {
-    let ai = list.get_or(ra, i, [])
-    let bi = list.get_or(rb, i, [])
+    let ai = list.get(ra, i) ?? []
+    let bi = list.get(rb, i) ?? []
     let dot = list.zip_with(ai, bi, (x, y) => x * y) |> list.fold(0.0, (acc, v) => acc + v)
     let na = ai |> list.fold(0.0, (acc, v) => acc + v * v)
     let nb = bi |> list.fold(0.0, (acc, v) => acc + v * v)

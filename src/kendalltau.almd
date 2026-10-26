@@ -13,18 +13,18 @@ fn kendall_tau_rows(a: Matrix, b: Matrix) -> Matrix = {
   let ra = matrix.to_lists(a)
   let rb = matrix.to_lists(b)
   let (t, d) = matrix.shape(a)
-  let npairs = int.to_float(d * (d - 1) / 2)
+  let npairs = float.from(d * (d - 1) / 2)
   var out: List[List[Float]] = []
   var i = 0
   while i < t {
-    let ai = list.get_or(ra, i, [])
-    let bi = list.get_or(rb, i, [])
+    let ai = list.get(ra, i) ?? []
+    let bi = list.get(rb, i) ?? []
     var s = 0.0
     var j = 0
     while j < d {
       var k = j + 1
       while k < d {
-        let p = (list.get_or(ai, j, 0.0) - list.get_or(ai, k, 0.0)) * (list.get_or(bi, j, 0.0) - list.get_or(bi, k, 0.0))
+        let p = (list.get(ai, j) ?? 0.0 - list.get(ai, k) ?? 0.0) * (list.get(bi, j) ?? 0.0 - list.get(bi, k) ?? 0.0)
         s = s + (if p > 0.0 then 1.0 else (if p < 0.0 then 0.0 - 1.0 else 0.0))
         k = k + 1
       }

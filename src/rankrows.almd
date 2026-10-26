@@ -15,18 +15,18 @@ fn rank_rows(x: Matrix) -> Matrix = {
   var out: List[List[Float]] = []
   var i = 0
   while i < t {
-    let xi = list.get_or(rx, i, [])
+    let xi = list.get(rx, i) ?? []
     var row: List[Float] = []
     var j = 0
     while j < d {
-      let xj = list.get_or(xi, j, 0.0)
+      let xj = list.get(xi, j) ?? 0.0
       var cnt = 0
       var k = 0
       while k < d {
-        cnt = if list.get_or(xi, k, 0.0) < xj then cnt + 1 else cnt
+        cnt = if list.get(xi, k) ?? 0.0 < xj then cnt + 1 else cnt
         k = k + 1
       }
-      row = row + [int.to_float(cnt)]
+      row = row + [float.from(cnt)]
       j = j + 1
     }
     out = out + [row]

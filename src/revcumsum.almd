@@ -10,7 +10,7 @@ fn reverse_cumsum_rows(x: Matrix) -> Matrix = {
   var out: List[List[Float]] = []
   var j = 0
   while j < t {
-    let xi = list.get_or(rx, t - 1 - j, [])
+    let xi = list.get(rx, t - 1 - j) ?? []
     acc = list.zip_with(acc, xi, (a, b) => a + b)
     out = [acc] + out
     j = j + 1

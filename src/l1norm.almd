@@ -8,7 +8,7 @@ fn l1_normalize_rows(x: Matrix) -> Matrix = {
   var out: List[List[Float]] = []
   var n = 0
   while n < t {
-    let xn = list.get_or(rx, n, [])
+    let xn = list.get(rx, n) ?? []
     let s = xn |> list.fold(0.0, (acc, v) => acc + float.abs(v))
     let inv = 1.0 / (s + 0.000000000001)
     out = out + [list.map(xn, (v) => v * inv)]

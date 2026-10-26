@@ -11,12 +11,12 @@ fn mae_rows(a: Matrix, b: Matrix) -> Matrix = {
   let ra = matrix.to_lists(a)
   let rb = matrix.to_lists(b)
   let (t, d) = matrix.shape(a)
-  let df = int.to_float(d)
+  let df = float.from(d)
   var out: List[List[Float]] = []
   var n = 0
   while n < t {
-    let an = list.get_or(ra, n, [])
-    let bn = list.get_or(rb, n, [])
+    let an = list.get(ra, n) ?? []
+    let bn = list.get(rb, n) ?? []
     let sae = list.zip_with(an, bn, (x, y) => float.abs(x - y)) |> list.fold(0.0, (acc, v) => acc + v)
     out = out + [[sae / df]]
     n = n + 1

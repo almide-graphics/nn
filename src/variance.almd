@@ -6,11 +6,11 @@
 fn variance_rows(x: Matrix) -> Matrix = {
   let rx = matrix.to_lists(x)
   let (t, d) = matrix.shape(x)
-  let df = int.to_float(d)
+  let df = float.from(d)
   var out: List[List[Float]] = []
   var n = 0
   while n < t {
-    let xn = list.get_or(rx, n, [])
+    let xn = list.get(rx, n) ?? []
     let mean = (xn |> list.fold(0.0, (acc, v) => acc + v)) / df
     let sq = xn |> list.fold(0.0, (acc, v) => acc + (v - mean) * (v - mean))
     out = out + [[sq / df]]

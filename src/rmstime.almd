@@ -9,11 +9,11 @@ import math
 fn rms_time_rows(x: Matrix) -> Matrix = {
   let rx = matrix.to_lists(x)
   let (t, d) = matrix.shape(x)
-  let tf = int.to_float(t)
+  let tf = float.from(t)
   var ss: List[Float] = list.range(0, d) |> list.map((_) => 0.0)
   var i = 0
   while i < t {
-    let xi = list.get_or(rx, i, [])
+    let xi = list.get(rx, i) ?? []
     ss = list.zip_with(ss, xi, (a, b) => a + b * b)
     i = i + 1
   }
@@ -21,7 +21,7 @@ fn rms_time_rows(x: Matrix) -> Matrix = {
   var out: List[List[Float]] = []
   var j = 0
   while j < t {
-    let xj = list.get_or(rx, j, [])
+    let xj = list.get(rx, j) ?? []
     out = out + [list.zip_with(xj, rms, (a, b) => a / b)]
     j = j + 1
   }

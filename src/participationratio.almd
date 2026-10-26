@@ -14,7 +14,7 @@ fn participation_ratio_rows(x: Matrix) -> Matrix = {
   var out: List[List[Float]] = []
   var i = 0
   while i < t {
-    let xi = list.get_or(rx, i, [])
+    let xi = list.get(rx, i) ?? []
     let s2 = xi |> list.fold(0.0, (acc, v) => acc + v * v)
     let s4 = xi |> list.fold(0.0, (acc, v) => {
       let v2 = v * v

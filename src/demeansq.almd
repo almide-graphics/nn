@@ -11,17 +11,17 @@ fn demean_sq_rows(x: Matrix) -> Matrix = {
   var s: List[Float] = list.range(0, d) |> list.map((_) => 0.0)
   var i = 0
   while i < t {
-    let xi = list.get_or(rx, i, [])
+    let xi = list.get(rx, i) ?? []
     s = list.zip_with(s, xi, (a, b) => a + b)
     i = i + 1
   }
-  let tf = int.to_float(t)
+  let tf = float.from(t)
   let mu = s |> list.map((v) => v / tf)
   // pass 2: squared centered residual per row.
   var out: List[List[Float]] = []
   var j = 0
   while j < t {
-    let xj = list.get_or(rx, j, [])
+    let xj = list.get(rx, j) ?? []
     out = out + [list.zip_with(xj, mu, (a, b) => (a - b) * (a - b))]
     j = j + 1
   }

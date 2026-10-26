@@ -38,12 +38,12 @@ fn encoder_block(
     b_q, b_k, b_v, b_o,
     n_heads,
   )
-  let h = matrix.add(x, attn_out)
+  let h = x + attn_out
 
   // Pre-LN FFN
   let h_norm = act.layer_norm(h, ln2_gamma, ln2_beta)
   let ffn_out = act.linear(act.gelu(act.linear(h_norm, w_ffn1, b_ffn1)), w_ffn2, b_ffn2)
-  matrix.add(h, ffn_out)
+  h + ffn_out
 }
 
 // ── Decoder block ──
@@ -80,7 +80,7 @@ fn decoder_block(
     b_sq, b_sk, b_sv, b_so,
     n_heads,
   )
-  let h1 = matrix.add(x, self_out)
+  let h1 = x + self_out
 
   // Cross-attention: Q from h1, K/V from encoder
   let h1_norm = act.layer_norm(h1, ln2_gamma, ln2_beta)
@@ -90,12 +90,12 @@ fn decoder_block(
     b_cq, b_ck, b_cv, b_co,
     n_heads,
   )
-  let h2 = matrix.add(h1, cross_out)
+  let h2 = h1 + cross_out
 
   // FFN (pre-LN)
   let h2_norm = act.layer_norm(h2, ln3_gamma, ln3_beta)
   let ffn_out = act.linear(act.gelu(act.linear(h2_norm, w_ffn1, b_ffn1)), w_ffn2, b_ffn2)
-  matrix.add(h2, ffn_out)
+  h2 + ffn_out
 }
 
 // ── Bundled weight types ──

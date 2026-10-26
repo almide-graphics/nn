@@ -108,7 +108,7 @@ fn decode(ids: List[Int], vocab: Vocab) -> String = {
   // Linear scan of `vocab` entries for each id. For very large vocabs a
   // pre-built reverse map would be faster, but this is simple and avoids
   // a second dict allocation per call.
-  let pairs = map.entries(vocab)
+  let pairs = map.to_list(vocab)
   ids |> list.map((tid) => lookup_token(pairs, tid)) |> list.join("")
 }
 

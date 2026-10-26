@@ -15,9 +15,9 @@ fn elementwise_max_rows(a: Matrix, b: Matrix) -> Matrix = {
   var out: List[List[Float]] = []
   var i = 0
   while i < t {
-    let ai = list.get_or(ra, i, [])
-    let bi = list.get_or(rb, i, [])
-    out = out + [list.zip_with(ai, bi, (x, y) => math.fmax(x, y))]
+    let ai = list.get(ra, i) ?? []
+    let bi = list.get(rb, i) ?? []
+    out = out + [list.zip_with(ai, bi, (x, y) => float.max(x, y))]
     i = i + 1
   }
   matrix.from_lists(out)

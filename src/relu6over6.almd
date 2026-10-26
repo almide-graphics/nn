@@ -5,7 +5,7 @@
 import math
 
 fn relu6_over6(m: Matrix) -> Matrix =
-  matrix.map(m, (x) => math.fmax(0.0, math.fmin(6.0, x)) / 6.0)
+  matrix.map(m, (x) => float.max(0.0, float.min(6.0, x)) / 6.0)
 
 // clamps below 0 / above 6; 3/6 = 0.5 at the midpoint.
 test "relu6_over6 clamps and is half at three" {

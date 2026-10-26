@@ -13,8 +13,8 @@ fn hardmin_rows(x: Matrix) -> Matrix = {
   var out: List[List[Float]] = []
   var i = 0
   while i < t {
-    let xi = list.get_or(rx, i, [])
-    let m = xi |> list.fold(list.get_or(xi, 0, 0.0), (acc, v) => math.fmin(acc, v))
+    let xi = list.get(rx, i) ?? []
+    let m = xi |> list.fold(list.get(xi, 0) ?? 0.0, (acc, v) => float.min(acc, v))
     out = out + [xi |> list.map((v) => if v <= m then 1.0 else 0.0)]
     i = i + 1
   }

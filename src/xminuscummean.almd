@@ -12,9 +12,9 @@ fn x_minus_cummean_rows(x: Matrix) -> Matrix = {
   var out: List[List[Float]] = []
   var i = 0
   while i < t {
-    let xi = list.get_or(rx, i, [])
+    let xi = list.get(rx, i) ?? []
     s = list.zip_with(s, xi, (a, b) => a + b)
-    let n = int.to_float(i + 1)
+    let n = float.from(i + 1)
     out = out + [list.zip_with(xi, s, (a, sa) => a - sa / n)]
     i = i + 1
   }

@@ -14,8 +14,8 @@ fn cosine_sim_rows(a: Matrix, b: Matrix) -> Matrix = {
   var out: List[List[Float]] = []
   var n = 0
   while n < t {
-    let an = list.get_or(ra, n, [])
-    let bn = list.get_or(rb, n, [])
+    let an = list.get(ra, n) ?? []
+    let bn = list.get(rb, n) ?? []
     let dot = list.zip_with(an, bn, (x, y) => x * y) |> list.fold(0.0, (acc, v) => acc + v)
     let na = an |> list.fold(0.0, (acc, v) => acc + v * v)
     let nb = bn |> list.fold(0.0, (acc, v) => acc + v * v)

@@ -14,15 +14,15 @@ fn pinball_loss_rows(y: Matrix, yhat: Matrix) -> Matrix = {
   let ry = matrix.to_lists(y)
   let rh = matrix.to_lists(yhat)
   let (t, d) = matrix.shape(y)
-  let df = int.to_float(d)
+  let df = float.from(d)
   var out: List[List[Float]] = []
   var i = 0
   while i < t {
-    let yi = list.get_or(ry, i, [])
-    let hi = list.get_or(rh, i, [])
+    let yi = list.get(ry, i) ?? []
+    let hi = list.get(rh, i) ?? []
     let s = list.zip_with(yi, hi, (yv, hv) => {
       let e = yv - hv
-      math.fmax(0.7 * e, (0.7 - 1.0) * e)
+      float.max(0.7 * e, (0.7 - 1.0) * e)
     }) |> list.fold(0.0, (acc, v) => acc + v)
     out = out + [[s / df]]
     i = i + 1

@@ -26,7 +26,7 @@ import math
 fn gen(t: Int, d: Int, base: Float, amp: Float, ft: Float, fj: Float) -> Matrix =
   matrix.from_lists(list.range(0, t) |> list.map((ti) =>
     list.range(0, d) |> list.map((j) =>
-      base + amp * math.sin(ft * int.to_float(ti) + fj * int.to_float(j)))))
+      base + amp * math.sin(ft * float.from(ti) + fj * float.from(j)))))
 
 effect fn main() -> () = {
   let t = 12
@@ -45,6 +45,6 @@ effect fn main() -> () = {
     }
     r = r + 1
   }
-  fs.write("oplab/scan_alm.txt", s)!
+  fs.write_text("oplab/scan_alm.txt", s)!
   println("wrote oplab/scan_alm.txt (" + int.to_string(t * d) + " values)")
 }

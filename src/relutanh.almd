@@ -5,7 +5,7 @@
 import math
 
 fn relu_tanh(m: Matrix) -> Matrix =
-  matrix.map(m, (x) => math.fmax(0.0, 2.0 / (1.0 + math.exp(0.0 - 2.0 * x)) - 1.0))
+  matrix.map(m, (x) => float.max(0.0, 2.0 / (1.0 + math.exp(0.0 - 2.0 * x)) - 1.0))
 
 // 0 for x≤0 (incl. 0).
 test "relu_tanh is zero for x<=0" {

@@ -13,27 +13,27 @@ effect fn bench_matmul(label: String, rows_a: Int, cols_a: Int, cols_b: Int, ite
   let b = matrix.ones(cols_a, cols_b) |> (m) => matrix.scale(m, 0.001)
 
   // Warm up
-  let warm = matrix.mul(a, b)
+  let warm = a * b
   let warm_v = matrix.get(warm, 0, 0)
 
-  let t0 = env.millis()
+  let t0 = datetime.now_ms()
   var i = 0
   var acc = 0.0
   while i < iters {
     // Per-iteration scale prevents LLVM/runtime from hoisting the matmul
     // (input is loop-variant). Cost: 1 scale vs rows_a*cols_a*cols_b FMAs,
     // i.e. O(1/cols_b) overhead — negligible for meaningful matmul sizes.
-    let eps = 1.0 + int.to_float(i) * 0.000000001
+    let eps = 1.0 + float.from(i) * 0.000000001
     let a_i = matrix.scale(a, eps)
-    let r = matrix.mul(a_i, b)
+    let r = a_i * b
     acc = acc + matrix.get(r, 0, 0)
     i = i + 1
   }
-  let t1 = env.millis()
+  let t1 = datetime.now_ms()
   let elapsed = t1 - t0
   let flops_per_mul = 2 * rows_a * cols_a * cols_b
   let total_flops = iters * flops_per_mul
-  let gflops = int.to_float(total_flops) / (int.to_float(elapsed) / 1000.0) / 1000000000.0
+  let gflops = float.from(total_flops) / (float.from(elapsed) / 1000.0) / 1000000000.0
   println(label + ": " + int.to_string(iters) + "×" + int.to_string(rows_a) + "x" + int.to_string(cols_a) + "@" + int.to_string(cols_a) + "x" + int.to_string(cols_b) + " = " + int.to_string(elapsed) + "ms → " + float.to_string(gflops) + " GFLOPS (acc=" + float.to_string(acc) + ", warm=" + float.to_string(warm_v) + ")")
 }
 

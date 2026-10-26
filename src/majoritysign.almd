@@ -11,7 +11,7 @@ fn majority_sign_rows(x: Matrix) -> Matrix = {
   var out: List[List[Float]] = []
   var i = 0
   while i < t {
-    let xi = list.get_or(rx, i, [])
+    let xi = list.get(rx, i) ?? []
     let s = xi |> list.fold(0.0, (acc, v) => acc + v)
     let sg = if s > 0.0 then 1.0 else (if s < 0.0 then 0.0 - 1.0 else 0.0)
     out = out + [[sg]]

@@ -16,12 +16,12 @@ fn l3_norm_rows(x: Matrix) -> Matrix = {
   var out: List[List[Float]] = []
   var i = 0
   while i < t {
-    let xi = list.get_or(rx, i, [])
+    let xi = list.get(rx, i) ?? []
     let s = xi |> list.fold(0.0, (acc, v) => {
       let a = float.abs(v)
       acc + a * a * a
     })
-    out = out + [[math.fpow(s, 1.0 / 3.0)]]
+    out = out + [[float.pow(s, 1.0 / 3.0)]]
     i = i + 1
   }
   matrix.from_lists(out)

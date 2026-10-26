@@ -17,9 +17,9 @@ fn delta_rule_diag(k: Matrix, v: Matrix, beta: Matrix) -> Matrix = {
   var out: List[List[Float]] = []
   var n = 0
   while n < t {
-    let kn = list.get_or(rk, n, [])
-    let vn = list.get_or(rv, n, [])
-    let bn = list.get_or(rb, n, [])
+    let kn = list.get(rk, n) ?? []
+    let vn = list.get(rv, n) ?? []
+    let bn = list.get(rb, n) ?? []
     let pred = list.zip_with(s, kn, (ss, kk) => ss * kk)
     let resid = list.zip_with(vn, pred, (vv, pp) => vv - pp)
     let be = list.zip_with(bn, resid, (bb, ee) => bb * ee)

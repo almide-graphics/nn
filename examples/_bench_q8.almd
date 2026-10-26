@@ -16,7 +16,7 @@ fn parse_ids(text: String) -> List[Int] =
     |> list.filter_map((s) => int.parse(string.trim(s))?)
 
 fn ms_between(t0: Int, t1: Int) -> Float =
-  int.to_float(t1 - t0) / 1000000.0
+  float.from(t1 - t0) / 1000000.0
 
 effect fn main() -> () = {
   let t0 = datetime.monotonic_ns()
@@ -33,7 +33,7 @@ effect fn main() -> () = {
   let t3 = datetime.monotonic_ns()
   let gen_ms = ms_between(t2, t3)
   let n_gen = list.len(out) - list.len(prompt)
-  let tps = int.to_float(n_gen) / (gen_ms / 1000.0)
+  let tps = float.from(n_gen) / (gen_ms / 1000.0)
   println("q8_0 generate: " + int.to_string(n_gen) + " tokens in "
     + float.to_string(gen_ms) + " ms → " + float.to_string(tps) + " tok/s")
   println("ids: " + (list.slice(out, list.len(prompt), list.len(out))

@@ -15,9 +15,9 @@ fn cumrms_rows(x: Matrix) -> Matrix = {
   var out: List[List[Float]] = []
   var i = 0
   while i < t {
-    let xi = list.get_or(rx, i, [])
+    let xi = list.get(rx, i) ?? []
     acc = list.zip_with(acc, xi, (a, v) => a + v * v)
-    let n = int.to_float(i + 1)
+    let n = float.from(i + 1)
     out = out + [acc |> list.map((s) => math.sqrt(s / n))]
     i = i + 1
   }

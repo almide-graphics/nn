@@ -6,7 +6,7 @@
 //   almide build examples/_tokenizer_parity.almd -o /tmp/tok_parity && /tmp/tok_parity
 
 import fs
-import process
+import env
 import self.qwen_tokenizer
 
 // Mirror of tools/dump_logits.py PROMPTS — keep in sync.
@@ -34,8 +34,8 @@ fn prompts() -> List[String] = [
 ]
 
 effect fn main() -> () = {
-  let args = process.args()
-  let gguf = list.get(args, 1) ?? "parity/qwen3-0.6b-q8_0.gguf"
+  let args = env.args()
+  let gguf = list.get(args, 0) ?? "parity/qwen3-0.6b-q8_0.gguf"
   let tok = qwen_tokenizer.load(gguf)!
   println("tokenizer: " + int.to_string(list.len(tok.vocab_off) - 1) + " tokens, "
     + int.to_string(list.len(tok.merge_off) - 1) + " merges, eos="

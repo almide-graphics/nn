@@ -14,9 +14,9 @@ fn fma_rows(a: Matrix, b: Matrix, c: Matrix) -> Matrix = {
   var out: List[List[Float]] = []
   var i = 0
   while i < rows {
-    let ai = list.get_or(ra, i, [])
-    let bi = list.get_or(rb, i, [])
-    let ci = list.get_or(rc, i, [])
+    let ai = list.get(ra, i) ?? []
+    let bi = list.get(rb, i) ?? []
+    let ci = list.get(rc, i) ?? []
     let prod = list.zip_with(ai, bi, (av, bv) => av * bv)
     let row = list.zip_with(prod, ci, (pv, cv) => pv + cv)
     out = out + [row]

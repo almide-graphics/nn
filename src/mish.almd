@@ -6,7 +6,7 @@
 import math
 
 fn sp_scalar(x: Float) -> Float =
-  math.fmax(x, 0.0) + math.log(1.0 + math.exp(0.0 - float.abs(x)))
+  float.max(x, 0.0) + math.log(1.0 + math.exp(0.0 - float.abs(x)))
 
 fn tanh_scalar(y: Float) -> Float =
   2.0 / (1.0 + math.exp(0.0 - 2.0 * y)) - 1.0

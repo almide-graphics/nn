@@ -15,8 +15,8 @@ fn kl_div_rows(p: Matrix, q: Matrix) -> Matrix = {
   var out: List[List[Float]] = []
   var n = 0
   while n < t {
-    let pn = list.get_or(rp, n, [])
-    let qn = list.get_or(rq, n, [])
+    let pn = list.get(rp, n) ?? []
+    let qn = list.get(rq, n) ?? []
     let kl = list.zip_with(pn, qn, (pj, qj) => pj * (math.log(pj) - math.log(qj))) |> list.fold(0.0, (acc, v) => acc + v)
     out = out + [[kl]]
     n = n + 1

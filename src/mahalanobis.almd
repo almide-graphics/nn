@@ -19,14 +19,14 @@ fn mahalanobis_diag_rows(a: Matrix, b: Matrix, v: Matrix) -> Matrix = {
   var out: List[List[Float]] = []
   var i = 0
   while i < t {
-    let ai = list.get_or(ra, i, [])
-    let bi = list.get_or(rb, i, [])
-    let vi = list.get_or(rv, i, [])
+    let ai = list.get(ra, i) ?? []
+    let bi = list.get(rb, i) ?? []
+    let vi = list.get(rv, i) ?? []
     var s = 0.0
     var j = 0
     while j < d {
-      let diff = list.get_or(ai, j, 0.0) - list.get_or(bi, j, 0.0)
-      s = s + diff * diff / (list.get_or(vi, j, 0.0) + 0.000000000001)
+      let diff = list.get(ai, j) ?? 0.0 - list.get(bi, j) ?? 0.0
+      s = s + diff * diff / (list.get(vi, j) ?? 0.0 + 0.000000000001)
       j = j + 1
     }
     out = out + [[math.sqrt(s)]]

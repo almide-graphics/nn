@@ -14,7 +14,7 @@ fn ema_sq_rows(x: Matrix) -> Matrix = {
   var out: List[List[Float]] = []
   var n = 0
   while n < t {
-    let xn = list.get_or(rx, n, [])
+    let xn = list.get(rx, n) ?? []
     s = list.zip_with(s, xn, (sv, xv) => 0.9 * sv + 0.1 * (xv * xv))
     out = out + [s]
     n = n + 1

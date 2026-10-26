@@ -17,14 +17,14 @@ fn soft_argmax_rows(x: Matrix) -> Matrix = {
   var out: List[List[Float]] = []
   var i = 0
   while i < t {
-    let xi = list.get_or(rx, i, [])
-    let m = xi |> list.fold(0.0 - 100000000000000000000.0, (acc, v) => math.fmax(acc, v))
+    let xi = list.get(rx, i) ?? []
+    let m = xi |> list.fold(0.0 - 100000000000000000000.0, (acc, v) => float.max(acc, v))
     let e = xi |> list.map((v) => math.exp(v - m))
     let z = e |> list.fold(0.0, (acc, v) => acc + v)
     var num = 0.0
     var j = 0
     while j < d {
-      num = num + int.to_float(j) * list.get_or(e, j, 0.0)
+      num = num + float.from(j) * list.get(e, j) ?? 0.0
       j = j + 1
     }
     out = out + [[num / z]]

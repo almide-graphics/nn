@@ -18,16 +18,16 @@ fn median_rows(x: Matrix) -> Matrix = {
   var out: List[List[Float]] = []
   var i = 0
   while i < t {
-    let xi = list.get_or(rx, i, [])
+    let xi = list.get(rx, i) ?? []
     var oslo = 0.0
     var oshi = 0.0
     var j = 0
     while j < d {
-      let xj = list.get_or(xi, j, 0.0)
+      let xj = list.get(xi, j) ?? 0.0
       var rank = 0
       var k = 0
       while k < d {
-        rank = if list.get_or(xi, k, 0.0) < xj then rank + 1 else rank
+        rank = if list.get(xi, k) ?? 0.0 < xj then rank + 1 else rank
         k = k + 1
       }
       oslo = if rank == lo then oslo + xj else oslo

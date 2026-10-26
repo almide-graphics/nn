@@ -7,7 +7,7 @@ fn sumpool_rows(x: Matrix) -> Matrix = {
   var out: List[List[Float]] = []
   var n = 0
   while n < t {
-    let xn = list.get_or(rx, n, [])
+    let xn = list.get(rx, n) ?? []
     let s = xn |> list.fold(0.0, (acc, v) => acc + v)
     out = out + [[s]]
     n = n + 1

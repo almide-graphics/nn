@@ -11,19 +11,19 @@
 fn record_count_rows(x: Matrix) -> Matrix = {
   let rx = matrix.to_lists(x)
   let (t, d) = matrix.shape(x)
-  var best = list.get_or(rx, 0, [])
+  var best = list.get(rx, 0) ?? []
   var cnt: List[Float] = list.range(0, d) |> list.map((_) => 1.0)
   var out: List[List[Float]] = []
   var i = 0
   while i < t {
-    let xi = list.get_or(rx, i, [])
+    let xi = list.get(rx, i) ?? []
     var nb: List[Float] = []
     var nc: List[Float] = []
     var j = 0
     while j < d {
-      let xv = list.get_or(xi, j, 0.0)
-      let bv = list.get_or(best, j, 0.0)
-      let cv = list.get_or(cnt, j, 0.0)
+      let xv = list.get(xi, j) ?? 0.0
+      let bv = list.get(best, j) ?? 0.0
+      let cv = list.get(cnt, j) ?? 0.0
       let upd = xv > bv
       nb = nb + [if upd then xv else bv]
       nc = nc + [if upd then cv + 1.0 else cv]

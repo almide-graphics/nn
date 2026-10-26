@@ -13,8 +13,8 @@ fn hadamard_sign_rows(a: Matrix, b: Matrix) -> Matrix = {
   var out: List[List[Float]] = []
   var i = 0
   while i < t {
-    let ai = list.get_or(ra, i, [])
-    let bi = list.get_or(rb, i, [])
+    let ai = list.get(ra, i) ?? []
+    let bi = list.get(rb, i) ?? []
     let row = list.zip_with(ai, bi, (u, v) => {
       let su = if u > 0.0 then 1.0 else (if u < 0.0 then 0.0 - 1.0 else 0.0)
       let sv = if v > 0.0 then 1.0 else (if v < 0.0 then 0.0 - 1.0 else 0.0)

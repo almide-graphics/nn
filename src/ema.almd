@@ -12,7 +12,7 @@ fn ema(x: Matrix, alpha: List[Float]) -> Matrix = {
   var out: List[List[Float]] = []
   var n = 0
   while n < t {
-    let xn = list.get_or(rx, n, [])
+    let xn = list.get(rx, n) ?? []
     let keep = list.zip_with(alpha, h, (a, hh) => a * hh)
     let take = list.zip_with(alpha, xn, (a, xx) => (1.0 - a) * xx)
     h = list.zip_with(keep, take, (p, q) => p + q)

@@ -2,33 +2,34 @@
 //   y = gelu(X @ W1 + b1) @ W2 + b2
 // Stresses matmul + bias + gelu + matmul + bias, all SmallF32 path.
 import env
+import nnlib
 
 effect fn bench(label: String, seq: Int, d_in: Int, d_mid: Int, iters: Int) -> () = {
-  let x  = matrix.ones_f32(seq, d_in)  |> (m) => matrix.scale(m, 0.001)
-  let w1 = matrix.ones_f32(d_in, d_mid) |> (m) => matrix.scale(m, 0.01)
-  let w2 = matrix.ones_f32(d_mid, d_in) |> (m) => matrix.scale(m, 0.01)
+  let x  = matrix.ones(seq, d_in)  |> (m) => matrix.scale(m, 0.001)
+  let w1 = matrix.ones(d_in, d_mid) |> (m) => matrix.scale(m, 0.01)
+  let w2 = matrix.ones(d_mid, d_in) |> (m) => matrix.scale(m, 0.01)
   let b1: List[Float] = list.range(0, d_mid) |> list.map((_) => 0.1)
   let b2: List[Float] = list.range(0, d_in)  |> list.map((_) => 0.1)
   // warm
-  let _w = matrix.get(matrix.mul_f32(x, w1), 0, 0)
+  let _w = matrix.get(x * w1, 0, 0)
 
-  let t0 = env.millis()
+  let t0 = datetime.now_ms()
   var i = 0
   var acc = 0.0
   while i < iters {
-    let eps = 1.0 + int.to_float(i) * 0.000000001
-    let h1  = matrix.mul_f32_scaled(x, eps, w1)       // X * eps @ W1
+    let eps = 1.0 + float.from(i) * 0.000000001
+    let h1  = matrix.scale(x * w1, eps)       // X * eps @ W1
     let h1b = matrix.broadcast_add_row(h1, b1)
-    let a   = matrix.gelu(h1b)
-    let h2  = matrix.mul_f32(a, w2)
+    let a   = nnlib.gelu(h1b)
+    let h2  = a * w2
     let out = matrix.broadcast_add_row(h2, b2)
     acc = acc + matrix.get(out, 0, 0)
     i = i + 1
   }
-  let el = env.millis() - t0
-  let usc = int.to_float(el) * 1000.0 / int.to_float(iters)
+  let el = datetime.now_ms() - t0
+  let usc = float.from(el) * 1000.0 / float.from(iters)
   let mmflops = 2 * (seq * d_in * d_mid) + 2 * (seq * d_mid * d_in)
-  let gflops = int.to_float(mmflops * iters) / (int.to_float(el) / 1000.0) / 1e9
+  let gflops = float.from(mmflops * iters) / (float.from(el) / 1000.0) / 1e9
   println(label + " seq=" + int.to_string(seq) + " d_in=" + int.to_string(d_in) + " d_mid=" + int.to_string(d_mid) + ": " + int.to_string(el) + "ms " + float.to_string(gflops) + "GF " + float.to_string(usc) + "µs/call (acc=" + float.to_string(acc) + ")")
 }
 

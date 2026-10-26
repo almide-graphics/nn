@@ -12,11 +12,11 @@ import math
 fn hoyer_sparsity_rows(x: Matrix) -> Matrix = {
   let rx = matrix.to_lists(x)
   let (t, d) = matrix.shape(x)
-  let sq = math.sqrt(int.to_float(d))
+  let sq = math.sqrt(float.from(d))
   var out: List[List[Float]] = []
   var i = 0
   while i < t {
-    let xi = list.get_or(rx, i, [])
+    let xi = list.get(rx, i) ?? []
     let l1 = xi |> list.fold(0.0, (acc, v) => acc + float.abs(v))
     let l2 = math.sqrt(xi |> list.fold(0.0, (acc, v) => acc + v * v))
     out = out + [[(sq - l1 / (l2 + 0.000000000001)) / (sq - 1.0)]]

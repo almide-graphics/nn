@@ -12,14 +12,14 @@ import math
 fn cumabsmax_minus_abs_rows(x: Matrix) -> Matrix = {
   let rx = matrix.to_lists(x)
   let (t, _d) = matrix.shape(x)
-  let first = list.get_or(rx, 0, [])
+  let first = list.get(rx, 0) ?? []
   var acc: List[Float] = first |> list.map((v) => float.abs(v))
   var out: List[List[Float]] = []
   var i = 0
   while i < t {
-    let xi = list.get_or(rx, i, [])
+    let xi = list.get(rx, i) ?? []
     let axi = xi |> list.map((v) => float.abs(v))
-    acc = list.zip_with(acc, axi, (a, b) => math.fmax(a, b))
+    acc = list.zip_with(acc, axi, (a, b) => float.max(a, b))
     out = out + [list.zip_with(acc, axi, (a, b) => a - b)]
     i = i + 1
   }

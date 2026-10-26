@@ -18,10 +18,10 @@ fn logaddexp_rows(a: Matrix, b: Matrix) -> Matrix = {
   var out: List[List[Float]] = []
   var i = 0
   while i < t {
-    let ai = list.get_or(ra, i, [])
-    let bi = list.get_or(rb, i, [])
+    let ai = list.get(ra, i) ?? []
+    let bi = list.get(rb, i) ?? []
     out = out + [list.zip_with(ai, bi, (av, bv) => {
-      let m = math.fmax(av, bv)
+      let m = float.max(av, bv)
       m + math.log(1.0 + math.exp(0.0 - float.abs(av - bv)))
     })]
     i = i + 1

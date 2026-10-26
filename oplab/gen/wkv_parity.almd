@@ -15,7 +15,7 @@ test "wkv numpy-parity (generated, seed 20260625)" {
     var c = 0
     while c < 3 {
       let got = matrix.get(y, r, c)
-      let want = list.get_or(ref, r * 3 + c, 0.0)
+      let want = list.get(ref, r * 3 + c) ?? 0.0
       assert(float.abs(got - want) < 1.0e-09, "wkv cell vs numpy")
       c = c + 1
     }

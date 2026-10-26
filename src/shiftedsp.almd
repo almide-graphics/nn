@@ -5,7 +5,7 @@ import math
 
 fn shifted_softplus(m: Matrix) -> Matrix =
   matrix.map(m, (x) =>
-    math.fmax(x, 0.0) + math.log(1.0 + math.exp(0.0 - float.abs(x))) - 0.6931471805599453)
+    float.max(x, 0.0) + math.log(1.0 + math.exp(0.0 - float.abs(x))) - 0.6931471805599453)
 
 // softplus(0)=log2 → shifted_softplus(0)=0.
 test "shifted_softplus at zero is zero" {

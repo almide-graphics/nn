@@ -11,8 +11,8 @@ fn log_softmax(x: Matrix) -> Matrix = {
   var out: List[List[Float]] = []
   var i = 0
   while i < t {
-    let xi = list.get_or(rx, i, [])
-    let mx = xi |> list.fold(-1.0e38, (acc, v) => math.fmax(acc, v))
+    let xi = list.get(rx, i) ?? []
+    let mx = xi |> list.fold(-1.0e38, (acc, v) => float.max(acc, v))
     let sumexp = xi |> list.fold(0.0, (acc, v) => acc + math.exp(v - mx))
     let lse = mx + math.log(sumexp)
     out = out + [list.map(xi, (v) => v - lse)]

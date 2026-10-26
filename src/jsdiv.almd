@@ -17,8 +17,8 @@ fn js_div_rows(p: Matrix, q: Matrix) -> Matrix = {
   var out: List[List[Float]] = []
   var n = 0
   while n < t {
-    let pn = list.get_or(rp, n, [])
-    let qn = list.get_or(rq, n, [])
+    let pn = list.get(rp, n) ?? []
+    let qn = list.get(rq, n) ?? []
     let js = list.zip_with(pn, qn, (pj, qj) => {
       let mj = 0.5 * (pj + qj)
       0.5 * pj * (math.log(pj) - math.log(mj)) + 0.5 * qj * (math.log(qj) - math.log(mj))

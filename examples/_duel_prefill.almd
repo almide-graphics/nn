@@ -2,7 +2,7 @@
 // args: model.gguf token_ids.txt decode_steps threads output_prefix [logits]
 import datetime
 import fs
-import process
+import env
 import self.qwen
 import self.qwen_loader
 
@@ -19,18 +19,18 @@ fn cpu_prefill_argmax(raw: Bytes, tokens: List[Int], start_pos: Int) -> Int
 @extern(rs, "cpu_fast", "prefill_logits")
 fn cpu_prefill_logits(raw: Bytes, tokens: List[Int], start_pos: Int) -> List[Float]
 
-fn ms(t0: Int, t1: Int) -> Float = int.to_float(t1 - t0) / 1000000.0
+fn ms(t0: Int, t1: Int) -> Float = float.from(t1 - t0) / 1000000.0
 fn ids_string(ids: List[Int]) -> String = ids |> list.map((t) => int.to_string(t)) |> list.join(",")
 fn floats_string(xs: List[Float]) -> String = xs |> list.map((x) => float.to_string(x)) |> list.join(",")
 
 effect fn main() -> () = {
-  let args = process.args()
-  let model_path = list.get(args, 1) ?? "../models/qwen3-0.6b-q8_0.gguf"
-  let token_path = list.get(args, 2) ?? "../results/smoke.tokens"
-  let steps = int.parse(list.get(args, 3) ?? "128") ?? 128
-  let threads = int.parse(list.get(args, 4) ?? "4") ?? 4
-  let prefix = list.get(args, 5) ?? "../results/nn-smoke"
-  let mode = list.get(args, 6) ?? ""
+  let args = env.args()
+  let model_path = list.get(args, 0) ?? "../models/qwen3-0.6b-q8_0.gguf"
+  let token_path = list.get(args, 1) ?? "../results/smoke.tokens"
+  let steps = int.parse(list.get(args, 2) ?? "128") ?? 128
+  let threads = int.parse(list.get(args, 3) ?? "4") ?? 4
+  let prefix = list.get(args, 4) ?? "../results/nn-smoke"
+  let mode = list.get(args, 5) ?? ""
   let dump = mode == "logits"
   let prompt = string.split(string.trim(fs.read_text(token_path)!), " ")
     |> list.filter_map((s) => int.parse(string.trim(s))?)
@@ -93,12 +93,12 @@ effect fn main() -> () = {
   let payload = "{\"engine\":\"nn\",\"prefill_mode\":\"batched\",\"n_prompt\":" + int.to_string(list.len(prompt))
     + ",\"n_decode\":" + int.to_string(steps) + ",\"threads\":" + int.to_string(threads)
     + ",\"load_ms\":" + float.to_string(load_ms) + ",\"prefill_ms\":" + float.to_string(prefill_ms)
-    + ",\"decode_ms\":" + float.to_string(decode_ms) + ",\"decode_tps\":" + float.to_string(int.to_float(steps) * 1000.0 / decode_ms)
+    + ",\"decode_ms\":" + float.to_string(decode_ms) + ",\"decode_tps\":" + float.to_string(float.from(steps) * 1000.0 / decode_ms)
     + ",\"ids\":[" + ids_string(out) + "],\"latencies_ms\":[" + floats_string(latencies) + "]}"
-  fs.write(prefix + ".json", payload)!
+  fs.write_text(prefix + ".json", payload)!
   if dump then {
-    fs.write(prefix + ".prompt_logits.txt", floats_string(prompt_logits))!
-    fs.write(prefix + ".first_decode_logits.txt", floats_string(first_decode_logits))!
+    fs.write_text(prefix + ".prompt_logits.txt", floats_string(prompt_logits))!
+    fs.write_text(prefix + ".first_decode_logits.txt", floats_string(first_decode_logits))!
   }
   println(payload)
 }

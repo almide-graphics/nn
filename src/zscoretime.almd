@@ -9,11 +9,11 @@ import math
 fn zscore_time_rows(x: Matrix) -> Matrix = {
   let rx = matrix.to_lists(x)
   let (t, d) = matrix.shape(x)
-  let tf = int.to_float(t)
+  let tf = float.from(t)
   var s: List[Float] = list.range(0, d) |> list.map((_) => 0.0)
   var i = 0
   while i < t {
-    let xi = list.get_or(rx, i, [])
+    let xi = list.get(rx, i) ?? []
     s = list.zip_with(s, xi, (a, b) => a + b)
     i = i + 1
   }
@@ -21,7 +21,7 @@ fn zscore_time_rows(x: Matrix) -> Matrix = {
   var sq: List[Float] = list.range(0, d) |> list.map((_) => 0.0)
   var k = 0
   while k < t {
-    let xk = list.get_or(rx, k, [])
+    let xk = list.get(rx, k) ?? []
     let dev2 = list.zip_with(xk, mu, (a, b) => (a - b) * (a - b))
     sq = list.zip_with(sq, dev2, (a, b) => a + b)
     k = k + 1
@@ -30,7 +30,7 @@ fn zscore_time_rows(x: Matrix) -> Matrix = {
   var out: List[List[Float]] = []
   var j = 0
   while j < t {
-    let xj = list.get_or(rx, j, [])
+    let xj = list.get(rx, j) ?? []
     let dev = list.zip_with(xj, mu, (a, b) => a - b)
     out = out + [list.zip_with(dev, sigma, (a, b) => a / b)]
     j = j + 1

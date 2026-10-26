@@ -11,7 +11,7 @@ fn lag1_rows(x: Matrix) -> Matrix = {
   var out: List[List[Float]] = []
   var i = 0
   while i < t {
-    let xi = list.get_or(rx, i, [])
+    let xi = list.get(rx, i) ?? []
     out = out + [prev]
     prev = xi
     i = i + 1

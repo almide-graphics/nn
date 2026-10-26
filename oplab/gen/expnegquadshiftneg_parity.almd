@@ -12,7 +12,7 @@ test "exp_neg_quad_shift_neg numpy-parity (generated, seed 20260857)" {
     var c = 0
     while c < 4 {
       let got = matrix.get(y, r, c)
-      let want = list.get_or(ref, r * 4 + c, 0.0)
+      let want = list.get(ref, r * 4 + c) ?? 0.0
       assert(float.abs(got - want) < 1.0e-09, "exp_neg_quad_shift_neg cell vs numpy")
       c = c + 1
     }

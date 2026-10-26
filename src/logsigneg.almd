@@ -5,7 +5,7 @@
 import math
 
 fn log_sigmoid_neg(m: Matrix) -> Matrix =
-  matrix.map(m, (x) => 0.0 - (math.fmax(x, 0.0) + math.log(1.0 + math.exp(0.0 - float.abs(x)))))
+  matrix.map(m, (x) => 0.0 - (float.max(x, 0.0) + math.log(1.0 + math.exp(0.0 - float.abs(x)))))
 
 // log σ(0) = -log2.
 test "log_sigmoid_neg at zero is minus log2" {

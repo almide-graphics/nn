@@ -17,13 +17,13 @@ fn softmax_margin_rows(x: Matrix) -> Matrix = {
   var out: List[List[Float]] = []
   var i = 0
   while i < t {
-    let xi = list.get_or(rx, i, [])
-    let m = xi |> list.fold(list.get_or(xi, 0, 0.0), (acc, v) => math.fmax(acc, v))
+    let xi = list.get(rx, i) ?? []
+    let m = xi |> list.fold(list.get(xi, 0) ?? 0.0, (acc, v) => float.max(acc, v))
     let e = xi |> list.map((v) => math.exp(v - m))
     let z = e |> list.fold(0.0, (acc, v) => acc + v)
     let p = e |> list.map((ej) => ej / z)
-    let p1 = p |> list.fold(0.0 - 1.0e38, (acc, v) => math.fmax(acc, v))
-    let p2 = p |> list.fold(0.0 - 1.0e38, (acc, v) => if v < p1 then math.fmax(acc, v) else acc)
+    let p1 = p |> list.fold(0.0 - 1.0e38, (acc, v) => float.max(acc, v))
+    let p2 = p |> list.fold(0.0 - 1.0e38, (acc, v) => if v < p1 then float.max(acc, v) else acc)
     out = out + [[p1 - p2]]
     i = i + 1
   }

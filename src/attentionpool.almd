@@ -17,9 +17,9 @@ fn attention_pool_rows(x: Matrix, w: Matrix) -> Matrix = {
   var out: List[List[Float]] = []
   var i = 0
   while i < t {
-    let xi = list.get_or(rx, i, [])
-    let wi = list.get_or(rw, i, [])
-    let m = wi |> list.fold(list.get_or(wi, 0, 0.0), (acc, v) => math.fmax(acc, v))
+    let xi = list.get(rx, i) ?? []
+    let wi = list.get(rw, i) ?? []
+    let m = wi |> list.fold(list.get(wi, 0) ?? 0.0, (acc, v) => float.max(acc, v))
     let e = wi |> list.map((v) => math.exp(v - m))
     let z = e |> list.fold(0.0, (acc, v) => acc + v)
     let s = list.zip_with(e, xi, (ej, xj) => (ej / z) * xj) |> list.fold(0.0, (acc, v) => acc + v)

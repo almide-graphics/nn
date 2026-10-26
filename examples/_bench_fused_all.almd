@@ -2,42 +2,42 @@
 import env
 
 effect fn bf32(n: Int, iters: Int) -> () = {
-  let a = matrix.ones_f32(n, n) |> (m) => matrix.scale(m, 0.001)
-  let b = matrix.ones_f32(n, n) |> (m) => matrix.scale(m, 0.001)
-  let _w = matrix.get(matrix.mul_f32_scaled(a, 1.0, b), 0, 0)
-  let t0 = env.millis()
+  let a = matrix.ones(n, n) |> (m) => matrix.scale(m, 0.001)
+  let b = matrix.ones(n, n) |> (m) => matrix.scale(m, 0.001)
+  let _w = matrix.get(matrix.scale(a * b, 1.0), 0, 0)
+  let t0 = datetime.now_ms()
   var i = 0
   var acc = 0.0
   while i < iters {
-    let eps = 1.0 + int.to_float(i) * 0.000000001
-    let r = matrix.mul_f32_scaled(a, eps, b)
+    let eps = 1.0 + float.from(i) * 0.000000001
+    let r = matrix.scale(a * b, eps)
     acc = acc + matrix.get(r, 0, 0)
     i = i + 1
   }
-  let el = env.millis() - t0
-  let usc = int.to_float(el) * 1000.0 / int.to_float(iters)
+  let el = datetime.now_ms() - t0
+  let usc = float.from(el) * 1000.0 / float.from(iters)
   let tf = 2 * n * n * n
-  let gflops = int.to_float(tf * iters) / (int.to_float(el) / 1000.0) / 1e9
+  let gflops = float.from(tf * iters) / (float.from(el) / 1000.0) / 1e9
   println("f32 " + int.to_string(n) + "²: " + int.to_string(el) + "ms " + float.to_string(gflops) + "GF " + float.to_string(usc) + "µs/call")
 }
 
 effect fn bf64(n: Int, iters: Int) -> () = {
   let a = matrix.ones(n, n) |> (m) => matrix.scale(m, 0.001)
   let b = matrix.ones(n, n) |> (m) => matrix.scale(m, 0.001)
-  let _w = matrix.get(matrix.mul_scaled(a, 1.0, b), 0, 0)
-  let t0 = env.millis()
+  let _w = matrix.get(matrix.scale(a * b, 1.0), 0, 0)
+  let t0 = datetime.now_ms()
   var i = 0
   var acc = 0.0
   while i < iters {
-    let eps = 1.0 + int.to_float(i) * 0.000000001
-    let r = matrix.mul_scaled(a, eps, b)
+    let eps = 1.0 + float.from(i) * 0.000000001
+    let r = matrix.scale(a * b, eps)
     acc = acc + matrix.get(r, 0, 0)
     i = i + 1
   }
-  let el = env.millis() - t0
-  let usc = int.to_float(el) * 1000.0 / int.to_float(iters)
+  let el = datetime.now_ms() - t0
+  let usc = float.from(el) * 1000.0 / float.from(iters)
   let tf = 2 * n * n * n
-  let gflops = int.to_float(tf * iters) / (int.to_float(el) / 1000.0) / 1e9
+  let gflops = float.from(tf * iters) / (float.from(el) / 1000.0) / 1e9
   println("f64 " + int.to_string(n) + "²: " + int.to_string(el) + "ms " + float.to_string(gflops) + "GF " + float.to_string(usc) + "µs/call")
 }
 

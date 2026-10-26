@@ -9,8 +9,8 @@ fn max_rows(x: Matrix) -> Matrix = {
   var out: List[List[Float]] = []
   var n = 0
   while n < t {
-    let xn = list.get_or(rx, n, [])
-    let m = xn |> list.fold(-1.0e38, (acc, v) => math.fmax(acc, v))
+    let xn = list.get(rx, n) ?? []
+    let m = xn |> list.fold(-1.0e38, (acc, v) => float.max(acc, v))
     out = out + [[m]]
     n = n + 1
   }

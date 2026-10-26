@@ -7,6 +7,7 @@
 import datetime
 import self.qwen
 import self.qwen_loader
+import nnlib
 
 // native externs (root-level: @extern is dropped inside linked modules)
 @extern(rs, "gpu", "init")
@@ -27,18 +28,18 @@ effect fn main() -> () = {
     println("NO GPU ADAPTER")
   } else {
     // deterministic pseudo-random activation
-    let x = list.range(0, cfg.hidden) |> list.map((i) => math.sin(int.to_float(i) * 0.37) * 0.5)
+    let x = list.range(0, cfg.hidden) |> list.map((i) => math.sin(float.from(i) * 0.37) * 0.5)
 
     // CPU reference
     let xm = matrix.from_lists([x])
-    let cpu = matrix.linear_q8_0_row_no_bias(xm, raw, cfg.emb_off, cfg.vocab, cfg.hidden)
+    let cpu = nnlib.linear_q8_0_row_no_bias(xm, raw, cfg.emb_off, cfg.vocab, cfg.hidden)
     let cpu_row = list.get(matrix.to_lists(cpu), 0) ?? []
 
     // GPU: upload (timed) + dispatch (timed)
     let t0 = datetime.monotonic_ns()
     let buf = gpu_upload_q8(raw, cfg.emb_off, cfg.vocab, cfg.hidden)
     let t1 = datetime.monotonic_ns()
-    println("upload: " + float.to_string(int.to_float(t1 - t0) / 1000000.0) + " ms (handle " + int.to_string(buf) + ")")
+    println("upload: " + float.to_string(float.from(t1 - t0) / 1000000.0) + " ms (handle " + int.to_string(buf) + ")")
 
     let gpu_row = gpu_gemv_q8(buf, cfg.vocab, cfg.hidden, x)
     println("gpu len: " + int.to_string(list.len(gpu_row)))
@@ -65,7 +66,7 @@ effect fn main() -> () = {
       k = k + 1
     }
     let t3 = datetime.monotonic_ns()
-    println("gemv x20: " + float.to_string(int.to_float(t3 - t2) / 1000000.0) + " ms → "
-      + float.to_string(int.to_float(t3 - t2) / 20000000.0) + " ms/dispatch")
+    println("gemv x20: " + float.to_string(float.from(t3 - t2) / 1000000.0) + " ms → "
+      + float.to_string(float.from(t3 - t2) / 20000000.0) + " ms/dispatch")
   }
 }

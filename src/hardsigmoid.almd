@@ -4,7 +4,7 @@
 import math
 
 fn hardsigmoid(m: Matrix) -> Matrix =
-  matrix.map(m, (x) => math.fmax(0.0, math.fmin(1.0, (x + 3.0) / 6.0)))
+  matrix.map(m, (x) => float.max(0.0, float.min(1.0, (x + 3.0) / 6.0)))
 
 // x ≤ -3 → 0, x = 0 → 0.5, x ≥ 3 → 1.
 test "hardsigmoid clamps to [0,1] around 0.5" {

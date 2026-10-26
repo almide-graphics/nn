@@ -6,7 +6,7 @@ import math
 
 fn softplus_beta(m: Matrix, beta: Float) -> Matrix =
   matrix.map(m, (x) =>
-    (math.fmax(beta * x, 0.0) + math.log(1.0 + math.exp(0.0 - float.abs(beta * x)))) / beta)
+    (float.max(beta * x, 0.0) + math.log(1.0 + math.exp(0.0 - float.abs(beta * x)))) / beta)
 
 // softplus_beta(0, β) = log(2)/β.
 test "softplus_beta at zero is log2 over beta" {

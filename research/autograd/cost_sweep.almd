@@ -76,7 +76,7 @@ fn rng_next(s: Int) -> Int = {
   x
 }
 fn rng_float(s: Int) -> Float =
-  (int.to_float(int.band(s, 65535)) / 32768.0) - 1.0
+  (float.from(int.band(s, 65535)) / 32768.0) - 1.0
 
 // inputs: 2-bit, target XOR
 fn xa() -> List[Float] = [0.0, 0.0, 1.0, 1.0]
@@ -155,7 +155,7 @@ fn train(lam: Float, seed: Int) -> (Float, Int, List[Int]) = {
       }
       let y = 1.0 - pr
       let t = list.get(tv, i) ?? 0.0
-      let dy = 2.0 * (y - t) / int.to_float(MM)   // dMSE/dy
+      let dy = 2.0 * (y - t) / float.from(MM)   // dMSE/dy
       // dy/do_n = prod_{m != n}(1 - o_m) = pr / (1 - o_n)  (guard div)
       n = 0
       while n < NN {
@@ -207,9 +207,9 @@ fn train(lam: Float, seed: Int) -> (Float, Int, List[Int]) = {
     }
 
     // Adam update
-    let t1 = int.to_float(step + 1)
-    let bc1 = 1.0 - math.fpow(beta1, t1)
-    let bc2 = 1.0 - math.fpow(beta2, t1)
+    let t1 = float.from(step + 1)
+    let bc1 = 1.0 - float.pow(beta1, t1)
+    let bc2 = 1.0 - float.pow(beta2, t1)
     var j = 0
     while j < NN * 16 {
       let gj = list.get(grad, j) ?? 0.0
@@ -258,7 +258,7 @@ fn train(lam: Float, seed: Int) -> (Float, Int, List[Int]) = {
     if pred == t then { correct = correct + 1 }
     i = i + 1
   }
-  (int.to_float(correct) / int.to_float(MM), real_gates, picks)
+  (float.from(correct) / float.from(MM), real_gates, picks)
 }
 
 effect fn main() -> () = {

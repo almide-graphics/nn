@@ -17,13 +17,13 @@ fn magnitude_spread_rows(x: Matrix) -> Matrix = {
   var out: List[List[Float]] = []
   var i = 0
   while i < t {
-    let xi = list.get_or(rx, i, [])
+    let xi = list.get(rx, i) ?? []
     var num = 0.0
     var den = 0.0
     var j = 0
     while j < d {
-      let a = float.abs(list.get_or(xi, j, 0.0))
-      num = num + int.to_float(j) * a
+      let a = float.abs(list.get(xi, j) ?? 0.0)
+      num = num + float.from(j) * a
       den = den + a
       j = j + 1
     }
@@ -31,8 +31,8 @@ fn magnitude_spread_rows(x: Matrix) -> Matrix = {
     var s = 0.0
     var k = 0
     while k < d {
-      let a = float.abs(list.get_or(xi, k, 0.0))
-      let dev = int.to_float(k) - c
+      let a = float.abs(list.get(xi, k) ?? 0.0)
+      let dev = float.from(k) - c
       s = s + a * dev * dev
       k = k + 1
     }

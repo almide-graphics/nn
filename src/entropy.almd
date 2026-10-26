@@ -11,7 +11,7 @@ fn entropy_rows(p: Matrix) -> Matrix = {
   var out: List[List[Float]] = []
   var n = 0
   while n < t {
-    let pn = list.get_or(rp, n, [])
+    let pn = list.get(rp, n) ?? []
     let h = pn |> list.fold(0.0, (acc, v) => acc + v * math.log(v + 0.000000000001))
     out = out + [[0.0 - h]]
     n = n + 1

@@ -14,7 +14,7 @@ fn taylor_softmax_rows(x: Matrix) -> Matrix = {
   var out: List[List[Float]] = []
   var i = 0
   while i < t {
-    let xi = list.get_or(rx, i, [])
+    let xi = list.get(rx, i) ?? []
     let num = xi |> list.map((v) => 1.0 + v + 0.5 * v * v)
     let z = num |> list.fold(0.0, (acc, v) => acc + v)
     out = out + [num |> list.map((v) => v / z)]

@@ -38,14 +38,14 @@ effect fn main() -> () = {
     some(t) => {
       println("Tensor: " + name + " [" + int.to_string(list.get(t.dims, 0) ?? 0) + "x" + int.to_string(list.get(t.dims, 1) ?? 0) + "] ftype=" + int.to_string(t.ftype))
 
-      let t0 = env.millis()
+      let t0 = datetime.now_ms()
       let count_old = bench_old(model, t)
-      let t1 = env.millis()
+      let t1 = datetime.now_ms()
       println("OLD (list path):     " + int.to_string(count_old) + " elems in " + int.to_string(t1 - t0) + " ms")
 
-      let t2 = env.millis()
+      let t2 = datetime.now_ms()
       let count_new = bench_new(model, t)
-      let t3 = env.millis()
+      let t3 = datetime.now_ms()
       println("NEW (from_bytes):    " + int.to_string(count_new) + " elems in " + int.to_string(t3 - t2) + " ms")
     },
     none => println("tensor not found: " + name),

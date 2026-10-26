@@ -13,12 +13,12 @@ fn corr_rows(a: Matrix, b: Matrix) -> Matrix = {
   let ra = matrix.to_lists(a)
   let rb = matrix.to_lists(b)
   let (rows, d) = matrix.shape(a)
-  let df = int.to_float(d)
+  let df = float.from(d)
   var out: List[List[Float]] = []
   var n = 0
   while n < rows {
-    let an = list.get_or(ra, n, [])
-    let bn = list.get_or(rb, n, [])
+    let an = list.get(ra, n) ?? []
+    let bn = list.get(rb, n) ?? []
     let ma = (an |> list.fold(0.0, (acc, v) => acc + v)) / df
     let mb = (bn |> list.fold(0.0, (acc, v) => acc + v)) / df
     let cov = (list.zip_with(an, bn, (x, y) => (x - ma) * (y - mb)) |> list.fold(0.0, (acc, v) => acc + v)) / df

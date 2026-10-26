@@ -12,13 +12,13 @@ fn hinge_rows(t: Matrix, s: Matrix) -> Matrix = {
   let rt = matrix.to_lists(t)
   let rs = matrix.to_lists(s)
   let (rows, d) = matrix.shape(t)
-  let df = int.to_float(d)
+  let df = float.from(d)
   var out: List[List[Float]] = []
   var n = 0
   while n < rows {
-    let tn = list.get_or(rt, n, [])
-    let sn = list.get_or(rs, n, [])
-    let h = list.zip_with(tn, sn, (tj, sj) => math.fmax(0.0, 1.0 - tj * sj)) |> list.fold(0.0, (acc, v) => acc + v)
+    let tn = list.get(rt, n) ?? []
+    let sn = list.get(rs, n) ?? []
+    let h = list.zip_with(tn, sn, (tj, sj) => float.max(0.0, 1.0 - tj * sj)) |> list.fold(0.0, (acc, v) => acc + v)
     out = out + [[h / df]]
     n = n + 1
   }

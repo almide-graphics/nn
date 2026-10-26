@@ -9,7 +9,7 @@ fn l2_normalize(x: Matrix) -> Matrix = {
   var out: List[List[Float]] = []
   var i = 0
   while i < t {
-    let xi = list.get_or(rx, i, [])
+    let xi = list.get(rx, i) ?? []
     let ss = xi |> list.fold(0.0, (acc, v) => acc + v * v)
     let inv = 1.0 / math.sqrt(ss + 0.000001)
     out = out + [list.map(xi, (v) => v * inv)]

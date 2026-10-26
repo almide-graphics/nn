@@ -11,11 +11,11 @@ fn upsample_nearest_x2_rows(x: Matrix) -> Matrix = {
   var out: List[List[Float]] = []
   var i = 0
   while i < t {
-    let xi = list.get_or(rx, i, [])
+    let xi = list.get(rx, i) ?? []
     var row: List[Float] = []
     var j = 0
     while j < d {
-      let v = list.get_or(xi, j, 0.0)
+      let v = list.get(xi, j) ?? 0.0
       row = row + [v, v]
       j = j + 1
     }

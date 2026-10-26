@@ -6,12 +6,13 @@ import self.activations as act
 import self.transformer as tf
 import self.generate as gen
 import self.wav as wav
+import nnlib
 
 effect fn probe(model_bytes: Bytes) -> Int = bytes.len(model_bytes)
 
 fn probe_pure(model_bytes: Bytes) -> Int = bytes.len(model_bytes)
 
-effect fn probe2(model_bytes: Bytes) -> Int = bytes.read_u32_le(model_bytes, 0)
+effect fn probe2(model_bytes: Bytes) -> Int = bytes.get_u32_le(model_bytes, 0) ?? 0
 
 effect fn probe3(model_bytes: Bytes) -> Int = {
   let m = gw.parse(model_bytes)!
@@ -54,7 +55,7 @@ effect fn probe_conv1_first(model_bytes: Bytes, mel_bytes: Bytes, mel_frames: In
   let mel = matrix.from_bytes_f64_le(mel_bytes, 0, mel_frames, 80)
   let cw = wl.load_conv1_weight(model, 384, 80)
   let cb = wl.load_conv1_bias(model, 384)
-  let after = matrix.gelu(matrix.conv1d(mel, cw, cb, 3, 1, 1))
+  let after = nnlib.gelu(nnlib.conv1d(mel, cw, cb, 3, 1, 1))
   matrix.get(after, 0, 0)
 }
 
@@ -66,15 +67,15 @@ effect fn probe_encoder1(model_bytes: Bytes, mel_bytes: Bytes, mel_frames: Int) 
 
   let cw1 = wl.load_conv1_weight(model, config.d_model, config.n_mels)
   let cb1 = wl.load_conv1_bias(model, config.d_model)
-  let h1 = matrix.gelu(matrix.conv1d(mel, cw1, cb1, 3, 1, 1))
+  let h1 = nnlib.gelu(nnlib.conv1d(mel, cw1, cb1, 3, 1, 1))
 
   let cw2 = wl.load_conv2_weight(model, config.d_model)
   let cb2 = wl.load_conv2_bias(model, config.d_model)
-  let h2 = matrix.gelu(matrix.conv1d(h1, cw2, cb2, 3, 2, 1))
+  let h2 = nnlib.gelu(nnlib.conv1d(h1, cw2, cb2, 3, 2, 1))
 
   let pos = wl.load_encoder_pos_embed(model, config.d_model, config.n_audio_ctx)
   let ps = matrix.slice_rows(pos, 0, matrix.rows(h2))
-  let with_pos = matrix.add(h2, ps)
+  let with_pos = h2 + ps
 
   // Run JUST first encoder block
   let layer0 = list.get(weights.encoder_layers, 0) |> option.unwrap_or(weights.encoder_layers |> list.first |> option.unwrap_or(layer0_dummy()))
@@ -91,13 +92,13 @@ effect fn probe_encoder_full(model_bytes: Bytes, mel_bytes: Bytes, mel_frames: I
   let mel = matrix.from_bytes_f64_le(mel_bytes, 0, mel_frames, 80)
   let cw1 = wl.load_conv1_weight(model, config.d_model, config.n_mels)
   let cb1 = wl.load_conv1_bias(model, config.d_model)
-  let h1 = matrix.gelu(matrix.conv1d(mel, cw1, cb1, 3, 1, 1))
+  let h1 = nnlib.gelu(nnlib.conv1d(mel, cw1, cb1, 3, 1, 1))
   let cw2 = wl.load_conv2_weight(model, config.d_model)
   let cb2 = wl.load_conv2_bias(model, config.d_model)
-  let h2 = matrix.gelu(matrix.conv1d(h1, cw2, cb2, 3, 2, 1))
+  let h2 = nnlib.gelu(nnlib.conv1d(h1, cw2, cb2, 3, 2, 1))
   let pos = wl.load_encoder_pos_embed(model, config.d_model, config.n_audio_ctx)
   let ps = matrix.slice_rows(pos, 0, matrix.rows(h2))
-  let xenc = matrix.add(h2, ps)
+  let xenc = h2 + ps
   let encoded = tf.encode(xenc, weights.encoder_layers, config.n_heads)
   let encoder_out = act.layer_norm(encoded, weights.encoder_ln_gamma, weights.encoder_ln_beta)
   matrix.get(encoder_out, 0, 0)
@@ -110,13 +111,13 @@ effect fn probe_decode1(model_bytes: Bytes, mel_bytes: Bytes, mel_frames: Int) -
   let mel = matrix.from_bytes_f64_le(mel_bytes, 0, mel_frames, 80)
   let cw1 = wl.load_conv1_weight(model, config.d_model, config.n_mels)
   let cb1 = wl.load_conv1_bias(model, config.d_model)
-  let h1 = matrix.gelu(matrix.conv1d(mel, cw1, cb1, 3, 1, 1))
+  let h1 = nnlib.gelu(nnlib.conv1d(mel, cw1, cb1, 3, 1, 1))
   let cw2 = wl.load_conv2_weight(model, config.d_model)
   let cb2 = wl.load_conv2_bias(model, config.d_model)
-  let h2 = matrix.gelu(matrix.conv1d(h1, cw2, cb2, 3, 2, 1))
+  let h2 = nnlib.gelu(nnlib.conv1d(h1, cw2, cb2, 3, 2, 1))
   let pos = wl.load_encoder_pos_embed(model, config.d_model, config.n_audio_ctx)
   let ps = matrix.slice_rows(pos, 0, matrix.rows(h2))
-  let xenc = matrix.add(h2, ps)
+  let xenc = h2 + ps
   let encoded = tf.encode(xenc, weights.encoder_layers, config.n_heads)
   let encoder_out = act.layer_norm(encoded, weights.encoder_ln_gamma, weights.encoder_ln_beta)
 
@@ -137,15 +138,15 @@ effect fn probe_encoder_n(model_bytes: Bytes, mel_bytes: Bytes, mel_frames: Int,
 
   let cw1 = wl.load_conv1_weight(model, config.d_model, config.n_mels)
   let cb1 = wl.load_conv1_bias(model, config.d_model)
-  let h1 = matrix.gelu(matrix.conv1d(mel, cw1, cb1, 3, 1, 1))
+  let h1 = nnlib.gelu(nnlib.conv1d(mel, cw1, cb1, 3, 1, 1))
 
   let cw2 = wl.load_conv2_weight(model, config.d_model)
   let cb2 = wl.load_conv2_bias(model, config.d_model)
-  let h2 = matrix.gelu(matrix.conv1d(h1, cw2, cb2, 3, 2, 1))
+  let h2 = nnlib.gelu(nnlib.conv1d(h1, cw2, cb2, 3, 2, 1))
 
   let pos = wl.load_encoder_pos_embed(model, config.d_model, config.n_audio_ctx)
   let ps = matrix.slice_rows(pos, 0, matrix.rows(h2))
-  let x = matrix.add(h2, ps)
+  let x = h2 + ps
 
   let layers = list.slice(weights.encoder_layers, 0, n_blocks)
   let after = tf.encode(x, layers, config.n_heads)

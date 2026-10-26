@@ -16,9 +16,9 @@ fn retnet_retention(q: Matrix, k: Matrix, v: Matrix, gamma: List[Float]) -> Matr
   var out: List[List[Float]] = []
   var i = 0
   while i < t {
-    let qi = list.get_or(rq, i, [])
-    let ki = list.get_or(rk, i, [])
-    let vi = list.get_or(rv, i, [])
+    let qi = list.get(rq, i) ?? []
+    let ki = list.get(rk, i) ?? []
+    let vi = list.get(rv, i) ?? []
     let decayed = list.zip_with(gamma, s, (g, x) => g * x)
     let kv = list.zip_with(ki, vi, (p, x) => p * x)
     s = list.zip_with(decayed, kv, (p, x) => p + x)

@@ -9,12 +9,12 @@ import math
 fn cummax_minus_x_rows(x: Matrix) -> Matrix = {
   let rx = matrix.to_lists(x)
   let (t, _) = matrix.shape(x)
-  var acc: List[Float] = list.get_or(rx, 0, [])
+  var acc: List[Float] = list.get(rx, 0) ?? []
   var out: List[List[Float]] = []
   var i = 0
   while i < t {
-    let xi = list.get_or(rx, i, [])
-    acc = list.zip_with(acc, xi, (a, b) => math.fmax(a, b))
+    let xi = list.get(rx, i) ?? []
+    acc = list.zip_with(acc, xi, (a, b) => float.max(a, b))
     out = out + [list.zip_with(acc, xi, (a, b) => a - b)]
     i = i + 1
   }

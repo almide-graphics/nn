@@ -5,7 +5,7 @@
 import math
 
 fn clamp_unit(m: Matrix) -> Matrix =
-  matrix.map(m, (x) => math.fmax(0.0, math.fmin(1.0, x)))
+  matrix.map(m, (x) => float.max(0.0, float.min(1.0, x)))
 
 // x<0 → 0 ; x in [0,1] → x ; x>1 → 1.
 test "clamp_unit clamps to [0,1]" {

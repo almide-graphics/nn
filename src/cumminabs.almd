@@ -10,12 +10,12 @@ import math
 fn cummin_abs_rows(x: Matrix) -> Matrix = {
   let rx = matrix.to_lists(x)
   let (t, _) = matrix.shape(x)
-  var acc: List[Float] = list.get_or(rx, 0, []) |> list.map((v) => float.abs(v))
+  var acc: List[Float] = list.get(rx, 0) ?? [] |> list.map((v) => float.abs(v))
   var out: List[List[Float]] = []
   var i = 0
   while i < t {
-    let xi = list.get_or(rx, i, [])
-    acc = list.zip_with(acc, xi, (a, b) => math.fmin(a, float.abs(b)))
+    let xi = list.get(rx, i) ?? []
+    acc = list.zip_with(acc, xi, (a, b) => float.min(a, float.abs(b)))
     out = out + [acc]
     i = i + 1
   }

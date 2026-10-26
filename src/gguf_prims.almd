@@ -28,12 +28,12 @@ fn r_f32(data: Bytes, pos: Int) -> Float = {
   let exponent = int.band(int.bshr(raw, 23), 255)
   let mantissa = int.band(raw, 8388607)
   if exponent == 0 then {
-    let val = int.to_float(mantissa) / 8388608.0 * math.fpow(2.0, -126.0)
+    let val = float.from(mantissa) / 8388608.0 * float.pow(2.0, -126.0)
     if sign == 1 then 0.0 - val else val
   } else if exponent == 255 then {
     if sign == 1 then -99999999.0 else 99999999.0
   } else {
-    let val = (1.0 + int.to_float(mantissa) / 8388608.0) * math.fpow(2.0, int.to_float(exponent) - 127.0)
+    let val = (1.0 + float.from(mantissa) / 8388608.0) * float.pow(2.0, float.from(exponent) - 127.0)
     if sign == 1 then 0.0 - val else val
   }
 }
@@ -41,7 +41,7 @@ fn r_f32(data: Bytes, pos: Int) -> Float = {
 fn r_string(data: Bytes, pos: Int) -> (String, Int) = {
   let len = r_u64(data, pos)
   let raw = bytes.to_list(bytes.slice(data, pos + 8, pos + 8 + len))
-  (string.from_bytes(raw), pos + 8 + len)
+  (bytes.to_string_lossy(bytes.from_list(raw)), pos + 8 + len)
 }
 
 fn skip_string(data: Bytes, pos: Int) -> Int =
@@ -92,7 +92,7 @@ fn value_as_int(data: Bytes, pos: Int, vtype: Int) -> Int =
 
 fn value_as_float(data: Bytes, pos: Int, vtype: Int) -> Float =
   if vtype == 6 then r_f32(data, pos)
-  else int.to_float(value_as_int(data, pos, vtype))
+  else float.from(value_as_int(data, pos, vtype))
 
 // ── Tests ──
 

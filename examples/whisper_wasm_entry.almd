@@ -13,6 +13,7 @@ import self.generate as gen
 import self.transformer as tf
 import self.activations as act
 import self.mel as mel_mod
+import nnlib
 
 fn whisper_tiny_en_config() -> w.WhisperConfig = {
   n_mels: 80,
@@ -59,7 +60,7 @@ effect fn token_at(model_bytes: Bytes, idx: Int) -> String = {
 effect fn get_mel_filters(model_bytes: Bytes) -> Bytes = {
   let model = gw.parse(model_bytes)!
   let filters = wl.load_mel_filters(model)
-  var buf = bytes.new(0)
+  var buf = bytes.zeros(0)
   for row in filters {
     for v in row {
       bytes.append_f64_le(buf, v)
@@ -86,16 +87,16 @@ effect fn transcribe(model_bytes: Bytes, mel_bytes: Bytes, mel_frames: Int, max_
 
   let conv1_w = wl.load_conv1_weight(model, config.d_model, config.n_mels)
   let conv1_b = wl.load_conv1_bias(model, config.d_model)
-  let after_conv1 = matrix.gelu(matrix.conv1d(mel_mat, conv1_w, conv1_b, 3, 1, 1))
+  let after_conv1 = nnlib.gelu(nnlib.conv1d(mel_mat, conv1_w, conv1_b, 3, 1, 1))
 
   let conv2_w = wl.load_conv2_weight(model, config.d_model)
   let conv2_b = wl.load_conv2_bias(model, config.d_model)
-  let after_conv2 = matrix.gelu(matrix.conv1d(after_conv1, conv2_w, conv2_b, 3, 2, 1))
+  let after_conv2 = nnlib.gelu(nnlib.conv1d(after_conv1, conv2_w, conv2_b, 3, 2, 1))
 
   let enc_pos = wl.load_encoder_pos_embed(model, config.d_model, config.n_audio_ctx)
   let t_hidden = matrix.rows(after_conv2)
   let pos_slice = matrix.slice_rows(enc_pos, 0, t_hidden)
-  let hidden_with_pos = matrix.add(after_conv2, pos_slice)
+  let hidden_with_pos = after_conv2 + pos_slice
 
   let encoded = tf.encode(hidden_with_pos, weights.encoder_layers, config.n_heads)
   let encoder_out = act.layer_norm(encoded, weights.encoder_ln_gamma, weights.encoder_ln_beta)

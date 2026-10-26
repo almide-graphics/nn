@@ -16,8 +16,8 @@ fn rmsprop_update_rows(g: Matrix, v: Matrix) -> Matrix = {
   var out: List[List[Float]] = []
   var i = 0
   while i < t {
-    let gi = list.get_or(rg, i, [])
-    let vi = list.get_or(rv, i, [])
+    let gi = list.get(rg, i) ?? []
+    let vi = list.get(rv, i) ?? []
     out = out + [list.zip_with(gi, vi, (gv, vv) => gv / (math.sqrt(vv) + 0.00000001))]
     i = i + 1
   }

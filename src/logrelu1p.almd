@@ -5,7 +5,7 @@
 import math
 
 fn log_relu1p(m: Matrix) -> Matrix =
-  matrix.map(m, (x) => math.log(1.0 + math.fmax(0.0, x)))
+  matrix.map(m, (x) => math.log(1.0 + float.max(0.0, x)))
 
 // 0 for x≤0 (incl. 0).
 test "log_relu1p is zero for x<=0" {

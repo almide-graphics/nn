@@ -73,7 +73,7 @@ fn max_rows(m: Matrix) -> List[Float] = {
 }
 
 fn mean_rows(m: Matrix) -> List[Float] = {
-  let c = int.to_float(cols(m))
+  let c = float.from(cols(m))
   sum_rows(m) |> list.map((s) => s / c)
 }
 
@@ -83,7 +83,7 @@ fn variance_rows(m: Matrix) -> List[Float] = {
   list.zip(data, means) |> list.map((pair) => {
     let (row, mean) = pair
     let sq_diff = list.map(row, (x) => (x - mean) * (x - mean))
-    list.fold(sq_diff, 0.0, (acc, x) => acc + x) / int.to_float(list.len(row))
+    list.fold(sq_diff, 0.0, (acc, x) => acc + x) / float.from(list.len(row))
   })
 }
 

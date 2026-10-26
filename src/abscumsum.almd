@@ -13,7 +13,7 @@ fn abs_cumsum_rows(x: Matrix) -> Matrix = {
   var out: List[List[Float]] = []
   var i = 0
   while i < t {
-    let xi = list.get_or(rx, i, [])
+    let xi = list.get(rx, i) ?? []
     acc = list.zip_with(acc, xi, (a, b) => a + float.abs(b))
     out = out + [acc]
     i = i + 1

@@ -33,8 +33,8 @@ fn tensor_matrix(m: gw.Model, name: String, rows: Int, cols: Int) -> Matrix =
 fn tensor_vec(m: gw.Model, name: String, n: Int) -> List[Float] =
   match gw.find_tensor(m.tensors, name) {
     some(t) => match t.ftype {
-      0 => bytes.read_f32_le_array(m.data, t.data_offset, n),
-      1 => bytes.read_f16_le_array(m.data, t.data_offset, n),
+      0 => bytes.get_f32_le_array(m.data, t.data_offset, n) ?? [],
+      1 => bytes.get_f16_le_array(m.data, t.data_offset, n) ?? [],
       _ => list.map(list.range(0, n), (_) => 0.0),
     },
     none => list.map(list.range(0, n), (_) => 0.0),
@@ -172,7 +172,7 @@ fn load_conv2_bias(m: gw.Model, d: Int) -> List[Float] =
 // Almide) guarantees bit-exact compatibility with whisper.cpp's preprocessing.
 
 fn load_mel_filters(m: gw.Model) -> List[List[Float]] = {
-  let flat = bytes.read_f32_le_array(m.data, m.mel_filters_offset, m.mel_n_mel * m.mel_n_fft)
+  let flat = bytes.get_f32_le_array(m.data, m.mel_filters_offset, m.mel_n_mel * m.mel_n_fft) ?? []
   list.range(0, m.mel_n_mel) |> list.map((i) => {
     let start = i * m.mel_n_fft
     list.slice(flat, start, start + m.mel_n_fft)

@@ -59,7 +59,7 @@ fn build_byte_maps() -> (List[String], List[Int]) = {
       extra = extra + 1
       v
     }
-    list.push(b2c, string.from_codepoint(cp))
+    list.push(b2c, string.from_codepoint(cp) ?? "")
     c2b = list.set(c2b, cp, b)
     b = b + 1
   }
@@ -184,7 +184,7 @@ fn contraction_len(cs: List[String], i: Int) -> Int = {
 }
 
 fn pretokenize(text: String) -> List[String] = {
-  let cs = string.chars(text)
+  let cs = string.to_list(text)
   let n = list.len(cs)
   var out: List[String] = []
   var i = 0
@@ -279,7 +279,7 @@ fn pretokenize(text: String) -> List[String] = {
 // "<|im_start|>" that never goes through BPE). -1 if absent. Clones the
 // record by value — startup/setup use only, not a hot path.
 fn token_to_id(t: QwenTokenizer, s: String) -> Int = {
-  let target = string.to_bytes(s)
+  let target = bytes.to_list(bytes.from_string(s))
   var lo = 0
   var hi = list.len(t.sorted_token_idx) - 1
   var id = -1
@@ -300,7 +300,7 @@ fn encode(t: QwenTokenizer, text: String) -> List[Int] = {
   for pre in pretokenize(text) {
     // bytes → mapped alphabet chars
     var pieces: List[String] = []
-    for b in string.to_bytes(pre) {
+    for b in bytes.to_list(bytes.from_string(pre)) {
       list.push(pieces, list.get(t.byte_to_char, b) ?? "")
     }
     // merge loop: lowest-rank adjacent pair, all its occurrences, repeat.
@@ -314,8 +314,8 @@ fn encode(t: QwenTokenizer, text: String) -> List[Int] = {
       var i = 0
       while i < list.len(pieces) - 1 {
         // target bytes = bytes(a) ++ ' ' ++ bytes(b)
-        let target = string.to_bytes(list.get(pieces, i) ?? "")
-          + [32] + string.to_bytes(list.get(pieces, i + 1) ?? "")
+        let target = bytes.to_list(bytes.from_string(list.get(pieces, i) ?? ""))
+          + [32] + bytes.to_list(bytes.from_string(list.get(pieces, i + 1) ?? ""))
         var lo = 0
         var hi = list.len(t.sorted_merge_idx) - 1
         while lo <= hi {
@@ -362,7 +362,7 @@ fn encode(t: QwenTokenizer, text: String) -> List[Int] = {
     }
     // vocab lookup: compare piece bytes against the sorted blob ranges
     for p in pieces {
-      let target = string.to_bytes(p)
+      let target = bytes.to_list(bytes.from_string(p))
       var lo = 0
       var hi = list.len(t.sorted_token_idx) - 1
       var id = -1
@@ -401,8 +401,8 @@ fn token_bytes(t: QwenTokenizer, id: Int) -> List[Int] = {
     bi = bi + 1
   }
   var out: List[Int] = []
-  for c in string.chars(string.from_bytes(tb)) {
-    let cp = string.codepoint(c) ?? 0
+  for c in string.to_list(bytes.to_string_lossy(bytes.from_list(tb))) {
+    let cp = string.to_codepoint(c) ?? 0
     let b = if cp < 512 then list.get(t.char_to_byte, cp) ?? -1 else -1
     if b >= 0 then {
       list.push(out, b)
@@ -418,7 +418,7 @@ fn decode(t: QwenTokenizer, ids: List[Int]) -> String = {
       list.push(bytes_out, b)
     }
   }
-  string.from_bytes(bytes_out)
+  bytes.to_string_lossy(bytes.from_list(bytes_out))
 }
 
 // ── GGUF loading ──
@@ -538,7 +538,7 @@ fn load_from_bytes(data: Bytes) -> Result[QwenTokenizer, String] =
   }
 
 effect fn load(path: String) -> Result[QwenTokenizer, String] =
-  match fs.read_bytes_raw(path) {
+  match fs.read_bytes(path) {
     err(e) => err("failed to read " + path + ": " + e)
     ok(data) => load_from_bytes(data),
   }
@@ -552,7 +552,7 @@ test "byte maps round-trip every byte" {
   var b = 0
   while b < 256 {
     let c = list.get(b2c, b) ?? ""
-    let cp = string.codepoint(c) ?? -1
+    let cp = string.to_codepoint(c) ?? -1
     if (list.get(c2b, cp) ?? -1) == b then {
       good = good + 1
     }
@@ -563,18 +563,18 @@ test "byte maps round-trip every byte" {
 
 test "sort_by_blob orders entries by byte content" {
   // three entries "cherry","apple","banana" in a blob; sorted idx = a,b,c
-  let blob = bytes.from_list(string.to_bytes("cherryapplebanana"))
+  let blob = bytes.from_list(bytes.to_list(bytes.from_string("cherryapplebanana")))
   let off = [0, 6, 11, 17]
   let sorted = sort_by_blob([0, 1, 2], blob, off)
   assert_eq(sorted, [1, 2, 0]) // apple(1), banana(2), cherry(0)
 }
 
 test "cmp_target_range matches, prefixes, and orders" {
-  let blob = bytes.from_list(string.to_bytes("banana"))
-  assert_eq(cmp_target_range(string.to_bytes("banana"), blob, 0, 6), 0)
-  assert_eq(cmp_target_range(string.to_bytes("ban"), blob, 0, 6), -1)   // shorter
-  assert_eq(cmp_target_range(string.to_bytes("apple"), blob, 0, 6), -1) // a < b
-  assert_eq(cmp_target_range(string.to_bytes("cherry"), blob, 0, 6), 1) // c > b
+  let blob = bytes.from_list(bytes.to_list(bytes.from_string("banana")))
+  assert_eq(cmp_target_range(bytes.to_list(bytes.from_string("banana")), blob, 0, 6), 0)
+  assert_eq(cmp_target_range(bytes.to_list(bytes.from_string("ban")), blob, 0, 6), -1)   // shorter
+  assert_eq(cmp_target_range(bytes.to_list(bytes.from_string("apple")), blob, 0, 6), -1) // a < b
+  assert_eq(cmp_target_range(bytes.to_list(bytes.from_string("cherry")), blob, 0, 6), 1) // c > b
 }
 
 test "pretokenize splits words with leading spaces" {

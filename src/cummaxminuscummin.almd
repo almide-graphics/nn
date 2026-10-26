@@ -10,15 +10,15 @@ import math
 fn cummax_minus_cummin_rows(x: Matrix) -> Matrix = {
   let rx = matrix.to_lists(x)
   let (t, _d) = matrix.shape(x)
-  let first = list.get_or(rx, 0, [])
+  let first = list.get(rx, 0) ?? []
   var hi: List[Float] = first
   var lo: List[Float] = first
   var out: List[List[Float]] = []
   var i = 0
   while i < t {
-    let xi = list.get_or(rx, i, [])
-    hi = list.zip_with(hi, xi, (a, b) => math.fmax(a, b))
-    lo = list.zip_with(lo, xi, (a, b) => math.fmin(a, b))
+    let xi = list.get(rx, i) ?? []
+    hi = list.zip_with(hi, xi, (a, b) => float.max(a, b))
+    lo = list.zip_with(lo, xi, (a, b) => float.min(a, b))
     out = out + [list.zip_with(hi, lo, (a, b) => a - b)]
     i = i + 1
   }

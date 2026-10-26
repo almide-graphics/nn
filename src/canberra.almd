@@ -15,8 +15,8 @@ fn canberra_dist_rows(a: Matrix, b: Matrix) -> Matrix = {
   var out: List[List[Float]] = []
   var i = 0
   while i < t {
-    let ai = list.get_or(ra, i, [])
-    let bi = list.get_or(rb, i, [])
+    let ai = list.get(ra, i) ?? []
+    let bi = list.get(rb, i) ?? []
     let s = list.zip_with(ai, bi, (x, y) => float.abs(x - y) / (float.abs(x) + float.abs(y) + 0.000000000001))
             |> list.fold(0.0, (acc, v) => acc + v)
     out = out + [[s]]

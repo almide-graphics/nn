@@ -6,7 +6,7 @@ import math
 
 fn relu_times_sigmoid(m: Matrix) -> Matrix =
   matrix.map(m, (x) => {
-    let r = math.fmax(0.0, x)
+    let r = float.max(0.0, x)
     let s = 1.0 / (1.0 + math.exp(0.0 - x))
     r * s
   })

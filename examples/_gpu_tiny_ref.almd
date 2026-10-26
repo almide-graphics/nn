@@ -47,7 +47,7 @@ effect fn main() -> () = {
       }
       let lg = gpu_decode_logits(5, pos)
       let line = lg |> list.map((v) => float.to_string(v)) |> list.join(",")
-      fs.write("testdata/tiny_ref_logits.txt", line)!
+      fs.write_text("testdata/tiny_ref_logits.txt", line)!
       println("vocab=" + int.to_string(list.len(lg)))
       println("wrote testdata/tiny_ref_logits.txt")
     }

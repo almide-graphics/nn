@@ -12,17 +12,17 @@ fn argmin_rows(x: Matrix) -> Matrix = {
   var out: List[List[Float]] = []
   var i = 0
   while i < t {
-    let xi = list.get_or(rx, i, [])
-    var bestv = list.get_or(xi, 0, 0.0)
+    let xi = list.get(rx, i) ?? []
+    var bestv = list.get(xi, 0) ?? 0.0
     var besti = 0
     var j = 1
     while j < d {
-      let v = list.get_or(xi, j, 0.0)
+      let v = list.get(xi, j) ?? 0.0
       besti = if v < bestv then j else besti
       bestv = if v < bestv then v else bestv
       j = j + 1
     }
-    out = out + [[int.to_float(besti)]]
+    out = out + [[float.from(besti)]]
     i = i + 1
   }
   matrix.from_lists(out)

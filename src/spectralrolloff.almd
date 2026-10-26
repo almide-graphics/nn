@@ -16,22 +16,22 @@ fn spectral_rolloff_rows(x: Matrix) -> Matrix = {
   var out: List[List[Float]] = []
   var i = 0
   while i < t {
-    let xi = list.get_or(rx, i, [])
+    let xi = list.get(rx, i) ?? []
     var total = 0.0
     var p = 0
     while p < d {
-      total = total + float.abs(list.get_or(xi, p, 0.0))
+      total = total + float.abs(list.get(xi, p) ?? 0.0)
       p = p + 1
     }
     let thr = 0.85 * total
     var cum = 0.0
-    var idx = int.to_float(d - 1)
+    var idx = float.from(d - 1)
     var foundf = 0.0
     var j = 0
     while j < d {
-      cum = cum + float.abs(list.get_or(xi, j, 0.0))
+      cum = cum + float.abs(list.get(xi, j) ?? 0.0)
       let crossed = cum >= thr
-      idx = if foundf < 0.5 then (if crossed then int.to_float(j) else idx) else idx
+      idx = if foundf < 0.5 then (if crossed then float.from(j) else idx) else idx
       foundf = if crossed then 1.0 else foundf
       j = j + 1
     }

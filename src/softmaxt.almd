@@ -14,9 +14,9 @@ fn softmax_temperature(x: Matrix, tau: Float) -> Matrix = {
   var out: List[List[Float]] = []
   var n = 0
   while n < t {
-    let xn = list.get_or(rx, n, [])
+    let xn = list.get(rx, n) ?? []
     let scaled = list.map(xn, (v) => v * inv)
-    let mx = scaled |> list.fold(-1.0e38, (acc, v) => math.fmax(acc, v))
+    let mx = scaled |> list.fold(-1.0e38, (acc, v) => float.max(acc, v))
     let exps = list.map(scaled, (v) => math.exp(v - mx))
     let denom = exps |> list.fold(0.0, (acc, v) => acc + v)
     out = out + [list.map(exps, (e) => e / denom)]

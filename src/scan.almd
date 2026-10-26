@@ -20,9 +20,9 @@ fn scan_diag(a: Matrix, b: Matrix, x: Matrix) -> Matrix = {
   var out: List[List[Float]] = []
   var i = 0
   while i < t {
-    let ai = list.get_or(ra, i, [])
-    let bi = list.get_or(rb, i, [])
-    let xi = list.get_or(rx, i, [])
+    let ai = list.get(ra, i) ?? []
+    let bi = list.get(rb, i) ?? []
+    let xi = list.get(rx, i) ?? []
     let bx = list.zip_with(bi, xi, (p, q) => p * q)
     let decayed = list.zip_with(ai, state, (p, q) => p * q)
     let ns = list.zip_with(decayed, bx, (p, q) => p + q)
@@ -89,7 +89,7 @@ test "scan_diag matches numpy float64 reference" {
     var c = 0
     while c < 3 {
       let got = matrix.get(y, r, c)
-      let want = list.get_or(ref, r * 3 + c, 0.0)
+      let want = list.get(ref, r * 3 + c) ?? 0.0
       assert(float.abs(got - want) < 0.000000001, "scan_diag cell vs numpy mismatch")
       c = c + 1
     }

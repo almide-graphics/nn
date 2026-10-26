@@ -17,8 +17,8 @@ fn soft_cross_entropy_rows(p: Matrix, q: Matrix) -> Matrix = {
   var out: List[List[Float]] = []
   var i = 0
   while i < t {
-    let pi = list.get_or(rp, i, [])
-    let qi = list.get_or(rq, i, [])
+    let pi = list.get(rp, i) ?? []
+    let qi = list.get(rq, i) ?? []
     let s = list.zip_with(pi, qi, (pv, qv) => pv * math.log(qv + 0.000000000001))
       |> list.fold(0.0, (acc, v) => acc + v)
     out = out + [[0.0 - s]]

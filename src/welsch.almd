@@ -17,16 +17,16 @@ fn welsch_loss_rows(a: Matrix, b: Matrix) -> Matrix = {
   var out: List[List[Float]] = []
   var i = 0
   while i < t {
-    let ai = list.get_or(ra, i, [])
-    let bi = list.get_or(rb, i, [])
+    let ai = list.get(ra, i) ?? []
+    let bi = list.get(rb, i) ?? []
     var s = 0.0
     var j = 0
     while j < d {
-      let r = list.get_or(ai, j, 0.0) - list.get_or(bi, j, 0.0)
+      let r = list.get(ai, j) ?? 0.0 - list.get(bi, j) ?? 0.0
       s = s + 0.5 * (1.0 - math.exp(0.0 - r * r))
       j = j + 1
     }
-    out = out + [[s / int.to_float(d)]]
+    out = out + [[s / float.from(d)]]
     i = i + 1
   }
   matrix.from_lists(out)

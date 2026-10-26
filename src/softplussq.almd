@@ -6,7 +6,7 @@ import math
 
 fn softplus_squared(m: Matrix) -> Matrix =
   matrix.map(m, (x) => {
-    let s = math.fmax(x, 0.0) + math.log(1.0 + math.exp(0.0 - float.abs(x)))
+    let s = float.max(x, 0.0) + math.log(1.0 + math.exp(0.0 - float.abs(x)))
     s * s
   })
 

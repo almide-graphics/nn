@@ -11,8 +11,8 @@ fn softmin_rows(x: Matrix) -> Matrix = {
   var out: List[List[Float]] = []
   var n = 0
   while n < t {
-    let xn = list.get_or(rx, n, [])
-    let mn = xn |> list.fold(1.0e38, (acc, v) => math.fmin(acc, v))
+    let xn = list.get(rx, n) ?? []
+    let mn = xn |> list.fold(1.0e38, (acc, v) => float.min(acc, v))
     let m = 0.0 - mn
     let exps = list.map(xn, (v) => math.exp((0.0 - v) - m))
     let denom = exps |> list.fold(0.0, (acc, v) => acc + v)

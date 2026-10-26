@@ -15,11 +15,11 @@ fn min_prod_rows(a: Matrix, b: Matrix) -> Matrix = {
   var out: List[List[Float]] = []
   var n = 0
   while n < rows {
-    let an = list.get_or(ra, n, [])
-    let bn = list.get_or(rb, n, [])
+    let an = list.get(ra, n) ?? []
+    let bn = list.get(rb, n) ?? []
     let ps = list.zip_with(an, bn, (x, y) => x * y)
-    let seed = list.get_or(ps, 0, 0.0)
-    let mn = ps |> list.fold(seed, (acc, v) => math.fmin(acc, v))
+    let seed = list.get(ps, 0) ?? 0.0
+    let mn = ps |> list.fold(seed, (acc, v) => float.min(acc, v))
     out = out + [[mn]]
     n = n + 1
   }

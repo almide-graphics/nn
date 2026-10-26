@@ -12,18 +12,18 @@ import float
 fn autocorr_lag1_rows(x: Matrix) -> Matrix = {
   let rx = matrix.to_lists(x)
   let (t, d) = matrix.shape(x)
-  let df = int.to_float(d)
+  let df = float.from(d)
   var out: List[List[Float]] = []
   var i = 0
   while i < t {
-    let xi = list.get_or(rx, i, [])
+    let xi = list.get(rx, i) ?? []
     let mean = (xi |> list.fold(0.0, (acc, v) => acc + v)) / df
     let dc = xi |> list.map((v) => v - mean)
     let den = dc |> list.fold(0.0, (acc, v) => acc + v * v)
     var num = 0.0
     var j = 0
     while j < d - 1 {
-      num = num + list.get_or(dc, j, 0.0) * list.get_or(dc, j + 1, 0.0)
+      num = num + list.get(dc, j) ?? 0.0 * list.get(dc, j + 1) ?? 0.0
       j = j + 1
     }
     out = out + [[num / (den + 0.000000000001)]]

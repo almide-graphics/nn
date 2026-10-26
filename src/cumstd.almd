@@ -16,12 +16,12 @@ fn cumstd_rows(x: Matrix) -> Matrix = {
   var out: List[List[Float]] = []
   var i = 0
   while i < t {
-    let xi = list.get_or(rx, i, [])
+    let xi = list.get(rx, i) ?? []
     s = list.zip_with(s, xi, (a, b) => a + b)
     ss = list.zip_with(ss, xi, (a, b) => a + b * b)
-    let n = int.to_float(i + 1)
+    let n = float.from(i + 1)
     let row = list.zip_with(s, ss, (sa, sq) =>
-      math.sqrt(math.fmax(sq / n - (sa / n) * (sa / n), 0.0)))
+      math.sqrt(float.max(sq / n - (sa / n) * (sa / n), 0.0)))
     out = out + [row]
     i = i + 1
   }

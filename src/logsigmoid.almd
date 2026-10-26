@@ -6,7 +6,7 @@ import math
 
 fn logsigmoid(m: Matrix) -> Matrix =
   matrix.map(m, (x) =>
-    0.0 - (math.fmax(0.0 - x, 0.0) + math.log(1.0 + math.exp(0.0 - float.abs(x)))))
+    0.0 - (float.max(0.0 - x, 0.0) + math.log(1.0 + math.exp(0.0 - float.abs(x)))))
 
 // logσ(0) = log(0.5) = -log2.
 test "logsigmoid at zero is minus log2" {

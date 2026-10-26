@@ -16,7 +16,7 @@ fn cumulative_logsumexp_rows(x: Matrix) -> Matrix = {
   var out: List[List[Float]] = []
   var i = 0
   while i < t {
-    let xi = list.get_or(rx, i, [])
+    let xi = list.get(rx, i) ?? []
     acc = list.zip_with(acc, xi, (a, v) => a + math.exp(v))
     out = out + [acc |> list.map((s) => math.log(s))]
     i = i + 1

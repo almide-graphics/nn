@@ -17,12 +17,12 @@ fn triplet_loss_rows(a: Matrix, p: Matrix, n: Matrix) -> Matrix = {
   var out: List[List[Float]] = []
   var i = 0
   while i < t {
-    let ai = list.get_or(ra, i, [])
-    let pi = list.get_or(rp, i, [])
-    let ni = list.get_or(rn, i, [])
+    let ai = list.get(ra, i) ?? []
+    let pi = list.get(rp, i) ?? []
+    let ni = list.get(rn, i) ?? []
     let dap = math.sqrt(list.zip_with(ai, pi, (x, y) => (x - y) * (x - y)) |> list.fold(0.0, (acc, v) => acc + v))
     let dan = math.sqrt(list.zip_with(ai, ni, (x, y) => (x - y) * (x - y)) |> list.fold(0.0, (acc, v) => acc + v))
-    out = out + [[math.fmax(0.0, dap - dan + 1.0)]]
+    out = out + [[float.max(0.0, dap - dan + 1.0)]]
     i = i + 1
   }
   matrix.from_lists(out)

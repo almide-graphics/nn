@@ -16,9 +16,9 @@ fn focal_loss_rows(logits: Matrix, target: Matrix) -> Matrix = {
   var out: List[List[Float]] = []
   var n = 0
   while n < t {
-    let ln = list.get_or(rl, n, [])
-    let tn = list.get_or(rt, n, [])
-    let mx = ln |> list.fold(0.0 - 1.0e38, (acc, v) => math.fmax(acc, v))
+    let ln = list.get(rl, n) ?? []
+    let tn = list.get(rt, n) ?? []
+    let mx = ln |> list.fold(0.0 - 1.0e38, (acc, v) => float.max(acc, v))
     let sumexp = ln |> list.fold(0.0, (acc, v) => acc + math.exp(v - mx))
     let lse = mx + math.log(sumexp)
     let terms = list.zip_with(tn, ln, (tt, xx) => {

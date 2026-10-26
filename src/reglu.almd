@@ -11,9 +11,9 @@ fn reglu(x: Matrix, g: Matrix) -> Matrix = {
   var out: List[List[Float]] = []
   var n = 0
   while n < t {
-    let xn = list.get_or(rx, n, [])
-    let gn = list.get_or(rg, n, [])
-    out = out + [list.zip_with(xn, gn, (xx, gg) => xx * math.fmax(gg, 0.0))]
+    let xn = list.get(rx, n) ?? []
+    let gn = list.get(rg, n) ?? []
+    out = out + [list.zip_with(xn, gn, (xx, gg) => xx * float.max(gg, 0.0))]
     n = n + 1
   }
   matrix.from_lists(out)

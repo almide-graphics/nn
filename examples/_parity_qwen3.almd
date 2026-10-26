@@ -33,11 +33,11 @@ effect fn run_prompt(i: Int, model: qwen.QwenModel) -> Unit = {
   let line = (list.get(rows, 0) ?? [])
     |> list.map((v) => float.to_string(v))
     |> list.join(",")
-  fs.write("parity/alm_logits_" + tag + ".txt", line)!
+  fs.write_text("parity/alm_logits_" + tag + ".txt", line)!
   let top1 = matrix.to_lists(lg)
     |> list.map((row) => int.to_string(qwen.argmax(row)))
     |> list.join(",")
-  fs.write("parity/alm_top1_" + tag + ".txt", top1)!
+  fs.write_text("parity/alm_top1_" + tag + ".txt", top1)!
   println("[" + tag + "] " + int.to_string(list.len(ids)) + " tokens done")
 }
 

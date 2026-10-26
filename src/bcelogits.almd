@@ -13,14 +13,14 @@ fn bce_with_logits_rows(z: Matrix, y: Matrix) -> Matrix = {
   let rz = matrix.to_lists(z)
   let ry = matrix.to_lists(y)
   let (t, d) = matrix.shape(z)
-  let df = int.to_float(d)
+  let df = float.from(d)
   var out: List[List[Float]] = []
   var i = 0
   while i < t {
-    let zi = list.get_or(rz, i, [])
-    let yi = list.get_or(ry, i, [])
+    let zi = list.get(rz, i) ?? []
+    let yi = list.get(ry, i) ?? []
     let s = list.zip_with(zi, yi, (zv, yv) =>
-      math.fmax(zv, 0.0) - zv * yv + math.log(1.0 + math.exp(0.0 - float.abs(zv))))
+      float.max(zv, 0.0) - zv * yv + math.log(1.0 + math.exp(0.0 - float.abs(zv))))
       |> list.fold(0.0, (acc, v) => acc + v)
     out = out + [[s / df]]
     i = i + 1

@@ -15,16 +15,16 @@ fn dilation1d_rows(x: Matrix) -> Matrix = {
   var out: List[List[Float]] = []
   var i = 0
   while i < t {
-    let xi = list.get_or(rx, i, [])
+    let xi = list.get(rx, i) ?? []
     var row: List[Float] = []
     var j = 0
     while j < d {
       let lo = if j > 0 then j - 1 else 0
       let hi = if j < d - 1 then j + 1 else d - 1
-      let a = list.get_or(xi, lo, 0.0)
-      let b = list.get_or(xi, j, 0.0)
-      let c = list.get_or(xi, hi, 0.0)
-      row = row + [math.fmax(math.fmax(a, b), c)]
+      let a = list.get(xi, lo) ?? 0.0
+      let b = list.get(xi, j) ?? 0.0
+      let c = list.get(xi, hi) ?? 0.0
+      row = row + [float.max(float.max(a, b), c)]
       j = j + 1
     }
     out = out + [row]
