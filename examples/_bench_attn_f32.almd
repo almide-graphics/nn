@@ -45,7 +45,7 @@ effect fn bench(label: String, seq: Int, d: Int, iters: Int) -> () = {
 
 effect fn main() -> () = {
   println("Almide f32 full attention block (layer_norm + QKV + softmax + out)")
-  bench("whisper", 500, 384, 100)
-  bench("mid",     256, 512, 100)
-  bench("gpt",     128, 768, 200)
+  bench("whisper", 500, 384, 100)!
+  bench("mid",     256, 512, 100)!
+  bench("gpt",     128, 768, 200)!
 }

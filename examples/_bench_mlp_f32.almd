@@ -36,8 +36,8 @@ effect fn bench(label: String, seq: Int, d_in: Int, d_mid: Int, iters: Int) -> (
 effect fn main() -> () = {
   println("Almide f32 full MLP (matmul + bias + gelu + matmul + bias)")
   // Whisper tiny: d=384, d_mid=1536 (4x expansion)
-  bench("whisper", 500, 384, 1536, 200)
+  bench("whisper", 500, 384, 1536, 200)!
   // GPT-2 small: d=768, d_mid=3072
-  bench("gpt2s",   256, 768, 3072, 100)
-  bench("mid",     256, 256, 1024, 500)
+  bench("gpt2s",   256, 768, 3072, 100)!
+  bench("mid",     256, 256, 1024, 500)!
 }

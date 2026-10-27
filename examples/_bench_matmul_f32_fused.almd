@@ -26,10 +26,10 @@ effect fn bench(label: String, n: Int, iters: Int) -> () = {
 effect fn main() -> () = {
   println("Almide f32 FUSED matmul (mul_f32_scaled): no intermediate alloc")
   // Higher iters for ms-precision timers (each size targets 500+ ms total)
-  bench("sq", 128, 20000)
-  bench("sq", 256, 5000)
-  bench("sq", 384, 2000)
-  bench("sq", 512, 1000)
-  bench("sq", 768, 400)
-  bench("sq", 1024, 200)
+  bench("sq", 128, 20000)!
+  bench("sq", 256, 5000)!
+  bench("sq", 384, 2000)!
+  bench("sq", 512, 1000)!
+  bench("sq", 768, 400)!
+  bench("sq", 1024, 200)!
 }

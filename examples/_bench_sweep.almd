@@ -22,12 +22,12 @@ effect fn bench_size(n: Int, iters: Int) -> () = {
 }
 
 effect fn main() -> () = {
-  bench_size(128, 390)
-  bench_size(192, 260)
-  bench_size(256, 195)
-  bench_size(320, 156)
-  bench_size(384, 130)
-  bench_size(512, 97)
-  bench_size(768, 65)
-  bench_size(1024, 48)
+  bench_size(128, 390)!
+  bench_size(192, 260)!
+  bench_size(256, 195)!
+  bench_size(320, 156)!
+  bench_size(384, 130)!
+  bench_size(512, 97)!
+  bench_size(768, 65)!
+  bench_size(1024, 48)!
 }

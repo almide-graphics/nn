@@ -40,10 +40,10 @@ effect fn bench_matmul(label: String, rows_a: Int, cols_a: Int, cols_b: Int, ite
 effect fn main() -> () = {
   println("Almide matmul throughput (burn NdArray + BLAS)")
   // Whisper tiny sizes
-  bench_matmul("attn.qkv   384x384 × 384x384", 384, 384, 384, 50)
-  bench_matmul("mlp.up     384x1536 × 1536x384 (transpose-ish)", 384, 1536, 384, 50)
-  bench_matmul("mlp.down   1536x384 × 384x1536", 1536, 384, 1536, 20)
+  bench_matmul("attn.qkv   384x384 × 384x384", 384, 384, 384, 50)!
+  bench_matmul("mlp.up     384x1536 × 1536x384 (transpose-ish)", 384, 1536, 384, 50)!
+  bench_matmul("mlp.down   1536x384 × 384x1536", 1536, 384, 1536, 20)!
   // A "square" size to compare against NumPy benchmarks
-  bench_matmul("square     512x512", 512, 512, 512, 50)
-  bench_matmul("square     1024x1024", 1024, 1024, 1024, 10)
+  bench_matmul("square     512x512", 512, 512, 512, 50)!
+  bench_matmul("square     1024x1024", 1024, 1024, 1024, 10)!
 }

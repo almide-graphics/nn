@@ -22,9 +22,9 @@ effect fn bench(n: Int, iters: Int) -> () = {
 }
 
 effect fn main() -> () = {
-  bench(3, 100000)
-  bench(8, 100000)
-  bench(16, 100000)
-  bench(32, 10000)
-  bench(64, 10000)
+  bench(3, 100000)!
+  bench(8, 100000)!
+  bench(16, 100000)!
+  bench(32, 10000)!
+  bench(64, 10000)!
 }

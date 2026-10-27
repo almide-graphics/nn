@@ -30,9 +30,9 @@ effect fn bench(label: String, seq: Int, d: Int, iters: Int) -> () = {
 
 effect fn main() -> () = {
   println("Almide f32 chained matmul (realistic NN layer, no activation)")
-  bench("attn", 500, 384, 1000)    // Whisper encoder attention size
-  bench("mlp",  500, 1536, 500)    // Whisper encoder MLP intermediate
-  bench("seq2", 256, 256, 2000)
-  bench("seq4", 512, 512, 500)
-  bench("seq8", 1024, 1024, 100)
+  bench("attn", 500, 384, 1000)!    // Whisper encoder attention size
+  bench("mlp",  500, 1536, 500)!    // Whisper encoder MLP intermediate
+  bench("seq2", 256, 256, 2000)!
+  bench("seq4", 512, 512, 500)!
+  bench("seq8", 1024, 1024, 100)!
 }

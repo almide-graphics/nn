@@ -29,10 +29,10 @@ effect fn bench_small(label: String, n: Int, iters: Int) -> () = {
 
 effect fn main() -> () = {
   println("Almide small-matrix matmul throughput")
-  bench_small("sq", 3, 100000)
-  bench_small("sq", 8, 100000)
-  bench_small("sq", 16, 100000)
-  bench_small("sq", 32, 10000)
-  bench_small("sq", 64, 10000)
-  bench_small("sq", 128, 1000)
+  bench_small("sq", 3, 100000)!
+  bench_small("sq", 8, 100000)!
+  bench_small("sq", 16, 100000)!
+  bench_small("sq", 32, 10000)!
+  bench_small("sq", 64, 10000)!
+  bench_small("sq", 128, 1000)!
 }
