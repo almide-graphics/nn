@@ -1,0 +1,22 @@
+name: CI
+on:
+  push: { branches: [main] }
+  pull_request: { branches: [main] }
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Install Almide
+        run: |
+          curl -fsSL "https://github.com/almide/almide/releases/download/v0.69.0/almide-linux-x86_64.tar.gz" -o almide.tar.gz
+          tar xzf almide.tar.gz --strip-components=1 && sudo mv almide /usr/local/bin/ && almide --version
+      - run: almide check
+      - name: Check every .almd file (examples, oplab, research included)
+        run: |
+          fail=0
+          for f in $(git ls-files '*.almd'); do almide check "$f" > /tmp/out.txt 2>&1 || { echo "::error file=$f::almide check failed"; cat /tmp/out.txt; fail=1; }; done
+          exit $fail
+      - run: almide test
