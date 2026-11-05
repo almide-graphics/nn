@@ -8,11 +8,11 @@ fn sigmoid_act(m: Matrix) -> Matrix =
 
 test "sigmoid at zero is half" {
   let y = sigmoid_act(matrix.from_lists([[0.0]]))
-  assert_eq(matrix.get(y, 0, 0), 0.5)
+  assert_eq(matrix.get(y, 0, 0) ?? panic("matrix.get: out of range"), 0.5)
 }
 
 test "sigmoid saturates to 0 and 1" {
   let y = sigmoid_act(matrix.from_lists([[30.0, -30.0]]))
-  assert(float.abs(matrix.get(y, 0, 0) - 1.0) < 0.000000001, "→ 1")
-  assert(float.abs(matrix.get(y, 0, 1)) < 0.000000001, "→ 0")
+  assert(float.abs((matrix.get(y, 0, 0) ?? panic("matrix.get: out of range")) - 1.0) < 0.000000001, "→ 1")
+  assert(float.abs(matrix.get(y, 0, 1) ?? panic("matrix.get: out of range")) < 0.000000001, "→ 0")
 }

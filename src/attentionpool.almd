@@ -17,9 +17,9 @@ fn attention_pool_rows(x: Matrix, w: Matrix) -> Matrix = {
   var out: List[List[Float]] = []
   var i = 0
   while i < t {
-    let xi = list.get_or(rx, i, [])
-    let wi = list.get_or(rw, i, [])
-    let m = wi |> list.fold(list.get_or(wi, 0, 0.0), (acc, v) => math.fmax(acc, v))
+    let xi = list.get(rx, i) ?? []
+    let wi = list.get(rw, i) ?? []
+    let m = wi |> list.fold(list.get(wi, 0) ?? 0.0, (acc, v) => float.max(acc, v))
     let e = wi |> list.map((v) => math.exp(v - m))
     let z = e |> list.fold(0.0, (acc, v) => acc + v)
     let s = list.zip_with(e, xi, (ej, xj) => (ej / z) * xj) |> list.fold(0.0, (acc, v) => acc + v)
@@ -34,7 +34,7 @@ test "attention pool with equal scores is the plain mean of values" {
   let x = matrix.from_lists([[3.0, 5.0]])
   let w = matrix.from_lists([[0.0, 0.0]])
   let y = attention_pool_rows(x, w)
-  assert(float.abs(matrix.get(y, 0, 0) - 4.0) < 0.000000001, "mean(3,5)=4")
+  assert(float.abs((matrix.get(y, 0, 0) ?? panic("matrix.get: out of range")) - 4.0) < 0.000000001, "mean(3,5)=4")
 }
 
 // a sharply peaked score selects the corresponding value (≈ hard argmax read-out).
@@ -42,5 +42,5 @@ test "a sharply peaked score selects the corresponding value" {
   let x = matrix.from_lists([[10.0, 20.0, 30.0]])
   let w = matrix.from_lists([[100.0, 0.0, 0.0]])
   let y = attention_pool_rows(x, w)
-  assert(float.abs(matrix.get(y, 0, 0) - 10.0) < 0.000000001, "selects x0 = 10")
+  assert(float.abs((matrix.get(y, 0, 0) ?? panic("matrix.get: out of range")) - 10.0) < 0.000000001, "selects x0 = 10")
 }

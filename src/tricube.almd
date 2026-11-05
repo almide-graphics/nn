@@ -7,20 +7,20 @@ import math
 fn tricube(m: Matrix) -> Matrix =
   matrix.map(m, (x) => {
     let a = float.abs(x)
-    let u = math.fmax(0.0, 1.0 - a * a * a)
+    let u = float.max(0.0, 1.0 - a * a * a)
     u * u * u
   })
 
 // peak 1 at 0; (1-0.125)³ = 0.875³ = 0.669921875 at 0.5.
 test "tricube peak and interior" {
   let y = tricube(matrix.from_lists([[0.0, 0.5]]))
-  assert_eq(matrix.get(y, 0, 0), 1.0)
-  assert_eq(matrix.get(y, 0, 1), 0.669921875)
+  assert_eq(matrix.get(y, 0, 0) ?? panic("matrix.get: out of range"), 1.0)
+  assert_eq(matrix.get(y, 0, 1) ?? panic("matrix.get: out of range"), 0.669921875)
 }
 
 // exactly 0 at and beyond |x|=1.
 test "tricube zero outside unit" {
   let y = tricube(matrix.from_lists([[1.0, -2.0]]))
-  assert_eq(matrix.get(y, 0, 0), 0.0)
-  assert_eq(matrix.get(y, 0, 1), 0.0)
+  assert_eq(matrix.get(y, 0, 0) ?? panic("matrix.get: out of range"), 0.0)
+  assert_eq(matrix.get(y, 0, 1) ?? panic("matrix.get: out of range"), 0.0)
 }

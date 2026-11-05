@@ -26,12 +26,12 @@ fn wkv(k: Matrix, v: Matrix, w: List[Float], u: List[Float]) -> Matrix = {
   var out: List[List[Float]] = []
   var i = 0
   while i < t {
-    let ki = list.get_or(rk, i, [])
-    let vi = list.get_or(rv, i, [])
+    let ki = list.get(rk, i) ?? []
+    let vi = list.get(rv, i) ?? []
 
     // --- output at t: include current token via bonus u ---
     let uk = list.zip_with(u, ki, (uu, kk) => uu + kk)            // u + k_t
-    let q  = list.zip_with(p, uk, (pp, qq) => math.fmax(pp, qq))  // max(p, u+k)
+    let q  = list.zip_with(p, uk, (pp, qq) => float.max(pp, qq))  // max(p, u+k)
     let e1 = list.zip_with(p, q, (pp, qq) => math.exp(pp - qq))   // exp(p - q)
     let e2 = list.zip_with(uk, q, (xx, qq) => math.exp(xx - qq))  // exp(u+k - q)
     let e1a = list.zip_with(e1, a, (ee, aa) => ee * aa)
@@ -44,7 +44,7 @@ fn wkv(k: Matrix, v: Matrix, w: List[Float], u: List[Float]) -> Matrix = {
 
     // --- state update: decay previous accumulators by w, fold in v_t ---
     let pw  = list.zip_with(p, w, (pp, ww) => pp - ww)            // p - w
-    let q2  = list.zip_with(pw, ki, (pp, kk) => math.fmax(pp, kk))// max(p-w, k)
+    let q2  = list.zip_with(pw, ki, (pp, kk) => float.max(pp, kk))// max(p-w, k)
     let f1  = list.zip_with(pw, q2, (pp, qq) => math.exp(pp - qq))
     let f2  = list.zip_with(ki, q2, (kk, qq) => math.exp(kk - qq))
     let na1 = list.zip_with(f1, a, (ee, aa) => ee * aa)
@@ -64,8 +64,8 @@ test "wkv first token equals v_0" {
   let k = matrix.from_lists([[0.1, -0.2], [0.5, 0.3]])
   let v = matrix.from_lists([[1.0, 2.0], [9.0, 8.0]])
   let y = wkv(k, v, [0.3, 0.8], [0.2, -0.1])
-  assert_eq(matrix.get(y, 0, 0), 1.0)
-  assert_eq(matrix.get(y, 0, 1), 2.0)
+  assert_eq(matrix.get(y, 0, 0) ?? panic("matrix.get: out of range"), 1.0)
+  assert_eq(matrix.get(y, 0, 1) ?? panic("matrix.get: out of range"), 2.0)
 }
 
 // Invariant 2: WKV is a convex combination of the v's → constant v yields that
@@ -74,8 +74,8 @@ test "wkv of constant values is that constant" {
   let k = matrix.from_lists([[0.1, -0.7], [0.5, 0.3], [-0.2, 0.9]])
   let v = matrix.from_lists([[4.0, 4.0], [4.0, 4.0], [4.0, 4.0]])
   let y = wkv(k, v, [0.3, 0.8], [0.2, -0.1])
-  assert(float.abs(matrix.get(y, 2, 0) - 4.0) < 0.000000001, "row2 col0 != 4")
-  assert(float.abs(matrix.get(y, 1, 1) - 4.0) < 0.000000001, "row1 col1 != 4")
+  assert(float.abs((matrix.get(y, 2, 0) ?? panic("matrix.get: out of range")) - 4.0) < 0.000000001, "row2 col0 != 4")
+  assert(float.abs((matrix.get(y, 1, 1) ?? panic("matrix.get: out of range")) - 4.0) < 0.000000001, "row1 col1 != 4")
 }
 
 // Independent oracle: numpy float64 reference (tools/.venv numpy 1.26.4),
@@ -94,8 +94,8 @@ test "wkv matches numpy float64 reference" {
   while r < 4 {
     var c = 0
     while c < 3 {
-      let got = matrix.get(y, r, c)
-      let want = list.get_or(ref, r * 3 + c, 0.0)
+      let got = matrix.get(y, r, c) ?? panic("matrix.get: out of range")
+      let want = list.get(ref, r * 3 + c) ?? 0.0
       assert(float.abs(got - want) < 0.000000001, "wkv cell vs numpy mismatch")
       c = c + 1
     }

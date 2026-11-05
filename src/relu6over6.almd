@@ -5,12 +5,12 @@
 import math
 
 fn relu6_over6(m: Matrix) -> Matrix =
-  matrix.map(m, (x) => math.fmax(0.0, math.fmin(6.0, x)) / 6.0)
+  matrix.map(m, (x) => float.max(0.0, float.min(6.0, x)) / 6.0)
 
 // clamps below 0 / above 6; 3/6 = 0.5 at the midpoint.
 test "relu6_over6 clamps and is half at three" {
   let y = relu6_over6(matrix.from_lists([[-2.0, 3.0, 10.0]]))
-  assert_eq(matrix.get(y, 0, 0), 0.0)
-  assert_eq(matrix.get(y, 0, 1), 0.5)
-  assert_eq(matrix.get(y, 0, 2), 1.0)
+  assert_eq(matrix.get(y, 0, 0) ?? panic("matrix.get: out of range"), 0.0)
+  assert_eq(matrix.get(y, 0, 1) ?? panic("matrix.get: out of range"), 0.5)
+  assert_eq(matrix.get(y, 0, 2) ?? panic("matrix.get: out of range"), 1.0)
 }

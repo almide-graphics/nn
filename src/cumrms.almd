@@ -15,9 +15,9 @@ fn cumrms_rows(x: Matrix) -> Matrix = {
   var out: List[List[Float]] = []
   var i = 0
   while i < t {
-    let xi = list.get_or(rx, i, [])
+    let xi = list.get(rx, i) ?? []
     acc = list.zip_with(acc, xi, (a, v) => a + v * v)
-    let n = int.to_float(i + 1)
+    let n = float.from(i + 1)
     out = out + [acc |> list.map((s) => math.sqrt(s / n))]
     i = i + 1
   }
@@ -28,12 +28,12 @@ fn cumrms_rows(x: Matrix) -> Matrix = {
 test "cumulative rms of the first sample is its magnitude" {
   let x = matrix.from_lists([[3.0], [0.0 - 4.0]])
   let y = cumrms_rows(x)
-  assert(float.abs(matrix.get(y, 0, 0) - 3.0) < 0.000000001, "sqrt(9)=3")
+  assert(float.abs((matrix.get(y, 0, 0) ?? panic("matrix.get: out of range")) - 3.0) < 0.000000001, "sqrt(9)=3")
 }
 
 // column [3,−4]: out_1 = sqrt((9+16)/2) = sqrt(12.5).
 test "cumulative rms is the expanding-window root mean square" {
   let x = matrix.from_lists([[3.0], [0.0 - 4.0]])
   let y = cumrms_rows(x)
-  assert(float.abs(matrix.get(y, 1, 0) - math.sqrt(12.5)) < 0.000000001, "sqrt(12.5)")
+  assert(float.abs((matrix.get(y, 1, 0) ?? panic("matrix.get: out of range")) - math.sqrt(12.5)) < 0.000000001, "sqrt(12.5)")
 }

@@ -110,7 +110,7 @@ fn train(lam: Float, seed: Int, xs: List[List[Float]], ts: List[Float]) -> (Floa
   }
   var logits: List[Float] = []
   var i = 0
-  while i < NPARAM { rs = rng_next(rs); list.push(logits, (int.to_float(int.band(rs, 65535)) / 32768.0) - 1.0); i = i + 1 }
+  while i < NPARAM { rs = rng_next(rs); list.push(logits, (float.from(int.band(rs, 65535)) / 32768.0) - 1.0); i = i + 1 }
   var mAd = list.repeat(0.0, NPARAM)
   var vAd = list.repeat(0.0, NPARAM)
   let lr = 0.05
@@ -150,7 +150,7 @@ fn train(lam: Float, seed: Int, xs: List[List[Float]], ts: List[Float]) -> (Floa
         layer2 = layer2 + 1
       }
       let y = list.get(list.get(acts, DEP + 1) ?? [], 0) ?? 0.0
-      let dy = 2.0 * (y - (list.get(ts, ex) ?? 0.0)) / int.to_float(NEX)
+      let dy = 2.0 * (y - (list.get(ts, ex) ?? 0.0)) / float.from(NEX)
       var dunit: List[List[Float]] = []
       var l = 0
       while l < DEP + 2 { list.push(dunit, list.repeat(0.0, list.len(list.get(acts, l) ?? []))); l = l + 1 }
@@ -278,9 +278,9 @@ fn train(lam: Float, seed: Int, xs: List[List[Float]], ts: List[Float]) -> (Floa
     }
 
     // Adam
-    let tt = int.to_float(step + 1)
-    let bc1 = 1.0 - math.fpow(b1, tt)
-    let bc2 = 1.0 - math.fpow(b2, tt)
+    let tt = float.from(step + 1)
+    let bc1 = 1.0 - float.pow(b1, tt)
+    let bc2 = 1.0 - float.pow(b2, tt)
     var j = 0
     while j < NPARAM {
       let gj = list.get(grad, j) ?? 0.0
@@ -342,7 +342,7 @@ fn train(lam: Float, seed: Int, xs: List[List[Float]], ts: List[Float]) -> (Floa
     lyr2 = lyr2 + 1
   }
   let circuit_depth = list.get(hd, DEP * WID) ?? 0
-  (int.to_float(correct) / int.to_float(NEX), circuit_depth)
+  (float.from(correct) / float.from(NEX), circuit_depth)
 }
 
 effect fn main() -> () = {
@@ -352,11 +352,11 @@ effect fn main() -> () = {
   while e < NEX {
     var row: List[Float] = []
     var k = 0
-    while k < NB { list.push(row, int.to_float(int.band(int.bshr(e, NB - 1 - k), 1))); k = k + 1 }
+    while k < NB { list.push(row, float.from(int.band(int.bshr(e, NB - 1 - k), 1))); k = k + 1 }
     list.push(xs, row)
     let x0 = int.band(int.bshr(e, 3), 1)
     let x1 = int.band(int.bshr(e, 2), 1)
-    list.push(ts, int.to_float(int.bxor(x0, x1)))   // XOR of first 2 bits
+    list.push(ts, float.from(int.bxor(x0, x1)))   // XOR of first 2 bits
     e = e + 1
   }
 
@@ -375,7 +375,7 @@ effect fn main() -> () = {
     var sum = 0
     var i = 0
     while i < list.len(solved) { sum = sum + (list.get(solved, i) ?? 0); i = i + 1 }
-    let md = if list.len(solved) > 0 then int.to_float(sum) / int.to_float(list.len(solved)) else 0.0
+    let md = if list.len(solved) > 0 then float.from(sum) / float.from(list.len(solved)) else 0.0
     let ds = solved |> list.map((d) => int.to_string(d)) |> list.join(",")
     println(float.to_string(lam) + "  " + int.to_string(list.len(solved))
       + "  " + float.to_string(md) + "  [" + ds + "]")

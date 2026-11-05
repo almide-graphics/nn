@@ -1,0 +1,11 @@
+f32_shifted=[[0, 0], [-3, 4], [5, 6.5]]
+f32_edge=[[0, 0], [1.5, 2.5], [1.5, 2.5]]
+f32_negoff=[[1.5, 2.5]]
+q8_oob=0,0 q8_row0=5,-5
+q8_oob_sign=0.0,0.0
+q8_negoff=5
+q1_oob=0 q1_row0=-0.5
+q1_oob_sign=0.0,0.0
+q1_zeroblk_sign=0.0,0.0
+q1_zeroblk_full_sign=0.0,0.0
+q8_zeroscale_sign=0.0,0.0

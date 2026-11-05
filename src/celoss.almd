@@ -14,9 +14,9 @@ fn cross_entropy_rows(logits: Matrix, target: Matrix) -> Matrix = {
   var out: List[List[Float]] = []
   var n = 0
   while n < t {
-    let ln = list.get_or(rl, n, [])
-    let tn = list.get_or(rt, n, [])
-    let mx = ln |> list.fold(-1.0e38, (acc, v) => math.fmax(acc, v))
+    let ln = list.get(rl, n) ?? []
+    let tn = list.get(rt, n) ?? []
+    let mx = ln |> list.fold(-1.0e38, (acc, v) => float.max(acc, v))
     let sumexp = ln |> list.fold(0.0, (acc, v) => acc + math.exp(v - mx))
     let lse = mx + math.log(sumexp)
     let terms = list.zip_with(tn, ln, (tt, xx) => tt * (xx - lse))
@@ -32,7 +32,7 @@ test "cross_entropy uniform equals log n" {
   let logits = matrix.from_lists([[0.0, 0.0]])
   let target = matrix.from_lists([[1.0, 0.0]])
   let y = cross_entropy_rows(logits, target)
-  assert(float.abs(matrix.get(y, 0, 0) - 0.6931471805599453) < 0.000000001, "log 2")
+  assert(float.abs((matrix.get(y, 0, 0) ?? panic("matrix.get: out of range")) - 0.6931471805599453) < 0.000000001, "log 2")
 }
 
 // Confident correct prediction → loss ≈ 0.
@@ -40,5 +40,5 @@ test "cross_entropy confident correct is zero" {
   let logits = matrix.from_lists([[100.0, 0.0]])
   let target = matrix.from_lists([[1.0, 0.0]])
   let y = cross_entropy_rows(logits, target)
-  assert(float.abs(matrix.get(y, 0, 0)) < 0.000000001, "≈ 0 loss")
+  assert(float.abs(matrix.get(y, 0, 0) ?? panic("matrix.get: out of range")) < 0.000000001, "≈ 0 loss")
 }

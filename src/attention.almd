@@ -6,6 +6,7 @@
 import math
 import self.tensor as t
 import self.activations as act
+import self.kernels
 
 // ── Scaled dot-product attention ──
 //
@@ -17,11 +18,11 @@ import self.activations as act
 // Returns: (seq_q, d_v)
 
 fn scaled_dot_product(q: Matrix, k: Matrix, v: Matrix) -> Matrix = {
-  let d_k = int.to_float(t.cols(q))
+  let d_k = float.from(t.cols(q))
   let scale = 1.0 / math.sqrt(d_k)
-  let scores = matrix.scale(matrix.mul(q, matrix.transpose(k)), scale)
+  let scores = matrix.scale(q * matrix.transpose(k), scale)
   let weights = act.softmax(scores)
-  matrix.mul(weights, v)
+  weights * v
 }
 
 // ── Causal (masked) attention ──
@@ -29,15 +30,15 @@ fn scaled_dot_product(q: Matrix, k: Matrix, v: Matrix) -> Matrix = {
 // For decoder self-attention: mask future positions with -infinity before softmax.
 
 fn masked_scaled_dot_product(q: Matrix, k: Matrix, v: Matrix) -> Matrix = {
-  let d_k = int.to_float(t.cols(q))
+  let d_k = float.from(t.cols(q))
   let scale = 1.0 / math.sqrt(d_k)
-  let scores = matrix.scale(matrix.mul(q, matrix.transpose(k)), scale)
+  let scores = matrix.scale(q * matrix.transpose(k), scale)
   let seq_q = t.rows(q)
   let seq_k = t.rows(k)
   // Native causal mask — adds `-1e9` to upper triangle in one pass.
-  let masked = if seq_q == seq_k then matrix.causal_mask_add(scores, -1000000000.0) else scores
+  let masked = if seq_q == seq_k then kernels.causal_mask_add(scores, -1000000000.0) else scores
   let weights = act.softmax(masked)
-  matrix.mul(weights, v)
+  weights * v
 }
 
 // ── Multi-head attention ──
@@ -65,7 +66,7 @@ fn multi_head_attention(
   let q = act.linear(q_in, w_q, b_q)
   let k = act.linear(k_in, w_k, b_k)
   let v = act.linear(v_in, w_v, b_v)
-  let attended = matrix.multi_head_attention(q, k, v, n_heads)
+  let attended = kernels.multi_head_attention(q, k, v, n_heads)
   act.linear(attended, w_o, b_o)
 }
 
@@ -82,7 +83,7 @@ fn masked_multi_head_attention(
   let q = act.linear(q_in, w_q, b_q)
   let k = act.linear(k_in, w_k, b_k)
   let v = act.linear(v_in, w_v, b_v)
-  let attended = matrix.masked_multi_head_attention(q, k, v, n_heads)
+  let attended = kernels.masked_multi_head_attention(q, k, v, n_heads)
   act.linear(attended, w_o, b_o)
 }
 
@@ -99,8 +100,8 @@ test "scaled_dot_product output shape" {
   assert_eq(t.rows(out), 2)
   assert_eq(t.cols(out), 2)
   // Output is weighted combination of V rows — values should be in V's range
-  assert(matrix.get(out, 0, 0) >= 10.0)
-  assert(matrix.get(out, 0, 0) <= 30.0)
+  assert((matrix.get(out, 0, 0) ?? panic("matrix.get: out of range")) >= 10.0)
+  assert((matrix.get(out, 0, 0) ?? panic("matrix.get: out of range")) <= 30.0)
 }
 
 test "softmax attention weights sum to 1" {
@@ -109,20 +110,20 @@ test "softmax attention weights sum to 1" {
   let v = matrix.from_lists([[1.0, 0.0], [0.0, 1.0], [0.5, 0.5]])
   let out = scaled_dot_product(q, k, v)
   // Output is a weighted sum of V rows — each element should be in [0, 1]
-  assert(matrix.get(out, 0, 0) >= 0.0)
-  assert(matrix.get(out, 0, 0) <= 1.0)
+  assert((matrix.get(out, 0, 0) ?? panic("matrix.get: out of range")) >= 0.0)
+  assert((matrix.get(out, 0, 0) ?? panic("matrix.get: out of range")) <= 1.0)
 }
 
 test "causal_mask_add applies upper-triangular bias" {
   let z = matrix.zeros(3, 3)
-  let m = matrix.causal_mask_add(z, -1000000.0)
+  let m = kernels.causal_mask_add(z, -1000000.0)
   // Diagonal and below = 0
-  assert_eq(matrix.get(m, 0, 0), 0.0)
-  assert_eq(matrix.get(m, 1, 0), 0.0)
-  assert_eq(matrix.get(m, 1, 1), 0.0)
+  assert_eq(matrix.get(m, 0, 0) ?? panic("matrix.get: out of range"), 0.0)
+  assert_eq(matrix.get(m, 1, 0) ?? panic("matrix.get: out of range"), 0.0)
+  assert_eq(matrix.get(m, 1, 1) ?? panic("matrix.get: out of range"), 0.0)
   // Above diagonal = large negative
-  assert(matrix.get(m, 0, 1) < -999999.0)
-  assert(matrix.get(m, 0, 2) < -999999.0)
+  assert((matrix.get(m, 0, 1) ?? panic("matrix.get: out of range")) < -999999.0)
+  assert((matrix.get(m, 0, 2) ?? panic("matrix.get: out of range")) < -999999.0)
 }
 
 test "masked attention can't look ahead" {
@@ -131,8 +132,8 @@ test "masked attention can't look ahead" {
   let v = matrix.from_lists([[10.0, 0.0], [0.0, 10.0]])
   let out = masked_scaled_dot_product(q, k, v)
   // Position 0 can only see position 0 → output[0] ≈ v[0] = [10, 0]
-  assert(approx(matrix.get(out, 0, 0), 10.0))
-  assert(approx(matrix.get(out, 0, 1), 0.0))
+  assert(approx(matrix.get(out, 0, 0) ?? panic("matrix.get: out of range"), 10.0))
+  assert(approx(matrix.get(out, 0, 1) ?? panic("matrix.get: out of range"), 0.0))
 }
 
 test "split_heads and concat_heads round-trip" {
@@ -142,7 +143,7 @@ test "split_heads and concat_heads round-trip" {
   let reconstructed = concat_heads(heads)
   assert_eq(t.rows(reconstructed), 2)
   assert_eq(t.cols(reconstructed), 4)
-  assert_eq(matrix.get(reconstructed, 0, 0), 1.0)
-  assert_eq(matrix.get(reconstructed, 0, 3), 4.0)
-  assert_eq(matrix.get(reconstructed, 1, 2), 7.0)
+  assert_eq(matrix.get(reconstructed, 0, 0) ?? panic("matrix.get: out of range"), 1.0)
+  assert_eq(matrix.get(reconstructed, 0, 3) ?? panic("matrix.get: out of range"), 4.0)
+  assert_eq(matrix.get(reconstructed, 1, 2) ?? panic("matrix.get: out of range"), 7.0)
 }

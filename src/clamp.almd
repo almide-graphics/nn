@@ -18,16 +18,16 @@ fn clamp_rows(x: Matrix, lo: Matrix, hi: Matrix) -> Matrix = {
   var out: List[List[Float]] = []
   var i = 0
   while i < t {
-    let xi = list.get_or(rx, i, [])
-    let li = list.get_or(rl, i, [])
-    let hii = list.get_or(rh, i, [])
+    let xi = list.get(rx, i) ?? []
+    let li = list.get(rl, i) ?? []
+    let hii = list.get(rh, i) ?? []
     var row: List[Float] = []
     var j = 0
     while j < d {
-      let xv = list.get_or(xi, j, 0.0)
-      let lv = list.get_or(li, j, 0.0)
-      let hv = list.get_or(hii, j, 0.0)
-      row = row + [math.fmax(lv, math.fmin(hv, xv))]
+      let xv = list.get(xi, j) ?? 0.0
+      let lv = list.get(li, j) ?? 0.0
+      let hv = list.get(hii, j) ?? 0.0
+      row = row + [float.max(lv, float.min(hv, xv))]
       j = j + 1
     }
     out = out + [row]
@@ -42,7 +42,7 @@ test "clamp leaves in-range values unchanged" {
   let lo = matrix.from_lists([[0.0]])
   let hi = matrix.from_lists([[1.0]])
   let y = clamp_rows(x, lo, hi)
-  assert(float.abs(matrix.get(y, 0, 0) - 0.5) < 0.000000001, "0.5")
+  assert(float.abs((matrix.get(y, 0, 0) ?? panic("matrix.get: out of range")) - 0.5) < 0.000000001, "0.5")
 }
 
 // out-of-range values clamp to the bounds: 5→hi=1, −5→lo=0.
@@ -51,6 +51,6 @@ test "clamp bounds values to the per-element interval" {
   let lo = matrix.from_lists([[0.0, 0.0]])
   let hi = matrix.from_lists([[1.0, 1.0]])
   let y = clamp_rows(x, lo, hi)
-  assert(float.abs(matrix.get(y, 0, 0) - 1.0) < 0.000000001, "clamp hi=1")
-  assert(float.abs(matrix.get(y, 0, 1)) < 0.000000001, "clamp lo=0")
+  assert(float.abs((matrix.get(y, 0, 0) ?? panic("matrix.get: out of range")) - 1.0) < 0.000000001, "clamp hi=1")
+  assert(float.abs(matrix.get(y, 0, 1) ?? panic("matrix.get: out of range")) < 0.000000001, "clamp lo=0")
 }

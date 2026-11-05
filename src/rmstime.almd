@@ -9,11 +9,11 @@ import math
 fn rms_time_rows(x: Matrix) -> Matrix = {
   let rx = matrix.to_lists(x)
   let (t, d) = matrix.shape(x)
-  let tf = int.to_float(t)
+  let tf = float.from(t)
   var ss: List[Float] = list.range(0, d) |> list.map((_) => 0.0)
   var i = 0
   while i < t {
-    let xi = list.get_or(rx, i, [])
+    let xi = list.get(rx, i) ?? []
     ss = list.zip_with(ss, xi, (a, b) => a + b * b)
     i = i + 1
   }
@@ -21,7 +21,7 @@ fn rms_time_rows(x: Matrix) -> Matrix = {
   var out: List[List[Float]] = []
   var j = 0
   while j < t {
-    let xj = list.get_or(rx, j, [])
+    let xj = list.get(rx, j) ?? []
     out = out + [list.zip_with(xj, rms, (a, b) => a / b)]
     j = j + 1
   }
@@ -33,14 +33,14 @@ fn rms_time_rows(x: Matrix) -> Matrix = {
 test "rms time of a constant-magnitude channel normalizes to one" {
   let x = matrix.from_lists([[2.0], [2.0]])
   let y = rms_time_rows(x)
-  assert_eq(matrix.get(y, 0, 0), 1.0)
-  assert_eq(matrix.get(y, 1, 0), 1.0)
+  assert_eq(matrix.get(y, 0, 0) ?? panic("matrix.get: out of range"), 1.0)
+  assert_eq(matrix.get(y, 1, 0) ?? panic("matrix.get: out of range"), 1.0)
 }
 
 // per channel: ch0 [0,4] rms=sqrt(16/2)=sqrt(8); ch1 [3,3] rms=3 → ch1 → [1,1].
 test "rms time normalizes each channel independently" {
   let x = matrix.from_lists([[0.0, 3.0], [4.0, 3.0]])
   let y = rms_time_rows(x)
-  assert_eq(matrix.get(y, 0, 1), 1.0)
-  assert_eq(matrix.get(y, 1, 1), 1.0)
+  assert_eq(matrix.get(y, 0, 1) ?? panic("matrix.get: out of range"), 1.0)
+  assert_eq(matrix.get(y, 1, 1) ?? panic("matrix.get: out of range"), 1.0)
 }

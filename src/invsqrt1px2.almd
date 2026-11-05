@@ -8,12 +8,12 @@ fn inv_sqrt1px2(m: Matrix) -> Matrix =
 
 test "inv_sqrt1px2 at zero is zero" {
   let y = inv_sqrt1px2(matrix.from_lists([[0.0]]))
-  assert_eq(matrix.get(y, 0, 0), 0.0)
+  assert_eq(matrix.get(y, 0, 0) ?? panic("matrix.get: out of range"), 0.0)
 }
 
 // 1/√2 at x=1; odd.
 test "inv_sqrt1px2 at 1 and odd" {
   let y = inv_sqrt1px2(matrix.from_lists([[1.0, -1.0]]))
-  assert(float.abs(matrix.get(y, 0, 0) - 0.7071067811865475) < 0.000000001, "1/√2")
-  assert(float.abs(matrix.get(y, 0, 1) + 0.7071067811865475) < 0.000000001, "odd")
+  assert(float.abs((matrix.get(y, 0, 0) ?? panic("matrix.get: out of range")) - 0.7071067811865475) < 0.000000001, "1/√2")
+  assert(float.abs((matrix.get(y, 0, 1) ?? panic("matrix.get: out of range")) + 0.7071067811865475) < 0.000000001, "odd")
 }

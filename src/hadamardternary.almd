@@ -14,12 +14,12 @@ fn hadamard_ternary_rows(a: Matrix, b: Matrix) -> Matrix = {
   let ra = matrix.to_lists(a)
   let rb = matrix.to_lists(b)
   let (t, d) = matrix.shape(a)
-  let df = int.to_float(d)
+  let df = float.from(d)
   var out: List[List[Float]] = []
   var i = 0
   while i < t {
-    let ai = list.get_or(ra, i, [])
-    let bi = list.get_or(rb, i, [])
+    let ai = list.get(ra, i) ?? []
+    let bi = list.get(rb, i) ?? []
     let da = 0.7 * ((ai |> list.fold(0.0, (acc, v) => acc + float.abs(v))) / df)
     let db = 0.7 * ((bi |> list.fold(0.0, (acc, v) => acc + float.abs(v))) / df)
     let row = list.zip_with(ai, bi, (u, v) => {
@@ -38,16 +38,16 @@ test "hadamard-ternary is the product of the two ternary codes" {
   let a = matrix.from_lists([[3.0, 0.0 - 4.0, 0.1]])
   let b = matrix.from_lists([[5.0, 5.0, 5.0]])
   let y = hadamard_ternary_rows(a, b)
-  assert_eq(matrix.get(y, 0, 0), 1.0)
-  assert_eq(matrix.get(y, 0, 1), 0.0 - 1.0)
-  assert_eq(matrix.get(y, 0, 2), 0.0)
+  assert_eq(matrix.get(y, 0, 0) ?? panic("matrix.get: out of range"), 1.0)
+  assert_eq(matrix.get(y, 0, 1) ?? panic("matrix.get: out of range"), 0.0 - 1.0)
+  assert_eq(matrix.get(y, 0, 2) ?? panic("matrix.get: out of range"), 0.0)
 }
 
 // a with itself → code² = 1 wherever kept, 0 in the dead-zone → the kept-support mask.
 test "hadamard-ternary of a matrix with itself is its kept-support mask" {
   let a = matrix.from_lists([[3.0, 0.0 - 4.0, 0.1]])
   let y = hadamard_ternary_rows(a, a)
-  assert_eq(matrix.get(y, 0, 0), 1.0)
-  assert_eq(matrix.get(y, 0, 1), 1.0)
-  assert_eq(matrix.get(y, 0, 2), 0.0)
+  assert_eq(matrix.get(y, 0, 0) ?? panic("matrix.get: out of range"), 1.0)
+  assert_eq(matrix.get(y, 0, 1) ?? panic("matrix.get: out of range"), 1.0)
+  assert_eq(matrix.get(y, 0, 2) ?? panic("matrix.get: out of range"), 0.0)
 }

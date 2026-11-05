@@ -164,7 +164,7 @@ fn zero_weights(config: WhisperConfig, vocab_size: Int, n_enc_layers: Int, n_dec
 test "encode_audio preserves (time, d_model) shape" {
   let config = test_config()
   let weights = zero_weights(config, 3, 2, 2)
-  let samples = list.map(list.range(0, 256), (i) => int.to_float(i) * 0.01)
+  let samples = list.map(list.range(0, 256), (i) => float.from(i) * 0.01)
   let mel_mat = audio_to_mel(samples, config)
   let encoded = encode_audio(mel_mat, weights, config)
   assert_eq(matrix.cols(encoded), config.d_model)
@@ -184,7 +184,7 @@ test "decode_tokens stops at eot" {
 test "transcribe runs end-to-end" {
   let config = test_config()
   let weights = zero_weights(config, 3, 1, 1)
-  let samples = list.map(list.range(0, 256), (i) => int.to_float(i) * 0.01)
+  let samples = list.map(list.range(0, 256), (i) => float.from(i) * 0.01)
   let vocab = map.from_list([("<eot>", 0), ("<sot>", 1), ("hello", 2)])
   let text = transcribe(samples, weights, config, vocab, 5)
   assert_eq(text, "<sot><eot>")

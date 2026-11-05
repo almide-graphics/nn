@@ -8,12 +8,12 @@ fn log2_quad(m: Matrix) -> Matrix =
 
 test "log2_quad at zero is zero" {
   let y = log2_quad(matrix.from_lists([[0.0]]))
-  assert_eq(matrix.get(y, 0, 0), 0.0)
+  assert_eq(matrix.get(y, 0, 0) ?? panic("matrix.get: out of range"), 0.0)
 }
 
 // log2(1+1)=log2(2)=1 at x=1; even.
 test "log2_quad at 1 and even" {
   let y = log2_quad(matrix.from_lists([[1.0, -1.0]]))
-  assert(float.abs(matrix.get(y, 0, 0) - 1.0) < 0.000000001, "= 1")
-  assert(float.abs(matrix.get(y, 0, 1) - 1.0) < 0.000000001, "even")
+  assert(float.abs((matrix.get(y, 0, 0) ?? panic("matrix.get: out of range")) - 1.0) < 0.000000001, "= 1")
+  assert(float.abs((matrix.get(y, 0, 1) ?? panic("matrix.get: out of range")) - 1.0) < 0.000000001, "even")
 }

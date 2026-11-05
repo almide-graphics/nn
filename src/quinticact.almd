@@ -6,12 +6,12 @@ fn quintic_act(m: Matrix) -> Matrix =
 
 test "quintic_act at zero is zero" {
   let y = quintic_act(matrix.from_lists([[0.0]]))
-  assert_eq(matrix.get(y, 0, 0), 0.0)
+  assert_eq(matrix.get(y, 0, 0) ?? panic("matrix.get: out of range"), 0.0)
 }
 
 // 2⁵=32; odd.
 test "quintic_act at 2 and odd" {
   let y = quintic_act(matrix.from_lists([[2.0, -2.0]]))
-  assert_eq(matrix.get(y, 0, 0), 32.0)
-  assert_eq(matrix.get(y, 0, 1), -32.0)
+  assert_eq(matrix.get(y, 0, 0) ?? panic("matrix.get: out of range"), 32.0)
+  assert_eq(matrix.get(y, 0, 1) ?? panic("matrix.get: out of range"), -32.0)
 }

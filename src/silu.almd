@@ -10,12 +10,12 @@ fn silu(m: Matrix) -> Matrix =
 
 test "silu at zero is zero" {
   let y = silu(matrix.from_lists([[0.0]]))
-  assert_eq(matrix.get(y, 0, 0), 0.0)
+  assert_eq(matrix.get(y, 0, 0) ?? panic("matrix.get: out of range"), 0.0)
 }
 
 // Large positive x → sigmoid≈1 → silu≈x; large negative x → silu≈0.
 test "silu saturates to x and to 0" {
   let y = silu(matrix.from_lists([[20.0, -20.0]]))
-  assert(float.abs(matrix.get(y, 0, 0) - 20.0) < 0.0001, "silu(+20) ~ 20")
-  assert(float.abs(matrix.get(y, 0, 1)) < 0.0001, "silu(-20) ~ 0")
+  assert(float.abs((matrix.get(y, 0, 0) ?? panic("matrix.get: out of range")) - 20.0) < 0.0001, "silu(+20) ~ 20")
+  assert(float.abs(matrix.get(y, 0, 1) ?? panic("matrix.get: out of range")) < 0.0001, "silu(-20) ~ 0")
 }

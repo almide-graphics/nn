@@ -12,12 +12,12 @@ fn sigmoid_times_x_sq(m: Matrix) -> Matrix =
 
 test "sigmoid_times_x_sq at zero is zero" {
   let y = sigmoid_times_x_sq(matrix.from_lists([[0.0]]))
-  assert_eq(matrix.get(y, 0, 0), 0.0)
+  assert_eq(matrix.get(y, 0, 0) ?? panic("matrix.get: out of range"), 0.0)
 }
 
 // → x² for large +, → 0 for large -.
 test "sigmoid_times_x_sq saturation" {
   let y = sigmoid_times_x_sq(matrix.from_lists([[30.0, -30.0]]))
-  assert(float.abs(matrix.get(y, 0, 0) - 900.0) < 0.000000001, "→ x²")
-  assert(float.abs(matrix.get(y, 0, 1)) < 0.000000001, "→ 0")
+  assert(float.abs((matrix.get(y, 0, 0) ?? panic("matrix.get: out of range")) - 900.0) < 0.000000001, "→ x²")
+  assert(float.abs(matrix.get(y, 0, 1) ?? panic("matrix.get: out of range")) < 0.000000001, "→ 0")
 }

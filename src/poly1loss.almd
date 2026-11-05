@@ -18,9 +18,9 @@ fn poly1_loss_rows(logits: Matrix, target: Matrix) -> Matrix = {
   var out: List[List[Float]] = []
   var n = 0
   while n < t {
-    let ln = list.get_or(rl, n, [])
-    let tn = list.get_or(rt, n, [])
-    let mx = ln |> list.fold(0.0 - 1.0e38, (acc, v) => math.fmax(acc, v))
+    let ln = list.get(rl, n) ?? []
+    let tn = list.get(rt, n) ?? []
+    let mx = ln |> list.fold(0.0 - 1.0e38, (acc, v) => float.max(acc, v))
     let sumexp = ln |> list.fold(0.0, (acc, v) => acc + math.exp(v - mx))
     let lse = mx + math.log(sumexp)
     let ce = list.zip_with(tn, ln, (tt, xx) => tt * (xx - lse)) |> list.fold(0.0, (acc, v) => acc + v)
@@ -36,7 +36,7 @@ test "poly1 loss adds the (1−p_t) Taylor term to cross-entropy" {
   let logits = matrix.from_lists([[0.0, 0.0]])
   let target = matrix.from_lists([[1.0, 0.0]])
   let y = poly1_loss_rows(logits, target)
-  assert(float.abs(matrix.get(y, 0, 0) - 1.1931471805599452) < 0.000000001, "log2 + 0.5")
+  assert(float.abs((matrix.get(y, 0, 0) ?? panic("matrix.get: out of range")) - 1.1931471805599452) < 0.000000001, "log2 + 0.5")
 }
 
 // a confident correct prediction → CE≈0 and (1−p_t)≈0 → loss ≈ 0.
@@ -44,5 +44,5 @@ test "poly1 loss of a confident correct prediction is near zero" {
   let logits = matrix.from_lists([[100.0, 0.0]])
   let target = matrix.from_lists([[1.0, 0.0]])
   let y = poly1_loss_rows(logits, target)
-  assert(float.abs(matrix.get(y, 0, 0)) < 0.000001, "confident → ≈ 0")
+  assert(float.abs(matrix.get(y, 0, 0) ?? panic("matrix.get: out of range")) < 0.000001, "confident → ≈ 0")
 }

@@ -8,12 +8,12 @@ fn cosm1(m: Matrix) -> Matrix =
 
 test "cosm1 at zero is zero" {
   let y = cosm1(matrix.from_lists([[0.0]]))
-  assert_eq(matrix.get(y, 0, 0), 0.0)
+  assert_eq(matrix.get(y, 0, 0) ?? panic("matrix.get: out of range"), 0.0)
 }
 
 // cos(π)-1 = -2; even.
 test "cosm1 at pi is minus two and even" {
   let y = cosm1(matrix.from_lists([[3.141592653589793, -3.141592653589793]]))
-  assert(float.abs(matrix.get(y, 0, 0) + 2.0) < 0.000000001, "= -2")
-  assert(float.abs(matrix.get(y, 0, 1) + 2.0) < 0.000000001, "even")
+  assert(float.abs((matrix.get(y, 0, 0) ?? panic("matrix.get: out of range")) + 2.0) < 0.000000001, "= -2")
+  assert(float.abs((matrix.get(y, 0, 1) ?? panic("matrix.get: out of range")) + 2.0) < 0.000000001, "even")
 }

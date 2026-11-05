@@ -12,12 +12,12 @@ fn abs_times_sigmoid(m: Matrix) -> Matrix =
 
 test "abs_times_sigmoid at zero is zero" {
   let y = abs_times_sigmoid(matrix.from_lists([[0.0]]))
-  assert_eq(matrix.get(y, 0, 0), 0.0)
+  assert_eq(matrix.get(y, 0, 0) ?? panic("matrix.get: out of range"), 0.0)
 }
 
 // x>0: |x|·σ(x)=2·σ(2); x≪0: suppressed to ~0.
 test "abs_times_sigmoid right active left suppressed" {
   let y = abs_times_sigmoid(matrix.from_lists([[2.0, -30.0]]))
-  assert(float.abs(matrix.get(y, 0, 0) - 1.7615941559557646) < 0.000000001, "x·σ(x)")
-  assert(float.abs(matrix.get(y, 0, 1)) < 0.000000001, "→ 0")
+  assert(float.abs((matrix.get(y, 0, 0) ?? panic("matrix.get: out of range")) - 1.7615941559557646) < 0.000000001, "x·σ(x)")
+  assert(float.abs(matrix.get(y, 0, 1) ?? panic("matrix.get: out of range")) < 0.000000001, "→ 0")
 }

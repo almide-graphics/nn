@@ -11,8 +11,8 @@ fn log_softmax(x: Matrix) -> Matrix = {
   var out: List[List[Float]] = []
   var i = 0
   while i < t {
-    let xi = list.get_or(rx, i, [])
-    let mx = xi |> list.fold(-1.0e38, (acc, v) => math.fmax(acc, v))
+    let xi = list.get(rx, i) ?? []
+    let mx = xi |> list.fold(-1.0e38, (acc, v) => float.max(acc, v))
     let sumexp = xi |> list.fold(0.0, (acc, v) => acc + math.exp(v - mx))
     let lse = mx + math.log(sumexp)
     out = out + [list.map(xi, (v) => v - lse)]
@@ -24,5 +24,5 @@ fn log_softmax(x: Matrix) -> Matrix = {
 // Uniform logits → each output is -log(n). n=2 → -ln2.
 test "log_softmax uniform is -log n" {
   let y = log_softmax(matrix.from_lists([[0.0, 0.0]]))
-  assert(float.abs(matrix.get(y, 0, 0) + 0.6931471805599453) < 0.000000001, "-ln2")
+  assert(float.abs((matrix.get(y, 0, 0) ?? panic("matrix.get: out of range")) + 0.6931471805599453) < 0.000000001, "-ln2")
 }

@@ -10,11 +10,11 @@ fn gompertz(m: Matrix) -> Matrix =
 // gompertz(0) = exp(-1).
 test "gompertz at zero is exp minus one" {
   let y = gompertz(matrix.from_lists([[0.0]]))
-  assert(float.abs(matrix.get(y, 0, 0) - 0.36787944117144233) < 0.000000001, "e⁻¹")
+  assert(float.abs((matrix.get(y, 0, 0) ?? panic("matrix.get: out of range")) - 0.36787944117144233) < 0.000000001, "e⁻¹")
 }
 
 // large positive → 1.
 test "gompertz large positive approaches 1" {
   let y = gompertz(matrix.from_lists([[30.0]]))
-  assert(float.abs(matrix.get(y, 0, 0) - 1.0) < 0.000000001, "→ 1")
+  assert(float.abs((matrix.get(y, 0, 0) ?? panic("matrix.get: out of range")) - 1.0) < 0.000000001, "→ 1")
 }

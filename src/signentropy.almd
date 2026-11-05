@@ -13,11 +13,11 @@ import math
 fn sign_entropy_rows(x: Matrix) -> Matrix = {
   let rx = matrix.to_lists(x)
   let (t, d) = matrix.shape(x)
-  let df = int.to_float(d)
+  let df = float.from(d)
   var out: List[List[Float]] = []
   var i = 0
   while i < t {
-    let xi = list.get_or(rx, i, [])
+    let xi = list.get(rx, i) ?? []
     let pos = xi |> list.fold(0.0, (acc, v) => acc + (if v > 0.0 then 1.0 else 0.0))
     let p = pos / df
     let q = 1.0 - p
@@ -32,12 +32,12 @@ fn sign_entropy_rows(x: Matrix) -> Matrix = {
 test "a sign-balanced row has maximal binary entropy log 2" {
   let x = matrix.from_lists([[1.0, 0.0 - 1.0]])
   let y = sign_entropy_rows(x)
-  assert(float.abs(matrix.get(y, 0, 0) - 0.6931471805599453) < 0.000000001, "log 2")
+  assert(float.abs((matrix.get(y, 0, 0) ?? panic("matrix.get: out of range")) - 0.6931471805599453) < 0.000000001, "log 2")
 }
 
 // an all-positive row has p₊=1 → zero sign entropy.
 test "an all-positive row has zero sign entropy" {
   let x = matrix.from_lists([[1.0, 2.0, 3.0]])
   let y = sign_entropy_rows(x)
-  assert(float.abs(matrix.get(y, 0, 0)) < 0.000001, "all same sign → ≈ 0")
+  assert(float.abs(matrix.get(y, 0, 0) ?? panic("matrix.get: out of range")) < 0.000001, "all same sign → ≈ 0")
 }

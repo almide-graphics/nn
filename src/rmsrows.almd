@@ -12,11 +12,11 @@ import math
 fn rms_rows(x: Matrix) -> Matrix = {
   let rx = matrix.to_lists(x)
   let (t, d) = matrix.shape(x)
-  let df = int.to_float(d)
+  let df = float.from(d)
   var out: List[List[Float]] = []
   var i = 0
   while i < t {
-    let xi = list.get_or(rx, i, [])
+    let xi = list.get(rx, i) ?? []
     let ms = (xi |> list.fold(0.0, (acc, v) => acc + v * v)) / df
     out = out + [[math.sqrt(ms)]]
     i = i + 1
@@ -28,13 +28,13 @@ fn rms_rows(x: Matrix) -> Matrix = {
 test "rms of a flat row equals its magnitude" {
   let x = matrix.from_lists([[3.0, 3.0]])
   let y = rms_rows(x)
-  assert(float.abs(matrix.get(y, 0, 0) - 3.0) < 0.000000001, "sqrt(9)=3")
+  assert(float.abs((matrix.get(y, 0, 0) ?? panic("matrix.get: out of range")) - 3.0) < 0.000000001, "sqrt(9)=3")
 }
 
 // one-hot [0,0,4,0]: rms = sqrt(16/4) = 2; a ±1 row is sign-blind → rms 1.
 test "rms is sign-blind and uses the mean of squares" {
   let yp = rms_rows(matrix.from_lists([[0.0, 0.0, 4.0, 0.0]]))
-  assert(float.abs(matrix.get(yp, 0, 0) - 2.0) < 0.000000001, "sqrt(4)=2")
+  assert(float.abs((matrix.get(yp, 0, 0) ?? panic("matrix.get: out of range")) - 2.0) < 0.000000001, "sqrt(4)=2")
   let yn = rms_rows(matrix.from_lists([[1.0, 0.0 - 1.0, 1.0, 0.0 - 1.0]]))
-  assert(float.abs(matrix.get(yn, 0, 0) - 1.0) < 0.000000001, "all |·|=1 → rms 1")
+  assert(float.abs((matrix.get(yn, 0, 0) ?? panic("matrix.get: out of range")) - 1.0) < 0.000000001, "all |·|=1 → rms 1")
 }

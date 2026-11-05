@@ -13,7 +13,7 @@ fn hz_to_mel(hz: Float) -> Float =
   2595.0 * math.log10(1.0 + hz / 700.0)
 
 fn mel_to_hz(mel: Float) -> Float =
-  700.0 * (math.fpow(10.0, mel / 2595.0) - 1.0)
+  700.0 * (float.pow(10.0, mel / 2595.0) - 1.0)
 
 // ── Mel filterbank ──
 //
@@ -25,12 +25,12 @@ fn mel_to_hz(mel: Float) -> Float =
 fn linspace(start: Float, end: Float, n: Int) -> List[Float] =
   if n <= 1 then [start]
   else {
-    let step = (end - start) / int.to_float(n - 1)
-    list.range(0, n) |> list.map((i) => start + int.to_float(i) * step)
+    let step = (end - start) / float.from(n - 1)
+    list.range(0, n) |> list.map((i) => start + float.from(i) * step)
   }
 
 fn create_mel_filters(n_mels: Int, n_fft: Int, sample_rate: Int) -> List[List[Float]] = {
-  let sr = int.to_float(sample_rate)
+  let sr = float.from(sample_rate)
   let n_freq = n_fft / 2 + 1
 
   // Mel-spaced center frequencies
@@ -49,7 +49,7 @@ fn create_mel_filters(n_mels: Int, n_fft: Int, sample_rate: Int) -> List[List[Fl
     // Slaney normalization: unit area per filter = 2 / (right - left)
     let enorm = 2.0 / (right_hz - left_hz)
     list.range(0, n_freq) |> list.map((k) => {
-      let freq = int.to_float(k) * sr / int.to_float(n_fft)
+      let freq = float.from(k) * sr / float.from(n_fft)
       let h = if freq < left_hz then 0.0
               else if freq < center_hz then (freq - left_hz) / (center_hz - left_hz)
               else if freq < right_hz then (right_hz - freq) / (right_hz - center_hz)
@@ -63,7 +63,7 @@ fn create_mel_filters(n_mels: Int, n_fft: Int, sample_rate: Int) -> List[List[Fl
 
 fn hann_window(size: Int) -> List[Float] =
   list.range(0, size) |> list.map((i) =>
-    0.5 * (1.0 - math.cos(2.0 * math.pi() * int.to_float(i) / int.to_float(size - 1)))
+    0.5 * (1.0 - math.cos(2.0 * math.pi() * float.from(i) / float.from(size - 1)))
   )
 
 fn apply_window(samples: List[Float], window: List[Float]) -> List[Float] =
@@ -206,7 +206,7 @@ test "create_mel_filters shape" {
 }
 
 test "extract_frames count" {
-  let samples = list.range(0, 100) |> list.map((i) => int.to_float(i))
+  let samples = list.range(0, 100) |> list.map((i) => float.from(i))
   let frames = extract_frames(samples, 10, 5)
   // (100 - 10) / 5 + 1 = 19 frames
   assert_eq(list.len(frames), 19)
@@ -215,7 +215,7 @@ test "extract_frames count" {
 test "mel_spectrogram produces output" {
   // 800 samples = 50ms @ 16kHz → should produce at least 1 frame
   let samples = list.range(0, 800) |> list.map((i) =>
-    math.sin(2.0 * math.pi() * 440.0 * int.to_float(i) / 16000.0)
+    math.sin(2.0 * math.pi() * 440.0 * float.from(i) / 16000.0)
   )
   let spec = mel_spectrogram(samples, 16000, 400, 160, 10)
   assert(list.len(spec) > 0)

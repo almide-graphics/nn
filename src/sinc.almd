@@ -12,11 +12,11 @@ fn sinc(m: Matrix) -> Matrix =
 
 test "sinc at zero is one" {
   let y = sinc(matrix.from_lists([[0.0]]))
-  assert_eq(matrix.get(y, 0, 0), 1.0)
+  assert_eq(matrix.get(y, 0, 0) ?? panic("matrix.get: out of range"), 1.0)
 }
 
 // sin(π)/π = 0.
 test "sinc at pi is zero" {
   let y = sinc(matrix.from_lists([[3.141592653589793]]))
-  assert(float.abs(matrix.get(y, 0, 0)) < 0.000000001, "→ 0")
+  assert(float.abs(matrix.get(y, 0, 0) ?? panic("matrix.get: out of range")) < 0.000000001, "→ 0")
 }

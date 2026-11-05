@@ -8,12 +8,12 @@ fn exp_decay(m: Matrix) -> Matrix =
 
 test "exp_decay peaks at one when x=0" {
   let y = exp_decay(matrix.from_lists([[0.0]]))
-  assert_eq(matrix.get(y, 0, 0), 1.0)
+  assert_eq(matrix.get(y, 0, 0) ?? panic("matrix.get: out of range"), 1.0)
 }
 
 // exp(-1) and even.
 test "exp_decay at 1 and even" {
   let y = exp_decay(matrix.from_lists([[1.0, -1.0]]))
-  assert(float.abs(matrix.get(y, 0, 0) - 0.36787944117144233) < 0.000000001, "exp(-1)")
-  assert(float.abs(matrix.get(y, 0, 1) - 0.36787944117144233) < 0.000000001, "even")
+  assert(float.abs((matrix.get(y, 0, 0) ?? panic("matrix.get: out of range")) - 0.36787944117144233) < 0.000000001, "exp(-1)")
+  assert(float.abs((matrix.get(y, 0, 1) ?? panic("matrix.get: out of range")) - 0.36787944117144233) < 0.000000001, "even")
 }

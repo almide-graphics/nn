@@ -12,12 +12,12 @@ fn poisson_loss_rows(p: Matrix, t: Matrix) -> Matrix = {
   let rp = matrix.to_lists(p)
   let rt = matrix.to_lists(t)
   let (rows, d) = matrix.shape(p)
-  let df = int.to_float(d)
+  let df = float.from(d)
   var out: List[List[Float]] = []
   var n = 0
   while n < rows {
-    let pn = list.get_or(rp, n, [])
-    let tn = list.get_or(rt, n, [])
+    let pn = list.get(rp, n) ?? []
+    let tn = list.get(rt, n) ?? []
     let s = list.zip_with(pn, tn, (pj, tj) => pj - tj * math.log(pj)) |> list.fold(0.0, (acc, v) => acc + v)
     out = out + [[s / df]]
     n = n + 1
@@ -30,7 +30,7 @@ test "poisson with zero target equals mean prediction" {
   let p = matrix.from_lists([[2.0, 2.0]])
   let t = matrix.from_lists([[0.0, 0.0]])
   let y = poisson_loss_rows(p, t)
-  assert_eq(matrix.get(y, 0, 0), 2.0)
+  assert_eq(matrix.get(y, 0, 0) ?? panic("matrix.get: out of range"), 2.0)
 }
 
 // p=1, t=1: 1 − 1·log1 = 1.
@@ -38,5 +38,5 @@ test "poisson at unit rate and count is one" {
   let p = matrix.from_lists([[1.0]])
   let t = matrix.from_lists([[1.0]])
   let y = poisson_loss_rows(p, t)
-  assert_eq(matrix.get(y, 0, 0), 1.0)
+  assert_eq(matrix.get(y, 0, 0) ?? panic("matrix.get: out of range"), 1.0)
 }

@@ -10,12 +10,12 @@ fn cov_rows(a: Matrix, b: Matrix) -> Matrix = {
   let ra = matrix.to_lists(a)
   let rb = matrix.to_lists(b)
   let (rows, d) = matrix.shape(a)
-  let df = int.to_float(d)
+  let df = float.from(d)
   var out: List[List[Float]] = []
   var n = 0
   while n < rows {
-    let an = list.get_or(ra, n, [])
-    let bn = list.get_or(rb, n, [])
+    let an = list.get(ra, n) ?? []
+    let bn = list.get(rb, n) ?? []
     let ma = (an |> list.fold(0.0, (acc, v) => acc + v)) / df
     let mb = (bn |> list.fold(0.0, (acc, v) => acc + v)) / df
     let cov = (list.zip_with(an, bn, (x, y) => (x - ma) * (y - mb)) |> list.fold(0.0, (acc, v) => acc + v)) / df
@@ -30,7 +30,7 @@ test "cov with a constant row is zero" {
   let a = matrix.from_lists([[5.0, 5.0, 5.0, 5.0]])
   let b = matrix.from_lists([[1.0, 2.0, 3.0, 4.0]])
   let y = cov_rows(a, b)
-  assert_eq(matrix.get(y, 0, 0), 0.0)
+  assert_eq(matrix.get(y, 0, 0) ?? panic("matrix.get: out of range"), 0.0)
 }
 
 // a=[1,2] (ā=1.5), b=[3,5] (b̄=4): ((-.5)(-1)+(.5)(1))/2 = 0.5.
@@ -38,5 +38,5 @@ test "cov computes the covariance" {
   let a = matrix.from_lists([[1.0, 2.0]])
   let b = matrix.from_lists([[3.0, 5.0]])
   let y = cov_rows(a, b)
-  assert(float.abs(matrix.get(y, 0, 0) - 0.5) < 0.000000001, "= 0.5")
+  assert(float.abs((matrix.get(y, 0, 0) ?? panic("matrix.get: out of range")) - 0.5) < 0.000000001, "= 0.5")
 }

@@ -9,12 +9,12 @@ fn exp_half_neg_sq(m: Matrix) -> Matrix =
 
 test "exp_half_neg_sq peaks at one when x=0" {
   let y = exp_half_neg_sq(matrix.from_lists([[0.0]]))
-  assert_eq(matrix.get(y, 0, 0), 1.0)
+  assert_eq(matrix.get(y, 0, 0) ?? panic("matrix.get: out of range"), 1.0)
 }
 
 // at x=√2: exp(-0.5·2) = exp(-1); even.
 test "exp_half_neg_sq at sqrt2 and even" {
   let y = exp_half_neg_sq(matrix.from_lists([[1.4142135623730951, -1.4142135623730951]]))
-  assert(float.abs(matrix.get(y, 0, 0) - 0.36787944117144233) < 0.000000001, "e⁻¹")
-  assert(float.abs(matrix.get(y, 0, 1) - 0.36787944117144233) < 0.000000001, "even")
+  assert(float.abs((matrix.get(y, 0, 0) ?? panic("matrix.get: out of range")) - 0.36787944117144233) < 0.000000001, "e⁻¹")
+  assert(float.abs((matrix.get(y, 0, 1) ?? panic("matrix.get: out of range")) - 0.36787944117144233) < 0.000000001, "even")
 }

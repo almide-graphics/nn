@@ -7,7 +7,7 @@ fn sign_act(m: Matrix) -> Matrix =
 
 test "sign_act gives -1 / 0 / 1" {
   let y = sign_act(matrix.from_lists([[3.0, -2.0, 0.0]]))
-  assert_eq(matrix.get(y, 0, 0), 1.0)
-  assert_eq(matrix.get(y, 0, 1), -1.0)
-  assert_eq(matrix.get(y, 0, 2), 0.0)
+  assert_eq(matrix.get(y, 0, 0) ?? panic("matrix.get: out of range"), 1.0)
+  assert_eq(matrix.get(y, 0, 1) ?? panic("matrix.get: out of range"), -1.0)
+  assert_eq(matrix.get(y, 0, 2) ?? panic("matrix.get: out of range"), 0.0)
 }

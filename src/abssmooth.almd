@@ -10,11 +10,11 @@ fn abs_smooth(m: Matrix) -> Matrix =
 // √(1e-4) = 0.01 at x=0.
 test "abs_smooth at zero is epsilon root" {
   let y = abs_smooth(matrix.from_lists([[0.0]]))
-  assert(float.abs(matrix.get(y, 0, 0) - 0.01) < 0.000000001, "= 0.01")
+  assert(float.abs((matrix.get(y, 0, 0) ?? panic("matrix.get: out of range")) - 0.01) < 0.000000001, "= 0.01")
 }
 
 // even.
 test "abs_smooth is even" {
   let y = abs_smooth(matrix.from_lists([[3.0, -3.0]]))
-  assert(float.abs(matrix.get(y, 0, 0) - matrix.get(y, 0, 1)) < 0.000000001, "even")
+  assert(float.abs((matrix.get(y, 0, 0) ?? panic("matrix.get: out of range")) - (matrix.get(y, 0, 1) ?? panic("matrix.get: out of range"))) < 0.000000001, "even")
 }

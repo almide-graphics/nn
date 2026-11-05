@@ -9,8 +9,8 @@ fn min_rows(x: Matrix) -> Matrix = {
   var out: List[List[Float]] = []
   var n = 0
   while n < t {
-    let xn = list.get_or(rx, n, [])
-    let m = xn |> list.fold(1.0e38, (acc, v) => math.fmin(acc, v))
+    let xn = list.get(rx, n) ?? []
+    let m = xn |> list.fold(1.0e38, (acc, v) => float.min(acc, v))
     out = out + [[m]]
     n = n + 1
   }
@@ -19,10 +19,10 @@ fn min_rows(x: Matrix) -> Matrix = {
 
 test "min_rows picks the minimum" {
   let y = min_rows(matrix.from_lists([[1.0, 5.0, 3.0, 2.0]]))
-  assert_eq(matrix.get(y, 0, 0), 1.0)
+  assert_eq(matrix.get(y, 0, 0) ?? panic("matrix.get: out of range"), 1.0)
 }
 
 test "min_rows of all-negative row" {
   let y = min_rows(matrix.from_lists([[-2.0, -7.0, -3.0]]))
-  assert_eq(matrix.get(y, 0, 0), -7.0)
+  assert_eq(matrix.get(y, 0, 0) ?? panic("matrix.get: out of range"), -7.0)
 }

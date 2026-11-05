@@ -9,11 +9,11 @@
 fn mean_sign_rows(x: Matrix) -> Matrix = {
   let rx = matrix.to_lists(x)
   let (t, d) = matrix.shape(x)
-  let df = int.to_float(d)
+  let df = float.from(d)
   var out: List[List[Float]] = []
   var i = 0
   while i < t {
-    let xi = list.get_or(rx, i, [])
+    let xi = list.get(rx, i) ?? []
     let s = xi |> list.fold(0.0, (acc, v) =>
       acc + (if v > 0.0 then 1.0 else (if v < 0.0 then 0.0 - 1.0 else 0.0)))
     out = out + [[s / df]]
@@ -26,13 +26,13 @@ fn mean_sign_rows(x: Matrix) -> Matrix = {
 test "mean-sign is zero on a sign-balanced row" {
   let x = matrix.from_lists([[3.0, 0.0 - 4.0, 1.0, 0.0 - 1.0]])
   let y = mean_sign_rows(x)
-  assert_eq(matrix.get(y, 0, 0), 0.0)
+  assert_eq(matrix.get(y, 0, 0) ?? panic("matrix.get: out of range"), 0.0)
 }
 
 // an all-positive row has mean sign +1; an all-negative row −1.
 test "mean-sign is +1 / -1 on uniform-sign rows" {
   let x = matrix.from_lists([[2.0, 5.0, 0.1], [0.0 - 2.0, 0.0 - 5.0, 0.0 - 0.1]])
   let y = mean_sign_rows(x)
-  assert_eq(matrix.get(y, 0, 0), 1.0)
-  assert_eq(matrix.get(y, 1, 0), 0.0 - 1.0)
+  assert_eq(matrix.get(y, 0, 0) ?? panic("matrix.get: out of range"), 1.0)
+  assert_eq(matrix.get(y, 1, 0) ?? panic("matrix.get: out of range"), 0.0 - 1.0)
 }

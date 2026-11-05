@@ -12,7 +12,7 @@ fn diff_rows(x: Matrix) -> Matrix = {
   var out: List[List[Float]] = []
   var i = 0
   while i < t {
-    let xi = list.get_or(rx, i, [])
+    let xi = list.get(rx, i) ?? []
     let row = if i == 0 then zero else list.zip_with(xi, prev, (a, b) => a - b)
     out = out + [row]
     prev = xi
@@ -25,15 +25,15 @@ fn diff_rows(x: Matrix) -> Matrix = {
 test "diff is the first difference with zero at the start" {
   let x = matrix.from_lists([[2.0], [5.0], [3.0]])
   let y = diff_rows(x)
-  assert_eq(matrix.get(y, 0, 0), 0.0)
-  assert_eq(matrix.get(y, 1, 0), 3.0)
-  assert_eq(matrix.get(y, 2, 0), 0.0 - 2.0)
+  assert_eq(matrix.get(y, 0, 0) ?? panic("matrix.get: out of range"), 0.0)
+  assert_eq(matrix.get(y, 1, 0) ?? panic("matrix.get: out of range"), 3.0)
+  assert_eq(matrix.get(y, 2, 0) ?? panic("matrix.get: out of range"), 0.0 - 2.0)
 }
 
 // constant sequence → all zeros.
 test "diff of a constant sequence is zero" {
   let x = matrix.from_lists([[4.0], [4.0], [4.0]])
   let y = diff_rows(x)
-  assert_eq(matrix.get(y, 1, 0), 0.0)
-  assert_eq(matrix.get(y, 2, 0), 0.0)
+  assert_eq(matrix.get(y, 1, 0) ?? panic("matrix.get: out of range"), 0.0)
+  assert_eq(matrix.get(y, 2, 0) ?? panic("matrix.get: out of range"), 0.0)
 }

@@ -16,8 +16,8 @@ fn chi_square_dist_rows(a: Matrix, b: Matrix) -> Matrix = {
   var out: List[List[Float]] = []
   var i = 0
   while i < t {
-    let ai = list.get_or(ra, i, [])
-    let bi = list.get_or(rb, i, [])
+    let ai = list.get(ra, i) ?? []
+    let bi = list.get(rb, i) ?? []
     let s = list.zip_with(ai, bi, (av, bv) =>
       (av - bv) * (av - bv) / (av + bv + 0.000000000001))
       |> list.fold(0.0, (acc, v) => acc + v)
@@ -32,7 +32,7 @@ test "chi-square distance of identical histograms is zero" {
   let a = matrix.from_lists([[1.0, 2.0, 3.0]])
   let b = matrix.from_lists([[1.0, 2.0, 3.0]])
   let y = chi_square_dist_rows(a, b)
-  assert(float.abs(matrix.get(y, 0, 0)) < 0.000000001, "0")
+  assert(float.abs(matrix.get(y, 0, 0) ?? panic("matrix.get: out of range")) < 0.000000001, "0")
 }
 
 // disjoint mass [1,0] vs [0,1]: ½·(1²/1 + 1²/1) = 1.
@@ -40,5 +40,5 @@ test "chi-square distance of disjoint histograms" {
   let a = matrix.from_lists([[1.0, 0.0]])
   let b = matrix.from_lists([[0.0, 1.0]])
   let y = chi_square_dist_rows(a, b)
-  assert(float.abs(matrix.get(y, 0, 0) - 1.0) < 0.000000001, "½·(1+1)=1")
+  assert(float.abs((matrix.get(y, 0, 0) ?? panic("matrix.get: out of range")) - 1.0) < 0.000000001, "½·(1+1)=1")
 }

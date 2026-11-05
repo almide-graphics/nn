@@ -17,10 +17,10 @@ fn ruzicka_similarity_rows(a: Matrix, b: Matrix) -> Matrix = {
   var out: List[List[Float]] = []
   var i = 0
   while i < t {
-    let ai = list.get_or(ra, i, [])
-    let bi = list.get_or(rb, i, [])
-    let smin = list.zip_with(ai, bi, (av, bv) => math.fmin(av, bv)) |> list.fold(0.0, (acc, v) => acc + v)
-    let smax = list.zip_with(ai, bi, (av, bv) => math.fmax(av, bv)) |> list.fold(0.0, (acc, v) => acc + v)
+    let ai = list.get(ra, i) ?? []
+    let bi = list.get(rb, i) ?? []
+    let smin = list.zip_with(ai, bi, (av, bv) => float.min(av, bv)) |> list.fold(0.0, (acc, v) => acc + v)
+    let smax = list.zip_with(ai, bi, (av, bv) => float.max(av, bv)) |> list.fold(0.0, (acc, v) => acc + v)
     out = out + [[smin / (smax + 0.000000000001)]]
     i = i + 1
   }
@@ -32,7 +32,7 @@ test "ruzicka similarity of identical rows is one" {
   let a = matrix.from_lists([[1.0, 2.0, 3.0]])
   let b = matrix.from_lists([[1.0, 2.0, 3.0]])
   let y = ruzicka_similarity_rows(a, b)
-  assert(float.abs(matrix.get(y, 0, 0) - 1.0) < 0.0000001, "6/6=1")
+  assert(float.abs((matrix.get(y, 0, 0) ?? panic("matrix.get: out of range")) - 1.0) < 0.0000001, "6/6=1")
 }
 
 // proportional rows: Σmin/Σmax = (1+2)/(2+4) = 3/6 = 0.5.
@@ -40,5 +40,5 @@ test "ruzicka similarity is the weighted Jaccard ratio" {
   let a = matrix.from_lists([[1.0, 2.0]])
   let b = matrix.from_lists([[2.0, 4.0]])
   let y = ruzicka_similarity_rows(a, b)
-  assert(float.abs(matrix.get(y, 0, 0) - 0.5) < 0.0000001, "3/6=0.5")
+  assert(float.abs((matrix.get(y, 0, 0) ?? panic("matrix.get: out of range")) - 0.5) < 0.0000001, "3/6=0.5")
 }

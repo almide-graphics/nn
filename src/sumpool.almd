@@ -7,7 +7,7 @@ fn sumpool_rows(x: Matrix) -> Matrix = {
   var out: List[List[Float]] = []
   var n = 0
   while n < t {
-    let xn = list.get_or(rx, n, [])
+    let xn = list.get(rx, n) ?? []
     let s = xn |> list.fold(0.0, (acc, v) => acc + v)
     out = out + [[s]]
     n = n + 1
@@ -17,10 +17,10 @@ fn sumpool_rows(x: Matrix) -> Matrix = {
 
 test "sumpool computes the row sum" {
   let y = sumpool_rows(matrix.from_lists([[1.0, 2.0, 3.0, 4.0]]))
-  assert_eq(matrix.get(y, 0, 0), 10.0)
+  assert_eq(matrix.get(y, 0, 0) ?? panic("matrix.get: out of range"), 10.0)
 }
 
 test "sumpool of zeros is zero" {
   let y = sumpool_rows(matrix.from_lists([[0.0, 0.0, 0.0]]))
-  assert_eq(matrix.get(y, 0, 0), 0.0)
+  assert_eq(matrix.get(y, 0, 0) ?? panic("matrix.get: out of range"), 0.0)
 }

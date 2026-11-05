@@ -12,12 +12,12 @@ fn abs_times_tanh(m: Matrix) -> Matrix =
 
 test "abs_times_tanh at zero is zero" {
   let y = abs_times_tanh(matrix.from_lists([[0.0]]))
-  assert_eq(matrix.get(y, 0, 0), 0.0)
+  assert_eq(matrix.get(y, 0, 0) ?? panic("matrix.get: out of range"), 0.0)
 }
 
 // odd: 2·tanh(2) at x=2, negated at x=-2.
 test "abs_times_tanh odd at two" {
   let y = abs_times_tanh(matrix.from_lists([[2.0, -2.0]]))
-  assert(float.abs(matrix.get(y, 0, 0) - 1.9280551601516338) < 0.000000001, "2·tanh2")
-  assert(float.abs(matrix.get(y, 0, 1) + 1.9280551601516338) < 0.000000001, "odd")
+  assert(float.abs((matrix.get(y, 0, 0) ?? panic("matrix.get: out of range")) - 1.9280551601516338) < 0.000000001, "2·tanh2")
+  assert(float.abs((matrix.get(y, 0, 1) ?? panic("matrix.get: out of range")) + 1.9280551601516338) < 0.000000001, "odd")
 }

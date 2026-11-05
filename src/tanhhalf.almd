@@ -9,12 +9,12 @@ fn tanh_half(m: Matrix) -> Matrix =
 
 test "tanh_half at zero is zero" {
   let y = tanh_half(matrix.from_lists([[0.0]]))
-  assert_eq(matrix.get(y, 0, 0), 0.0)
+  assert_eq(matrix.get(y, 0, 0) ?? panic("matrix.get: out of range"), 0.0)
 }
 
 // saturates +0.5 / -0.5; odd.
 test "tanh_half saturates half and odd" {
   let y = tanh_half(matrix.from_lists([[30.0, -30.0]]))
-  assert(float.abs(matrix.get(y, 0, 0) - 0.5) < 0.000000001, "→ 0.5")
-  assert(float.abs(matrix.get(y, 0, 1) + 0.5) < 0.000000001, "→ -0.5")
+  assert(float.abs((matrix.get(y, 0, 0) ?? panic("matrix.get: out of range")) - 0.5) < 0.000000001, "→ 0.5")
+  assert(float.abs((matrix.get(y, 0, 1) ?? panic("matrix.get: out of range")) + 0.5) < 0.000000001, "→ -0.5")
 }

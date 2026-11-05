@@ -16,8 +16,8 @@ fn proj_scalar_rows(a: Matrix, b: Matrix) -> Matrix = {
   var out: List[List[Float]] = []
   var i = 0
   while i < t {
-    let ai = list.get_or(ra, i, [])
-    let bi = list.get_or(rb, i, [])
+    let ai = list.get(ra, i) ?? []
+    let bi = list.get(rb, i) ?? []
     let dot = list.zip_with(ai, bi, (x, y) => x * y) |> list.fold(0.0, (acc, v) => acc + v)
     let nb = math.sqrt(bi |> list.fold(0.0, (acc, v) => acc + v * v))
     out = out + [[dot / (nb + 0.000000000001)]]
@@ -31,12 +31,12 @@ test "scalar projection onto an axis is the matching component" {
   let a = matrix.from_lists([[3.0, 4.0]])
   let b = matrix.from_lists([[1.0, 0.0]])
   let y = proj_scalar_rows(a, b)
-  assert(float.abs(matrix.get(y, 0, 0) - 3.0) < 0.000000001, "proj of [3,4] onto x = 3")
+  assert(float.abs((matrix.get(y, 0, 0) ?? panic("matrix.get: out of range")) - 3.0) < 0.000000001, "proj of [3,4] onto x = 3")
 }
 
 // projecting a onto itself yields its norm: ‖[3,4]‖ = 5.
 test "scalar projection of a onto itself is its norm" {
   let a = matrix.from_lists([[3.0, 4.0]])
   let y = proj_scalar_rows(a, a)
-  assert(float.abs(matrix.get(y, 0, 0) - 5.0) < 0.000000001, "proj a onto a = 5")
+  assert(float.abs((matrix.get(y, 0, 0) ?? panic("matrix.get: out of range")) - 5.0) < 0.000000001, "proj a onto a = 5")
 }

@@ -10,11 +10,11 @@ import float
 fn mean_abs_rows(x: Matrix) -> Matrix = {
   let rx = matrix.to_lists(x)
   let (rows, d) = matrix.shape(x)
-  let df = int.to_float(d)
+  let df = float.from(d)
   var out: List[List[Float]] = []
   var n = 0
   while n < rows {
-    let xn = list.get_or(rx, n, [])
+    let xn = list.get(rx, n) ?? []
     let s = xn |> list.fold(0.0, (acc, v) => acc + float.abs(v))
     out = out + [[s / df]]
     n = n + 1
@@ -25,11 +25,11 @@ fn mean_abs_rows(x: Matrix) -> Matrix = {
 // (|3|+|-4|)/2 = 3.5.
 test "mean abs averages the magnitudes" {
   let y = mean_abs_rows(matrix.from_lists([[3.0, 0.0 - 4.0]]))
-  assert_eq(matrix.get(y, 0, 0), 3.5)
+  assert_eq(matrix.get(y, 0, 0) ?? panic("matrix.get: out of range"), 3.5)
 }
 
 // all zeros → 0.
 test "mean abs of zeros is zero" {
   let y = mean_abs_rows(matrix.from_lists([[0.0, 0.0, 0.0]]))
-  assert_eq(matrix.get(y, 0, 0), 0.0)
+  assert_eq(matrix.get(y, 0, 0) ?? panic("matrix.get: out of range"), 0.0)
 }

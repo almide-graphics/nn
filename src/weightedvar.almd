@@ -17,8 +17,8 @@ fn weighted_var_rows(x: Matrix, w: Matrix) -> Matrix = {
   var out: List[List[Float]] = []
   var i = 0
   while i < t {
-    let xi = list.get_or(rx, i, [])
-    let wi = list.get_or(rw, i, [])
+    let xi = list.get(rx, i) ?? []
+    let wi = list.get(rw, i) ?? []
     let sw = wi |> list.fold(0.0, (acc, v) => acc + v)
     let mu = (list.zip_with(xi, wi, (xv, wv) => xv * wv) |> list.fold(0.0, (acc, v) => acc + v)) / (sw + 0.000000000001)
     let wvar = (list.zip_with(xi, wi, (xv, wv) => wv * (xv - mu) * (xv - mu)) |> list.fold(0.0, (acc, v) => acc + v)) / (sw + 0.000000000001)
@@ -33,7 +33,7 @@ test "weighted variance with uniform weights is the population variance" {
   let x = matrix.from_lists([[1.0, 2.0, 3.0, 4.0]])
   let w = matrix.from_lists([[1.0, 1.0, 1.0, 1.0]])
   let y = weighted_var_rows(x, w)
-  assert(float.abs(matrix.get(y, 0, 0) - 1.25) < 0.000000001, "5/4=1.25")
+  assert(float.abs((matrix.get(y, 0, 0) ?? panic("matrix.get: out of range")) - 1.25) < 0.000000001, "5/4=1.25")
 }
 
 // a single weighted point has no spread → 0.
@@ -41,5 +41,5 @@ test "weighted variance of a single weighted point is zero" {
   let x = matrix.from_lists([[1.0, 2.0, 3.0]])
   let w = matrix.from_lists([[0.0, 1.0, 0.0]])
   let y = weighted_var_rows(x, w)
-  assert(float.abs(matrix.get(y, 0, 0)) < 0.0000001, "0")
+  assert(float.abs(matrix.get(y, 0, 0) ?? panic("matrix.get: out of range")) < 0.0000001, "0")
 }

@@ -15,7 +15,7 @@
 // rewinds pos to 0 — the cache is overwritten in place.
 
 import io
-import process
+import env
 import datetime
 import self.qwen_loader
 import self.qwen_tokenizer
@@ -65,10 +65,10 @@ fn utf8_complete_len(bs: List[Int]) -> Int = {
 }
 
 effect fn main() -> () = {
-  let args = process.args()
+  let args = env.args()
   var gguf = "parity/qwen3-0.6b-q8_0.gguf"
   var oneshot = ""
-  for a in list.drop(args, 1) {
+  for a in args {
     if string.ends_with(a, ".gguf") then {
       gguf = a
     } else {
@@ -107,7 +107,7 @@ effect fn main() -> () = {
       var line = oneshot
       if oneshot == "" then {
         io.print("> ")
-        line = string.trim(io.read_line())
+        line = string.trim(io.read_line() ?? "")
       }
       if line == "" then {
         empties = empties + 1
@@ -165,7 +165,7 @@ effect fn main() -> () = {
             }
             let cut = utf8_complete_len(pending)
             if cut > 0 then {
-              io.print(string.from_bytes(list.slice(pending, 0, cut)))
+              io.print(bytes.to_string_lossy(bytes.from_list(list.slice(pending, 0, cut))))
               pending = list.slice(pending, cut, list.len(pending))
             }
             next = cpu_decode_sample(raw, next, pos, temp, top_p, seed)
@@ -174,7 +174,7 @@ effect fn main() -> () = {
           }
         }
         if list.len(pending) > 0 then {
-          io.print(string.from_bytes(pending))
+          io.print(bytes.to_string_lossy(bytes.from_list(pending)))
         }
         println("")
         if oneshot != "" then {

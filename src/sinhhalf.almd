@@ -12,12 +12,12 @@ fn sinh_half(m: Matrix) -> Matrix =
 
 test "sinh_half at zero is zero" {
   let y = sinh_half(matrix.from_lists([[0.0]]))
-  assert_eq(matrix.get(y, 0, 0), 0.0)
+  assert_eq(matrix.get(y, 0, 0) ?? panic("matrix.get: out of range"), 0.0)
 }
 
 // ½sinh(1) at x=1; odd → negated at x=-1.
 test "sinh_half odd at one" {
   let y = sinh_half(matrix.from_lists([[1.0, -1.0]]))
-  assert(float.abs(matrix.get(y, 0, 0) - 0.5876005968219007) < 0.000000001, "½sinh1")
-  assert(float.abs(matrix.get(y, 0, 1) + 0.5876005968219007) < 0.000000001, "odd")
+  assert(float.abs((matrix.get(y, 0, 0) ?? panic("matrix.get: out of range")) - 0.5876005968219007) < 0.000000001, "½sinh1")
+  assert(float.abs((matrix.get(y, 0, 1) ?? panic("matrix.get: out of range")) + 0.5876005968219007) < 0.000000001, "odd")
 }

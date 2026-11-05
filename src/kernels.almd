@@ -1,0 +1,808 @@
+// nn.kernels — neural-network kernels for Almide.
+//
+// The 25 functions that left the stdlib `matrix` module at dialect epoch 14
+// (attention, RoPE, row norms, activations, packed Q1_0 / Q8_0 weights and the
+// fused Qwen3 decoder layers) and the five that followed at epoch 15 (the dense
+// layers linear_row / linear_row_no_bias / linear_f32_row_no_bias,
+// select_rows_f32 and conv1d). Pure Almide over the stdlib's generic `Matrix`
+// operations (`*`, `+`, scale, map, concat_rows, ...), so the same source runs
+// natively and on `--target wasm`.
+//
+// Every kernel is a transcription of the stdlib's own arithmetic, operation
+// for operation (the order of every sum, the reciprocal-multiply, the
+// unfused polynomial of the fast exp), so a result carries the same bits the
+// stdlib printed. Compositions the stdlib spelled as calls to its generic
+// operations (attention_weights = softmax_rows(scale(mul(...)))) call those
+// same operations here.
+//
+//   import nn.kernels           (inside this package: import self.kernels)
+//   let y = kernels.gelu(matrix.from_lists([[0.5, -1.0]]))
+//   let a = kernels.masked_multi_head_attention(q, k, v, 4)
+// ── shared guards ─────────────────────────────────────────────────
+// The element ceiling every matrix extent shares with the stdlib (2^28).
+local fn max_elems() -> Int = 268435456
+
+local fn over(r: Int, c: Int) -> Bool = r > max_elems() or (c > 0 and r > max_elems() / c)
+
+local fn clamp0(n: Int) -> Int = if n < 0 then 0 else n
+
+// `Error: matrix shape mismatch` (exit 1), raised by the stdlib's own
+// append_rows guard so the line is the stdlib's: a 1x0 and a 1x1 matrix are
+// two non-empty operands of different widths.
+local fn shape_mismatch() -> Matrix = matrix.concat_rows([matrix.zeros(1, 0), matrix.zeros(1, 1)])
+
+// A head count below 1 has no meaning. There is no public way for a package
+// to print the stdlib's exact abort line, so this is `panic` with the same
+// message: exit 1, stderr `PANIC: Error: head count must be positive`.
+local fn head_count(n: Int) -> Int =
+  if n < 1 then panic("Error: head count must be positive")
+  else n
+
+// `n_heads * head_dim` must fit the row; the division form cannot overflow.
+// An empty matrix has no row to violate.
+// conv1d's stride is a step: below 1 is out of domain and aborts, as the
+// stdlib did (exit 1, stderr `PANIC: Error: stride must be positive`).
+local fn stride_step(s: Int) -> Int =
+  if s < 1 then panic("Error: stride must be positive")
+  else s
+
+local fn head_geometry(nh: Int, head_dim: Int, rows: Int, cols: Int) -> Int =
+  if rows > 0 and head_dim > 0 and nh > cols / head_dim then panic("Error: head geometry exceeds row width")
+  else nh
+
+// ── the canonical fast exp ────────────────────────────────────────
+// Round half to even (wasm `f64.nearest`), for the |y| <= 1022 the fast exp
+// feeds it. `float.round` rounds halves away from zero, which is not it.
+local fn round_even(y: Float) -> Float = {
+  let f = float.floor(y)
+  let d = y - f
+  if d < 0.5 then f
+  else if d > 0.5 then f + 1.0
+  else if int.from_saturating(f) % 2 == 0 then f
+  else f + 1.0
+}
+
+// 2^k for -1022 <= k <= 1023: the bits `(k + 1023) << 52`. The vendored pow
+// answers an exact power of two exactly (checked for every k in that range on
+// both targets), and is faster here than assembling the bits through Bytes.
+local fn pow2(k: Int) -> Float = float.pow(2.0, float.from(k))
+
+// exp(x) = 2^k * exp(r), k = round(x * log2 e), r = x - k * ln 2, exp(r) by
+// a degree-6 Taylor polynomial; x clamped to +-708. The stdlib's softmax_rows,
+// gelu and the equal-shape silu_mul run exactly this, every step a separate
+// multiply then add (never fused).
+local fn fast_exp(x0: Float) -> Float =
+  if float.is_nan(x0) then x0
+  else {
+    let x = float.min(float.max(x0, -708.0), 708.0)
+    let kf = round_even(x * 1.4426950408889634)
+    let r = x - kf * 0.6931471805599453
+    let p1 = 0.001388888888888889 * r + 0.008333333333333333
+    let p2 = p1 * r + 0.041666666666666664
+    let p3 = p2 * r + 0.16666666666666666
+    let p4 = p3 * r + 0.5
+    let p5 = p4 * r + 1.0
+    let p6 = p5 * r + 1.0
+    p6 * pow2(int.from_saturating(kf))
+  }
+
+// ── activations ───────────────────────────────────────────────────
+local fn gelu_scalar(x: Float) -> Float = {
+  let inner = 0.7978845608028654 * (x + 0.044715 * ((x * x) * x))
+  let e2 = fast_exp(2.0 * inner)
+  let t = 1.0 - 2.0 / (e2 + 1.0)
+  (0.5 * x) * (1.0 + t)
+}
+
+/// Elementwise GELU, tanh approximation.
+fn gelu(m: Matrix) -> Matrix = matrix.map(m, gelu_scalar)
+
+local fn row_max(row: List[Float]) -> Float = list.drop(row, 1) |> list.fold(
+  row[0],
+  (acc, x) => if x > acc then x else acc,
+)
+
+// Max-subtracted, fast-exp, left-to-right sum, reciprocal-multiply. A row
+// holding NaN or +inf, or all -inf, has a NaN sum and is all NaN.
+local fn softmax_row(row: List[Float]) -> List[Float] =
+  if list.len(row) == 0 then row
+  else {
+    let mx = row_max(row)
+    let exps = row |> list.map((x) => fast_exp(x - mx))
+    let inv = 1.0 / (exps |> list.fold(0.0, (acc, v) => acc + v))
+    exps |> list.map((v) => v * inv)
+  }
+
+/// Row-wise softmax, max-subtracted; a row holding NaN or +inf, or all -inf, is all NaN.
+fn softmax_rows(m: Matrix) -> Matrix = matrix.to_lists(m) |> list.map(softmax_row) |> matrix.from_lists
+
+local fn silu_cell(x: Float, y: Float, fast: Bool) -> Float = {
+  let e = if fast then fast_exp(-x) else math.exp(-x)
+  let sig = 1.0 / (1.0 + e)
+  x * sig * y
+}
+
+/// Elementwise x*sigmoid(x) of a, times b.
+fn silu_mul(a: Matrix, b: Matrix) -> Matrix = {
+  // Equal shapes take the fast exp; a ragged pair the libm exp (the stdlib's
+  // two paths). Rows and columns zip-truncate.
+  let fast = matrix.rows(a) == matrix.rows(b) and matrix.cols(a) == matrix.cols(b)
+  list.zip_with(
+    matrix.to_lists(a),
+    matrix.to_lists(b),
+    (ra, rb) => list.zip_with(ra, rb, (x, y) => silu_cell(x, y, fast)),
+  ) |> matrix.from_lists
+}
+
+/// silu(x Wg^T) * (x Wu^T); empty input: 0 x 0.
+fn swiglu_gate(x: Matrix, w_gate: Matrix, w_up: Matrix) -> Matrix = {
+  let d_in = matrix.cols(x)
+  let d_out = matrix.rows(w_gate)
+  if matrix.rows(x) == 0 or d_out == 0 or matrix.rows(w_up) == 0 then matrix.zeros(0, 0)
+  else if matrix.cols(w_gate) != d_in or matrix.cols(w_up) != d_in or matrix.rows(w_up) != d_out then shape_mismatch()
+  else {
+    // Both projections are the stdlib's sequential k-ascending dots.
+    let g = linear_row_no_bias(x, w_gate)
+    let u = linear_row_no_bias(x, w_up)
+    list.zip_with(
+      matrix.to_lists(g),
+      matrix.to_lists(u),
+      (gr, ur) => list.zip_with(gr, ur, (gv, uv) => gv * (1.0 / (1.0 + math.exp(-gv))) * uv),
+    ) |> matrix.from_lists
+  }
+}
+
+// ── dense layers and conv1d ───────────────────────────────────────
+// These five left the stdlib `matrix` module at dialect epoch 15. Each sum
+// starts where the stdlib's did (0.0, or the bias for conv1d) and adds in the
+// same order, so a result carries the same bits.
+
+// sum_k x[k] * w[k], k ascending from 0.0.
+local fn dot_row(xi: List[Float], wj: List[Float]) -> Float = list.zip_with(xi, wj, (a, b) => a * b) |> list.fold(0.0, (acc, p) => acc + p)
+
+local fn dense(x: Matrix, ws: List[List[Float]], bias: List[Float], with_bias: Bool) -> Matrix = matrix.to_lists(x)
+  |> list.map((xi) => ws |> list.enumerate |> list.map(((j, wj)) => if with_bias then dot_row(xi, wj) + bias[j] else dot_row(xi, wj)))
+  |> matrix.from_lists
+
+/// y = x W^T + bias: y[i][j] = sum_k x[i][k] * weight[j][k] + bias[j].
+/// An empty x or weight answers the empty matrix; cols(x) != cols(weight) or
+/// len(bias) != rows(weight) is `Error: matrix shape mismatch`.
+fn linear_row(x: Matrix, weight: Matrix, bias: List[Float]) -> Matrix =
+  if matrix.rows(x) == 0 or matrix.rows(weight) == 0 then matrix.zeros(0, 0)
+  else if matrix.cols(x) != matrix.cols(weight) or list.len(bias) != matrix.rows(weight) then shape_mismatch()
+  else dense(x, matrix.to_lists(weight), bias, true)
+
+/// y = x W^T. An empty x or weight answers the empty matrix;
+/// cols(x) != cols(weight) is `Error: matrix shape mismatch`.
+fn linear_row_no_bias(x: Matrix, weight: Matrix) -> Matrix =
+  if matrix.rows(x) == 0 or matrix.rows(weight) == 0 then matrix.zeros(0, 0)
+  else if matrix.cols(x) != matrix.cols(weight) then shape_mismatch()
+  else dense(x, matrix.to_lists(weight), [], false)
+
+// `cols` little-endian f32 values at `start`, widened to Float.
+local fn f32_row(data: Bytes, start: Int, cols: Int) -> List[Float] = list.range(0, cols) |> list.map((j) => bytes.get_f32_le(data, start + j * 4) ?? 0.0)
+
+/// x times W^T, where W is a row-major (w_rows, w_cols) f32 tensor still in
+/// `w_bytes` at `w_offset` (a negative offset reads from 0). A zero extent
+/// answers the x_rows x w_rows zero matrix, and so does a W that does not fit
+/// the buffer; cols(x) != w_cols is `Error: matrix shape mismatch`.
+fn linear_f32_row_no_bias(x: Matrix, w_bytes: Bytes, w_offset: Int, w_rows: Int, w_cols: Int) -> Matrix = {
+  let x_rows = matrix.rows(x)
+  let out_cols = clamp0(w_rows)
+  let n_in = clamp0(w_cols)
+  if over(out_cols, n_in) then matrix.zeros(out_cols, n_in)
+  else if x_rows == 0 or out_cols == 0 or n_in == 0 then matrix.zeros(x_rows, out_cols)
+  else if matrix.cols(x) != n_in then shape_mismatch()
+  else if over(x_rows, out_cols) then matrix.zeros(x_rows, out_cols)
+  else {
+    let off = clamp0(w_offset)
+    let len = bytes.len(w_bytes)
+    if off > len or out_cols * n_in * 4 > len - off then matrix.zeros(x_rows, out_cols)
+    else dense(x, list.range(0, out_cols) |> list.map((j) => f32_row(w_bytes, off + j * n_in * 4, n_in)), [], false)
+  }
+}
+
+/// The rows `row_ids` of a row-major f32 tensor (`cols` wide) still in
+/// `data` at `offset`: an embedding lookup without decoding the table. A
+/// negative id reads row 0, a negative offset reads from 0, and a row past
+/// the buffer is the zero row.
+fn select_rows_f32(data: Bytes, offset: Int, cols: Int, row_ids: List[Int]) -> Matrix = {
+  let len = bytes.len(data)
+  let off = sel_off(offset, len)
+  let c = clamp0(cols)
+  let rb = c * 4
+  if over(list.len(row_ids), c) then matrix.zeros(list.len(row_ids), c)
+  else row_ids |> list.map((rid0) => {
+    let rid = clamp0(rid0)
+    if row_fits(len - off, rid, rb) then f32_row(data, off + rid * rb, c)
+    else list.range(0, c) |> list.map((_) => 0.0)
+  }) |> matrix.from_lists
+}
+
+/// 1-D convolution: input (T, in_ch), weight (out_ch, in_ch * kernel) laid
+/// out channel-major, bias (out_ch) -> (T_out, out_ch) with
+/// T_out = (T + 2 * padding - kernel) / stride + 1 and zero padding outside
+/// [0, T). An empty input or weight, or a padded length below the kernel,
+/// answers the empty matrix; a stride below 1 aborts (`Error: stride must be
+/// positive`); cols(weight) != in_ch * kernel or len(bias) != out_ch is
+/// `Error: matrix shape mismatch`.
+fn conv1d(input: Matrix, weight: Matrix, bias: List[Float], kernel: Int, stride: Int, padding: Int) -> Matrix = {
+  let xs = matrix.to_lists(input)
+  let ws = matrix.to_lists(weight)
+  let t_in = list.len(xs)
+  let out_ch = list.len(ws)
+  if t_in == 0 or out_ch == 0 then matrix.zeros(0, 0)
+  else {
+    // The stdlib's order: stride (a step, below 1 aborts), then kernel and
+    // padding clamp to 0 like every width, then the padding ceiling.
+    let s = stride_step(stride)
+    let k = clamp0(kernel)
+    let p = clamp0(padding)
+    let in_ch = matrix.cols(input)
+    if p > max_elems() then matrix.zeros(p, 1)
+    else if matrix.cols(weight) != in_ch * k or list.len(bias) != out_ch then shape_mismatch()
+    else {
+      let t_padded = t_in + 2 * p
+      if t_padded < k then matrix.zeros(0, 0)
+      else list.range(0, (t_padded - k) / s + 1) |> list.map((t) => {
+        let base = t * s
+        ws |> list.enumerate |> list.map(((o, wo)) => list.range(0, in_ch) |> list.fold(bias[o], (acc, c) => list.range(0, k) |> list.fold(acc, (acc2, ki) => {
+          let tp = base + ki
+          if tp >= p and tp < p + t_in then acc2 + wo[c * k + ki] * xs[tp - p][c]
+          else acc2
+        })))
+      }) |> matrix.from_lists
+    }
+  }
+}
+
+/// gelu(linear_row(x, weight, bias)).
+fn linear_row_gelu(x: Matrix, weight: Matrix, bias: List[Float]) -> Matrix = gelu(linear_row(x, weight, bias))
+
+/// gelu(scale(add(mul(a, b), bias), alpha)).
+fn fused_gemm_bias_scale_gelu(a: Matrix, b: Matrix, bias: Matrix, alpha: Float) -> Matrix = {
+  let p = a * b
+  let s = p + bias
+  gelu(matrix.scale(s, alpha))
+}
+
+// ── row norms and masks ───────────────────────────────────────────
+local fn sum_from_zero(xs: List[Float]) -> Float = xs |> list.fold(0.0, (acc, x) => acc + x)
+
+/// Row-wise RMS norm; cols cut to gamma.
+fn rms_norm_rows(m: Matrix, gamma: List[Float], eps: Float) -> Matrix = matrix.to_lists(m) |> list.map((row) => {
+  let sq = row |> list.fold(0.0, (acc, x) => acc + x * x)
+  let inv = 1.0 / math.sqrt(sq / float.from(list.len(row)) + eps)
+  list.zip_with(row, gamma, (x, g) => x * inv * g)
+}) |> matrix.from_lists
+
+/// Row-wise layer norm; cols cut to gamma/beta.
+fn layer_norm_rows(m: Matrix, gamma: List[Float], beta: List[Float], eps: Float) -> Matrix = matrix.to_lists(m) |> list.map((row) => {
+  let n = float.from(list.len(row))
+  let mean = sum_from_zero(row) / n
+  let vr = (row |> list.fold(0.0, (acc, x) => {
+    let d = x - mean
+    acc + d * d
+  })) / n
+  let inv = 1.0 / math.sqrt(vr + eps)
+  list.zip_with(list.zip(row, gamma), beta, ((x, g), b) => (x - mean) * inv * g + b)
+}) |> matrix.from_lists
+
+/// linear_row(layer_norm_rows(x, ...), weight, bias).
+fn pre_norm_linear(x: Matrix, gamma: List[Float], beta: List[Float], eps: Float, weight: Matrix, bias: List[Float]) -> Matrix = linear_row(
+  layer_norm_rows(x, gamma, beta, eps),
+  weight,
+  bias,
+)
+
+/// mask_val added where col > row.
+fn causal_mask_add(m: Matrix, mask_val: Float) -> Matrix = matrix.to_lists(m) |> list.enumerate |> list.map(((i, row)) => row |> list.enumerate |> list.map(((j, x)) => if j > i then x + mask_val else x)) |> matrix.from_lists
+
+// ── attention ─────────────────────────────────────────────────────
+/// softmax_rows(scale(mul(q, kt), scale)).
+fn attention_weights(q: Matrix, kt: Matrix, scale: Float) -> Matrix = {
+  let p = q * kt
+  softmax_rows(matrix.scale(p, scale))
+}
+
+/// mul(attention_weights(q, kt, scale), v).
+fn scaled_dot_product_attention(q: Matrix, kt: Matrix, v: Matrix, scale: Float) -> Matrix = attention_weights(q, kt, scale) * v
+
+local fn dot(a: List[Float], b: List[Float]) -> Float = list.zip_with(a, b, (x, y) => x * y) |> list.fold(
+  0.0,
+  (acc, p) => acc + p,
+)
+
+// One head of one query row: the dh output columns at col0. Scores are the
+// k-ascending dot times scale (plus -1e9 past the causal cutoff), softmaxed
+// through the libm exp with a reciprocal-multiply, then the weighted values
+// accumulate j-ascending from 0.0; a weight of exactly 0 adds nothing.
+local fn mha_head(qrow: List[Float], ks: List[List[Float]], vs: List[List[Float]], col0: Int, dh: Int, scale: Float, mask: Int) -> List[Float] = {
+  let qs = list.slice(qrow, col0, col0 + dh)
+  let scores = ks |> list.enumerate |> list.map(((j, krow)) => {
+    let s = dot(qs, list.slice(krow, col0, col0 + dh)) * scale
+    if mask >= 0 and j > mask then s + (0.0 - 1000000000.0) else s
+  })
+  let mx = scores |> list.fold(
+    0.0 - float.from(1) / 0.0,
+    (acc, v) => if v > acc then v else acc,
+  )
+  let exps = scores |> list.map((s) => math.exp(s - mx))
+  let inv = 1.0 / sum_from_zero(exps)
+  list.zip(exps, vs) |> list.fold(
+    list.repeat(0.0, dh),
+    (acc, (e, vrow)) => {
+      let w = e * inv
+      if w == 0.0 then acc
+      else list.zip_with(acc, list.slice(vrow, col0, col0 + dh), (o, vv) => o + vv * w)
+    },
+  )
+}
+
+local fn mha(q: Matrix, k: Matrix, v: Matrix, n_heads: Int, causal: Bool) -> Matrix = {
+  let nh = head_count(n_heads)
+  let sq = matrix.rows(q)
+  let sk = matrix.rows(k)
+  let dm = matrix.cols(q)
+  if sq == 0 then matrix.zeros(0, 0)
+  else if sk > 0 and (matrix.cols(k) != dm or matrix.rows(v) != sk or matrix.cols(v) != dm) then shape_mismatch()
+  else if causal and sq > sk then shape_mismatch()
+  else {
+    let dh = dm / nh
+    let heads = if dh == 0 then 0 else nh
+    let scale = 1.0 / math.sqrt(float.from(dh))
+    let ks = matrix.to_lists(k)
+    let vs = matrix.to_lists(v)
+    matrix.to_lists(q) |> list.enumerate |> list.map(((i, qrow)) => {
+      let mask = if causal then sk - sq + i else 0 - 1
+      let cols = list.range(0, heads) |> list.flat_map((h) => mha_head(qrow, ks, vs, h * dh, dh, scale, mask))
+      cols + list.repeat(0.0, dm - heads * dh)
+    }) |> matrix.from_lists
+  }
+}
+
+/// Attention over n_heads; n_heads < 1 aborts; a NaN or +inf score row is NaN.
+fn multi_head_attention(q: Matrix, k: Matrix, v: Matrix, n_heads: Int) -> Matrix = mha(
+  q,
+  k,
+  v,
+  n_heads,
+  false,
+)
+
+/// Causal multi-head attention; n_heads < 1 aborts.
+fn masked_multi_head_attention(q: Matrix, k: Matrix, v: Matrix, n_heads: Int) -> Matrix = mha(
+  q,
+  k,
+  v,
+  n_heads,
+  true,
+)
+
+// ── rotary position embedding ─────────────────────────────────────
+// One rotated column: (x0, x1) is the pair the column belongs to, `first`
+// whether the column is the pair's first element, (c, s) the cos and sin of
+// the pair's angle.
+local fn rope_col(x0: Float, x1: Float, first: Bool, c: Float, s: Float) -> Float =
+  if first then x0 * c - x1 * s
+  else x0 * s + x1 * c
+
+// Interleaved (neox = false) pairs (2i, 2i+1) or NeoX pairs (i, i + half)
+// within each of the first nh heads; other columns copy through. Row p is
+// position start + p; inv_freq[i] = 1 / theta^(2i / head_dim) and the angle
+// goes through the vendored sin / cos.
+local fn rope(x: Matrix, n_heads: Int, head_dim: Int, theta: Float, start_pos: Int, neox: Bool) -> Matrix = {
+  let rows = matrix.rows(x)
+  let cols = matrix.cols(x)
+  let nh = head_geometry(head_count(n_heads), head_dim, rows, cols)
+  let half = head_dim / 2
+  let start = clamp0(start_pos)
+  if rows == 0 then matrix.zeros(0, 0)
+  else if half <= 0 then x
+  else {
+    let hd_f = float.from(head_dim)
+    let inv_freq = list.range(0, half) |> list.map((i) => 1.0 / float.pow(theta, float.from(2 * i) / hd_f))
+    let span = nh * head_dim
+    matrix.to_lists(x) |> list.enumerate |> list.map(((p, row)) => {
+      let pos_f = float.from(start + p)
+      let cs = inv_freq |> list.map((f) => {
+        let angle = pos_f * f
+        (math.cos(angle), math.sin(angle))
+      })
+      row |> list.enumerate |> list.map(((j, xj)) => {
+        let o = j % head_dim
+        if j >= span or o >= 2 * half then xj
+        else if neox then {
+          let i = o % half
+          let (c, s) = cs[i]
+          if o < half then rope_col(xj, row[j + half], true, c, s)
+          else rope_col(row[j - half], xj, false, c, s)
+        } else {
+          let (c, s) = cs[o / 2]
+          if o % 2 == 0 then rope_col(xj, row[j + 1], true, c, s)
+          else rope_col(row[j - 1], xj, false, c, s)
+        }
+      })
+    }) |> matrix.from_lists
+  }
+}
+
+/// Interleaved RoPE, position = row; bad head sizes abort.
+fn rope_rotate(x: Matrix, n_heads: Int, head_dim: Int, theta_base: Float) -> Matrix = rope(
+  x,
+  n_heads,
+  head_dim,
+  theta_base,
+  0,
+  false,
+)
+
+/// RoPE with row p at start_pos + p; negative start is 0.
+fn rope_rotate_at(x: Matrix, n_heads: Int, head_dim: Int, theta_base: Float, start_pos: Int) -> Matrix = rope(
+  x,
+  n_heads,
+  head_dim,
+  theta_base,
+  start_pos,
+  false,
+)
+
+/// NeoX RoPE: pairs (j, j + head_dim/2).
+fn rope_rotate_neox_at(x: Matrix, n_heads: Int, head_dim: Int, theta_base: Float, start_pos: Int) -> Matrix = rope(
+  x,
+  n_heads,
+  head_dim,
+  theta_base,
+  start_pos,
+  true,
+)
+
+// ── packed weights: Q1_0 (18 bytes / 128 weights) and Q8_0 (34 / 32) ──
+// A dequantized element of zero magnitude is +0.0 (the stdlib's
+// dequantization-zero ruling): -0.0 becomes 0.0, everything else stays.
+local fn dq_zero(v: Float) -> Float = if v == 0.0 then 0.0 else v
+
+local fn i8_of(u: Int) -> Int = if u >= 128 then u - 256 else u
+
+// An offset clamps to [0, len].
+local fn sel_off(offset: Int, len: Int) -> Int =
+  if offset < 0 then 0
+  else if offset > len then len
+  else offset
+
+// Does row rid's window rid*rb ..+ rb fit in `avail` bytes? Divided, never
+// multiplied, so a huge rid cannot wrap.
+local fn row_fits(avail: Int, rid: Int, rb: Int) -> Bool = rb <= avail and (rb == 0 or rid <= (avail - rb) / rb)
+
+// Q1_0 element k (global index) of the data starting at `base`: 0.0 when its
+// 18-byte block is not wholly inside the buffer; else the block's fp16 scale,
+// signed by bit k (1 = +, 0 = -).
+local fn q10_val(data: Bytes, base: Int, avail: Int, k: Int) -> Float = {
+  let block_start = k / 128 * 18
+  if block_start + 18 > avail then 0.0
+  else {
+    let scale = bytes.get_f16_le(data, base + block_start) ?? 0.0
+    let byte = bytes.get(data, base + block_start + 2 + int.band(k / 8, 15)) ?? 0
+    if int.band(int.bshr(byte, k % 8), 1) == 1 then dq_zero(scale)
+    else dq_zero(0.0 - scale)
+  }
+}
+
+/// Q1_0 1-bit decode; blocks past data are 0.0.
+fn from_q1_0_bytes(data: Bytes, offset: Int, rows: Int, cols: Int) -> Matrix = {
+  let len = bytes.len(data)
+  let base = sel_off(offset, len)
+  let r = clamp0(rows)
+  let c = clamp0(cols)
+  if over(r, c) then matrix.zeros(r, c)
+  else list.range(0, r) |> list.map((i) => list.range(0, c) |> list.map((j) => q10_val(data, base, len - base, i * c + j))) |> matrix.from_lists
+}
+
+/// Q1_0 rows at row_ids; past-data rows are 0.
+fn select_rows_q1_0(data: Bytes, offset: Int, cols: Int, row_ids: List[Int]) -> Matrix = {
+  let len = bytes.len(data)
+  let base = sel_off(offset, len)
+  let c = clamp0(cols)
+  let n = list.len(row_ids)
+  if over(n, c) then matrix.zeros(n, c)
+  else {
+    let row_bytes = c / 128 * 18
+    let cr = c / 128 * 128
+    row_ids |> list.map((rid0) => {
+      let rid = clamp0(rid0)
+      // Whole blocks decode on the row schedule; the trailing c mod 128
+      // elements are 0.0, and a row past the buffer is all 0.0.
+      if row_fits(len - base, rid, row_bytes) then list.range(0, cr) |> list.map((j) => q10_val(data, base, len - base, rid * cr + j)) + list.repeat(
+        0.0,
+        c - cr,
+      )
+      else list.repeat(0.0, c)
+    }) |> matrix.from_lists
+  }
+}
+
+local fn q8_row(data: Bytes, row_start: Int, cols: Int) -> List[Float] = list.range(0, cols) |> list.map((j) => {
+  let block_start = row_start + j / 32 * 34
+  let scale = bytes.get_f16_le(data, block_start) ?? 0.0
+  let q = i8_of(bytes.get(data, block_start + 2 + j % 32) ?? 0)
+  dq_zero(scale * float.from(q))
+})
+
+/// Q8_0 rows dequantized; 0 past data or if cols % 32 > 0.
+fn select_rows_q8_0_dq(data: Bytes, offset: Int, cols: Int, row_ids: List[Int]) -> Matrix = {
+  let len = bytes.len(data)
+  let base = sel_off(offset, len)
+  let c = clamp0(cols)
+  let n = list.len(row_ids)
+  if over(n, c) then matrix.zeros(n, c)
+  else if c % 32 != 0 then matrix.zeros(n, c)
+  else {
+    let row_bytes = c / 32 * 34
+    row_ids |> list.map((rid0) => {
+      let rid = clamp0(rid0)
+      if row_fits(len - base, rid, row_bytes) then q8_row(data, base + rid * row_bytes, c)
+      else list.repeat(0.0, c)
+    }) |> matrix.from_lists
+  }
+}
+
+// One Q1_0 block against 128 activations: sign bit 1 is +x, 0 is -x; lane 0
+// sums the even k, lane 1 the odd k, each k-ascending from 0.0.
+local fn q1p_lanes(xb: List[Float], w: Bytes, sp: Int, k: Int, l0: Float, l1: Float) -> Float =
+  if k == 128 then l0 + l1
+  else {
+    let byte = bytes.get(w, sp + k / 8) ?? 0
+    let v0 = if int.band(int.bshr(byte, k % 8), 1) == 1 then xb[k] else -xb[k]
+    let v1 = if int.band(int.bshr(byte, k % 8 + 1), 1) == 1 then xb[k + 1] else -xb[k + 1]
+    q1p_lanes(xb, w, sp, k + 2, l0 + v0, l1 + v1)
+  }
+
+// One output cell: the blocks' (lane0 + lane1) * scale, summed from 0.0.
+local fn q1p_cell(xi: List[Float], w: Bytes, row_off: Int, blocks: Int) -> Float = list.range(
+  0,
+  blocks,
+) |> list.fold(
+  0.0,
+  (acc, b) => {
+    let bs = row_off + b * 18
+    let xb = list.slice(xi, b * 128, b * 128 + 128)
+    acc + q1p_lanes(xb, w, bs + 2, 0, 0.0, 0.0) * bytes.get_f16_le(w, bs) ?? 0.0
+  },
+)
+
+/// x times Q1_0-packed W^T.
+fn linear_q1_0_row_no_bias(x: Matrix, w_bytes: Bytes, w_offset: Int, w_rows: Int, w_cols: Int) -> Matrix = {
+  let x_rows = matrix.rows(x)
+  let out_cols = clamp0(w_rows)
+  let n_in = clamp0(w_cols)
+  if over(out_cols, n_in) then matrix.zeros(out_cols, n_in)
+  else if x_rows == 0 or out_cols == 0 or n_in == 0 then matrix.zeros(x_rows, w_rows)
+  else if matrix.cols(x) != n_in then shape_mismatch()
+  else if over(x_rows, out_cols) then matrix.zeros(x_rows, out_cols)
+  else {
+    let off = clamp0(w_offset)
+    let blocks = n_in / 128
+    let len = bytes.len(w_bytes)
+    if off > len or out_cols * blocks * 18 > len - off then matrix.zeros(x_rows, out_cols)
+    else matrix.to_lists(x) |> list.map((xi) => list.range(0, out_cols) |> list.map((j) => q1p_cell(xi, w_bytes, off + j * blocks * 18, blocks))) |> matrix.from_lists
+  }
+}
+
+// One activation block quantized: the f32 scale amax / 127 (amax skips NaN),
+// its f64 reciprocal (0 for a zero scale), and round-half-away quants
+// clamped to +-127; a NaN quant is 0.
+local fn q8_quant(xb: List[Float]) -> (Float, List[Int]) = {
+  let amax = xb |> list.fold(
+    0.0,
+    (m, v) => {
+      let a = float.abs(v)
+      if a > m then a else m
+    },
+  )
+  let d = float.from(float32.from(amax / 127.0))
+  let inv = if d > 0.0 then 1.0 / d else 0.0
+  let q = xb |> list.map((v) => {
+    let t = float.round(v * inv)
+    if t != t then 0
+    else if t > 127.0 then 127
+    else if t < -127.0 then -127
+    else int.from_saturating(t)
+  })
+  (d, q)
+}
+
+local fn q8_isum(w: Bytes, qp: Int, xq: List[Int], k: Int, s: Int) -> Int =
+  if k == 32 then s
+  else q8_isum(w, qp, xq, k + 1, s + i8_of(bytes.get(w, qp + k) ?? 0) * xq[k])
+
+// One output cell: per block the exact integer dot, scaled by the f32 product
+// of the two block scales, accumulated in f64 from 0.0.
+local fn q8_cell(qx: List[(Float, List[Int])], w: Bytes, row_off: Int) -> Float = qx |> list.enumerate |> list.fold(
+  0.0,
+  (acc, (b, block)) => {
+    let (dx, xq) = block
+    let bs = row_off + b * 34
+    let dd = float.from(float32.from(bytes.get_f16_le(w, bs) ?? 0.0 * dx))
+    acc + dd * float.from(q8_isum(w, bs + 2, xq, 0, 0))
+  },
+)
+
+/// x times Q8_0 W^T; all 0 if w_cols % 32 > 0.
+fn linear_q8_0_row_no_bias(x: Matrix, w_bytes: Bytes, w_offset: Int, w_rows: Int, w_cols: Int) -> Matrix = {
+  let x_rows = matrix.rows(x)
+  if x_rows == 0 or w_rows <= 0 or w_cols <= 0 or w_cols % 32 != 0 then matrix.zeros(x_rows, w_rows)
+  else if over(w_rows, w_cols) then matrix.zeros(w_rows, w_cols)
+  else if matrix.cols(x) != w_cols then shape_mismatch()
+  else {
+    let off = clamp0(w_offset)
+    let row_bytes = w_cols / 32 * 34
+    let len = bytes.len(w_bytes)
+    if off > len or w_rows * row_bytes > len - off then matrix.zeros(x_rows, w_rows)
+    else matrix.to_lists(x) |> list.map((xi) => {
+      let qx = list.range(0, w_cols / 32) |> list.map((b) => q8_quant(list.slice(xi, b * 32, b * 32 + 32)))
+      list.range(0, w_rows) |> list.map((j) => q8_cell(qx, w_bytes, off + j * row_bytes))
+    }) |> matrix.from_lists
+  }
+}
+
+// ── the fused Qwen3 decoder layer ─────────────────────────────────
+// Per-head RMS norm: each head's x * inv * gamma[k], inv = 1 / sqrt(mean of
+// squares + eps); columns past the last whole head are 0.0.
+local fn head_norm(x: Matrix, gamma: List[Float], n_heads: Int, eps: Float) -> Matrix = {
+  let n = head_count(n_heads)
+  if matrix.rows(x) == 0 then matrix.zeros(0, 0)
+  else {
+    let d = matrix.cols(x)
+    let hd = d / n
+    let heads = if hd == 0 then 0 else n
+    matrix.to_lists(x) |> list.map((row) => {
+      let normed = list.range(0, heads) |> list.flat_map((h) => {
+        let seg = list.slice(row, h * hd, h * hd + hd)
+        let ss = seg |> list.fold(0.0, (s, v) => s + v * v)
+        let inv = 1.0 / math.sqrt(ss / float.from(hd) + eps)
+        seg |> list.enumerate |> list.map(((k, v)) => v * inv * gamma[k])
+      })
+      normed + list.repeat(0.0, d - heads * hd)
+    }) |> matrix.from_lists
+  }
+}
+
+// Each kv head's slice repeated n_rep times in place; columns past the copies
+// are 0.0. n_rep <= 1 is the operand itself.
+local fn repeat_kv(kv: Matrix, n_kv_heads: Int, n_rep: Int) -> Matrix =
+  if n_rep <= 1 then kv
+  else {
+    let n = head_count(n_kv_heads)
+    if matrix.rows(kv) == 0 then matrix.zeros(0, 0)
+    else {
+      let d = matrix.cols(kv)
+      let hd = d / n
+      let heads = if hd == 0 then 0 else n
+      // The widened cache is a matrix extent: past the ceiling it is
+      // matrix.zeros' own abort (the width saturates rather than wraps).
+      let wide = if d > 0 and n_rep > max_elems() / d then max_elems() + 1 else d * n_rep
+      if over(matrix.rows(kv), wide) then matrix.zeros(matrix.rows(kv), wide)
+      else matrix.to_lists(kv) |> list.map((row) => {
+        let reps = list.range(0, heads) |> list.flat_map((h) => {
+          let seg = list.slice(row, h * hd, h * hd + hd)
+          list.range(0, n_rep) |> list.flat_map((_) => seg)
+        })
+        reps + list.repeat(0.0, d * n_rep - heads * n_rep * hd)
+      }) |> matrix.from_lists
+    }
+  }
+
+// `len` f32 LE values from `off`; past the buffer each reads 0.0. Over the
+// ceiling it is matrix.zeros' own abort.
+local fn gamma_at(w: Bytes, off: Int, len: Int) -> List[Float] =
+  if over(len, 1) then matrix.to_lists(matrix.zeros(len, 1)) |> list.map((r) => r[0])
+  else {
+    let o = clamp0(off)
+    list.range(0, len) |> list.map((i) => bytes.get_f32_le(w, o + i * 4) ?? 0.0)
+  }
+
+type WeightKind =
+  | Q1
+  | F32
+  | Q8
+
+local fn packed_linear(kind: WeightKind, x: Matrix, w: Bytes, off: Int, rows: Int, cols: Int) -> Matrix = match kind {
+  Q1 => linear_q1_0_row_no_bias(x, w, off, rows, cols),
+  F32 => linear_f32_row_no_bias(x, w, off, rows, cols),
+  Q8 => linear_q8_0_row_no_bias(x, w, off, rows, cols),
+}
+
+// rms_norm -> Q/K/V -> per-head rms_norm -> RoPE -> KV append -> repeat_kv ->
+// causal attention -> output projection -> residual -> SwiGLU FFN -> residual.
+local fn qwen3_block(kind: WeightKind, neox: Bool, hidden: Int, h: Matrix, k_cache: Matrix, v_cache: Matrix, w: Bytes, gamma_offs: List[Int], weight_offs: List[Int], start_pos: Int, n_q_heads: Int, n_kv_heads: Int, head_dim: Int, ffn_hidden: Int, rope_theta: Float, eps: Float) -> (Matrix, Matrix, Matrix) = {
+  let q_hidden = n_q_heads * head_dim
+  let kv_hidden = n_kv_heads * head_dim
+  let n_rep = n_q_heads / head_count(n_kv_heads)
+  let hd = clamp0(head_dim)
+  let gamma_attn = gamma_at(w, gamma_offs[0], hidden)
+  let gamma_q = gamma_at(w, gamma_offs[1], hd)
+  let gamma_k = gamma_at(w, gamma_offs[2], hd)
+  let gamma_ffn = gamma_at(w, gamma_offs[3], hidden)
+  let h_normed = rms_norm_rows(h, gamma_attn, eps)
+  let q_proj = packed_linear(kind, h_normed, w, weight_offs[0], q_hidden, hidden)
+  let k_proj = packed_linear(kind, h_normed, w, weight_offs[1], kv_hidden, hidden)
+  let v_proj = packed_linear(kind, h_normed, w, weight_offs[2], kv_hidden, hidden)
+  let q_normed = head_norm(q_proj, gamma_q, n_q_heads, eps)
+  let k_normed = head_norm(k_proj, gamma_k, n_kv_heads, eps)
+  let q_rot = rope(q_normed, n_q_heads, head_dim, rope_theta, start_pos, neox)
+  let k_rot = rope(k_normed, n_kv_heads, head_dim, rope_theta, start_pos, neox)
+  let k_full_kv = matrix.concat_rows([k_cache, k_rot])
+  let v_full_kv = matrix.concat_rows([v_cache, v_proj])
+  let k_full = repeat_kv(k_full_kv, n_kv_heads, n_rep)
+  let v_full = repeat_kv(v_full_kv, n_kv_heads, n_rep)
+  let attn_out = masked_multi_head_attention(q_rot, k_full, v_full, n_q_heads)
+  let attn_proj = packed_linear(kind, attn_out, w, weight_offs[3], hidden, q_hidden)
+  let x_attn = h + attn_proj
+  let h2 = rms_norm_rows(x_attn, gamma_ffn, eps)
+  let gate = packed_linear(kind, h2, w, weight_offs[4], ffn_hidden, hidden)
+  let up = packed_linear(kind, h2, w, weight_offs[5], ffn_hidden, hidden)
+  let ffn_out = packed_linear(kind, silu_mul(gate, up), w, weight_offs[6], hidden, ffn_hidden)
+  (x_attn + ffn_out, k_full_kv, v_full_kv)
+}
+
+local fn own_width(h: Matrix) -> Int = if matrix.rows(h) > 0 then matrix.cols(h) else 0
+
+/// Qwen3 layer, Q1_0; new (h, k_cache, v_cache).
+fn qwen3_block_q1_0_kv(h: Matrix, k_cache: Matrix, v_cache: Matrix, w: Bytes, gamma_offs: List[Int], weight_offs: List[Int], start_pos: Int, n_q_heads: Int, n_kv_heads: Int, head_dim: Int, ffn_hidden: Int, rope_theta: Float, eps: Float) -> (Matrix, Matrix, Matrix) = qwen3_block(
+  Q1,
+  false,
+  n_q_heads * head_dim,
+  h,
+  k_cache,
+  v_cache,
+  w,
+  gamma_offs,
+  weight_offs,
+  start_pos,
+  n_q_heads,
+  n_kv_heads,
+  head_dim,
+  ffn_hidden,
+  rope_theta,
+  eps,
+)
+
+/// Qwen3 layer, f32; new (h, k_cache, v_cache).
+fn qwen3_block_f32_kv(h: Matrix, k_cache: Matrix, v_cache: Matrix, w: Bytes, gamma_offs: List[Int], weight_offs: List[Int], start_pos: Int, n_q_heads: Int, n_kv_heads: Int, head_dim: Int, ffn_hidden: Int, rope_theta: Float, eps: Float) -> (Matrix, Matrix, Matrix) = qwen3_block(
+  F32,
+  true,
+  own_width(h),
+  h,
+  k_cache,
+  v_cache,
+  w,
+  gamma_offs,
+  weight_offs,
+  start_pos,
+  n_q_heads,
+  n_kv_heads,
+  head_dim,
+  ffn_hidden,
+  rope_theta,
+  eps,
+)
+
+/// Qwen3 layer, Q8_0; new (h, k_cache, v_cache).
+fn qwen3_block_q8_0_kv(h: Matrix, k_cache: Matrix, v_cache: Matrix, w: Bytes, gamma_offs: List[Int], weight_offs: List[Int], start_pos: Int, n_q_heads: Int, n_kv_heads: Int, head_dim: Int, ffn_hidden: Int, rope_theta: Float, eps: Float) -> (Matrix, Matrix, Matrix) = qwen3_block(
+  Q8,
+  true,
+  own_width(h),
+  h,
+  k_cache,
+  v_cache,
+  w,
+  gamma_offs,
+  weight_offs,
+  start_pos,
+  n_q_heads,
+  n_kv_heads,
+  head_dim,
+  ffn_hidden,
+  rope_theta,
+  eps,
+)

@@ -11,11 +11,11 @@ fn upsample_nearest_x2_rows(x: Matrix) -> Matrix = {
   var out: List[List[Float]] = []
   var i = 0
   while i < t {
-    let xi = list.get_or(rx, i, [])
+    let xi = list.get(rx, i) ?? []
     var row: List[Float] = []
     var j = 0
     while j < d {
-      let v = list.get_or(xi, j, 0.0)
+      let v = list.get(xi, j) ?? 0.0
       row = row + [v, v]
       j = j + 1
     }
@@ -29,18 +29,18 @@ fn upsample_nearest_x2_rows(x: Matrix) -> Matrix = {
 test "upsample-x2 repeats each element twice" {
   let x = matrix.from_lists([[1.0, 2.0]])
   let y = upsample_nearest_x2_rows(x)
-  assert_eq(matrix.get(y, 0, 0), 1.0)
-  assert_eq(matrix.get(y, 0, 1), 1.0)
-  assert_eq(matrix.get(y, 0, 2), 2.0)
-  assert_eq(matrix.get(y, 0, 3), 2.0)
+  assert_eq(matrix.get(y, 0, 0) ?? panic("matrix.get: out of range"), 1.0)
+  assert_eq(matrix.get(y, 0, 1) ?? panic("matrix.get: out of range"), 1.0)
+  assert_eq(matrix.get(y, 0, 2) ?? panic("matrix.get: out of range"), 2.0)
+  assert_eq(matrix.get(y, 0, 3) ?? panic("matrix.get: out of range"), 2.0)
 }
 
 // negatives carry through unchanged: [5,−3] → [5,5,−3,−3].
 test "upsample-x2 preserves values including negatives" {
   let x = matrix.from_lists([[5.0, 0.0 - 3.0]])
   let y = upsample_nearest_x2_rows(x)
-  assert_eq(matrix.get(y, 0, 0), 5.0)
-  assert_eq(matrix.get(y, 0, 1), 5.0)
-  assert_eq(matrix.get(y, 0, 2), 0.0 - 3.0)
-  assert_eq(matrix.get(y, 0, 3), 0.0 - 3.0)
+  assert_eq(matrix.get(y, 0, 0) ?? panic("matrix.get: out of range"), 5.0)
+  assert_eq(matrix.get(y, 0, 1) ?? panic("matrix.get: out of range"), 5.0)
+  assert_eq(matrix.get(y, 0, 2) ?? panic("matrix.get: out of range"), 0.0 - 3.0)
+  assert_eq(matrix.get(y, 0, 3) ?? panic("matrix.get: out of range"), 0.0 - 3.0)
 }

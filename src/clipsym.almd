@@ -4,12 +4,12 @@
 import math
 
 fn clip_symmetric(m: Matrix, c: Float) -> Matrix =
-  matrix.map(m, (x) => math.fmax(0.0 - c, math.fmin(c, x)))
+  matrix.map(m, (x) => float.max(0.0 - c, float.min(c, x)))
 
 // |x|>c saturates to ±c; |x|<c passes through.
 test "clip_symmetric to [-c,c]" {
   let y = clip_symmetric(matrix.from_lists([[5.0, -5.0, 1.0]]), 2.0)
-  assert_eq(matrix.get(y, 0, 0), 2.0)
-  assert_eq(matrix.get(y, 0, 1), -2.0)
-  assert_eq(matrix.get(y, 0, 2), 1.0)
+  assert_eq(matrix.get(y, 0, 0) ?? panic("matrix.get: out of range"), 2.0)
+  assert_eq(matrix.get(y, 0, 1) ?? panic("matrix.get: out of range"), -2.0)
+  assert_eq(matrix.get(y, 0, 2) ?? panic("matrix.get: out of range"), 1.0)
 }
