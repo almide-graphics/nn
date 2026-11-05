@@ -53,32 +53,15 @@ fn bytes_to_string(data: Bytes, offset: Int, len: Int) -> String =
 
 // ── Parser ──
 
-fn find_chunk(data: Bytes, chunk_id: String, start: Int) -> Option[Int] = {
-  let total = bytes.len(data)
-  // Iterative search to avoid TCO String/&str codegen issue
-  find_chunk_at(data, chunk_id, start, total)
-}
+fn find_chunk(data: Bytes, chunk_id: String, start: Int) -> Option[Int] =
+  find_chunk_at(data, chunk_id, start, bytes.len(data))
 
-fn find_chunk_at(data: Bytes, chunk_id: String, pos: Int, total: Int) -> Option[Int] = {
-  // Scan up to 100 chunks max (WAV files are simple)
-  let positions = list.range(0, 100)
-  list.fold(positions, (pos, none), (state, _) => {
-    let (p, found) = state
-    match found {
-      some(_) => state
-      none =>
-        if p + 8 > total then (p, none)
-        else {
-          let id = bytes_to_string(data, p, 4)
-          if id == chunk_id then (p, some(p))
-          else {
-            let size = read_u32_le(data, p + 4)
-            (p + 8 + size, none)
-          }
-        }
-    }
-  }).1
-}
+// Each step moves past one chunk header (8 bytes plus the chunk's size), so
+// the walk always ends at the end of the data.
+fn find_chunk_at(data: Bytes, chunk_id: String, pos: Int, total: Int) -> Option[Int] =
+  if pos + 8 > total then none
+  else if bytes_to_string(data, pos, 4) == chunk_id then some(pos)
+  else find_chunk_at(data, chunk_id, pos + 8 + read_u32_le(data, pos + 4), total)
 
 effect fn parse(data: Bytes) -> Result[WavData, String] = {
   let total = bytes.len(data)
@@ -166,8 +149,8 @@ fn resample_loop(samples: List[Float], ratio: Float, out_len: Int, idx: Int, acc
     let src_pos = float.from(idx) * ratio
     let i0 = int.from_saturating(src_pos)
     let frac = src_pos - float.from(i0)
-    let s0 = list.get(samples, i0) |> option.unwrap_or(0.0)
-    let s1 = list.get(samples, i0 + 1) |> option.unwrap_or(s0)
+    let s0 = (list.get(samples, i0) ?? 0.0)
+    let s1 = (list.get(samples, i0 + 1) ?? s0)
     let sample = s0 + (s1 - s0) * frac
     resample_loop(samples, ratio, out_len, idx + 1, acc + [sample])
   }

@@ -20,3 +20,9 @@ jobs:
           for f in $(git ls-files '*.almd'); do almide check "$f" > /tmp/out.txt 2>&1 || { echo "::error file=$f::almide check failed"; cat /tmp/out.txt; fail=1; }; done
           exit $fail
       - run: almide test
+      - name: Test the modules that dropped compiler workarounds, on both targets
+        run: |
+          for f in src/qwen.almd src/qwen_tokenizer.almd src/wav.almd src/generate.almd; do
+            almide test "$f"
+            almide test "$f" --target native
+          done
