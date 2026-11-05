@@ -11,14 +11,10 @@
 // gammas so the interleaved rotation is exactly equivalent — this module
 // assumes weights are already in interleaved layout.
 
-// Self-contained on purpose: importing self.generate currently trips
-// compiler bug #433 (bare cross-module type names in codegen), and the
-// only pieces needed from elsewhere are one-liners (embed = gather_rows,
-// argmax). Re-unify once #433 is fixed.
-
 // ── Model types ──
 
 import self.kernels
+import self.generate
 
 type QwenConfig = {
   n_layers: Int,
@@ -207,14 +203,14 @@ fn cached_steps(tokens: List[Int], model: QwenModel, cache: QwenCache, last: Int
   if remaining <= 0 then tokens
   else {
     let (lg, cache2) = qwen_decode_step(last, list.len(tokens) - 1, model, cache)
-    let next = argmax(lg)
+    let next = generate.argmax(lg)
     if next == eos_id then tokens + [next]
     else cached_steps(tokens + [next], model, cache2, next, eos_id, remaining - 1)
   }
 
 fn greedy_generate_cached(tokens: List[Int], model: QwenModel, eos_id: Int, max_new: Int) -> List[Int] = {
   let (hidden, cache) = qwen_prefill(tokens, model)
-  let first = argmax(logits_last(hidden, model.embedding))
+  let first = generate.argmax(logits_last(hidden, model.embedding))
   if first == eos_id or max_new <= 0 then tokens + [first]
   else cached_steps(tokens + [first], model, cache, first, eos_id, max_new - 1)
 }
@@ -321,14 +317,14 @@ fn greedy_generate_f32(
   cfg: QwenF32Cfg, max_new: Int,
 ) -> List[Int] = {
   let (hidden, ks0, vs0) = prefill_f32(prompt, raw, gammas, weights, cfg)
-  var out = prompt + [argmax(logits_last_f32(hidden, raw, cfg))]
+  var out = prompt + [generate.argmax(logits_last_f32(hidden, raw, cfg))]
   var ks = ks0
   var vs = vs0
   var remaining = max_new - 1
   var last = list.get(out, list.len(out) - 1) ?? 0
   while remaining > 0 and last != cfg.eos_id {
     let (lg, ks2, vs2) = decode_step_f32(last, list.len(out) - 1, raw, gammas, weights, ks, vs, cfg)
-    last = argmax(lg)
+    last = generate.argmax(lg)
     out = out + [last]
     ks = ks2
     vs = vs2
@@ -337,24 +333,13 @@ fn greedy_generate_f32(
   out
 }
 
-// ── argmax (local copy — see #433 note above) ──
-
-fn argmax(values: List[Float]) -> Int =
-  list.enumerate(values)
-    |> list.fold((0, -1.0e308), (acc, entry) => {
-      let (best_i, best_v) = acc
-      let (i, v) = entry
-      if v > best_v then (i, v) else (best_i, best_v)
-    })
-    |> ((pair: (Int, Float)) => pair.0)
-
 // ── Greedy generation (L1: full recompute per step; KV cache lands in L2) ──
 
 fn greedy_step(tokens: List[Int], model: QwenModel, eos_id: Int, remaining: Int) -> List[Int] =
   if remaining <= 0 then tokens
   else {
     let hidden = qwen_forward(tokens, model)
-    let next = argmax(logits_last(hidden, model.embedding))
+    let next = generate.argmax(logits_last(hidden, model.embedding))
     if next == eos_id then tokens + [next]
     else greedy_step(tokens + [next], model, eos_id, remaining - 1)
   }

@@ -116,9 +116,7 @@ fn cmp_ranges(blob: Bytes, a0: Int, a1: Int, b0: Int, b1: Int) -> Int = {
 // log n) with O(1) pushes, zero String allocation.
 fn sort_by_blob(idx: List[Int], blob: Bytes, off: List[Int]) -> List[Int] = {
   let n = list.len(idx)
-  // owned copy: binding a borrowed-slice param straight to `var` mis-lowers
-  // to a reference clone (Vec vs &[i64])
-  var cur = list.slice(idx, 0, n)
+  var cur = idx
   var width = 1
   while width < n {
     var merged: List[Int] = []
